@@ -1,0 +1,53 @@
+{
+  "product": "treestamp",
+  "role": "full native Go port of Weavatrix Scan",
+  "not": [
+    "lightweight walker",
+    "Go SDK wrapping Rust",
+    "CGO binding",
+    "WASM wrapper",
+    "Node addon"
+  ],
+  "owner": "sergii-ziborov",
+  "visibility": "public",
+  "hosting": "personal GitHub account of Sergii Ziborov; not Weavatrix; not EdgeHawk",
+  "module": "github.com/sergii-ziborov/treestamp",
+  "go_minimum": "1.25.0",
+  "cgo": "disabled",
+  "license": "MIT",
+  "copyright": "Copyright (c) 2026 Sergii Ziborov",
+  "upstream": {
+    "crate": "weavatrix-scan",
+    "repository": "https://github.com/Weavatrix/weavatrix-scan",
+    "cargo_version": "0.5.2",
+    "commit": "29c003a6ad541c9a10faf30505235375fa78b9d8",
+    "tree": "108c59e66c90c3b649b3ff867360a6c0e9ff7f6e",
+    "rust_minimum": "1.88",
+    "descriptor_version": 2,
+    "cache_format": 2,
+    "source_of_version": "Cargo.toml at the pinned commit; crates.io publication is not a separate check"
+  },
+  "crate_root_exports": {
+    "always": 107,
+    "feature_gated": 1,
+    "total_named": 108,
+    "feature_gated_names": ["RayonExecutor"],
+    "note": "108 names from src/lib.rs pub use lines, including RayonExecutor behind feature = rayon"
+  },
+  "defaults_from_upstream": {
+    "max_file_bytes": 1500000,
+    "hash_file_contents": true,
+    "detect_binary_files": true,
+    "evidence": "Complete",
+    "standard_skips": "Enabled",
+    "skip_hidden": false,
+    "ignore_files": [".gitignore", ".ignore", ".weavatrixignore"],
+    "cache_validation": "Fast",
+    "content_validation": "Strict",
+    "content_discovery": "Streaming",
+    "whole_scan_limits": "disabled",
+    "compatible_ignore_preset": "do not add .treestampignore silently"
+  },
+  "inventory_complete": false,
+  "inventory_note": "Regex extraction of methods, fields, and variants is checked in by P0 and must be reviewed before a full-port release. Completing that review is a P0 exit condition for calling the inventory finished."
+}

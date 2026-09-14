@@ -1,0 +1,28 @@
+/bin/
+/dist/
+/tmp/
+*.exe
+*.test
+*.out
+coverage.out
+coverage.html
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Local generated corpora and campaign artifacts
+/testdata/generated/
+/bench/artifacts/
+/compat/local/
+
+# Rust reference driver build
+/reference/rust-driver/target/
+
+# Optional local checkout of the pinned oracle
+/reference/weavatrix-scan/
+
+# Editor / OS
+.env
+.env.*

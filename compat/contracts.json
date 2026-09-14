@@ -1,0 +1,242 @@
+{
+  "schema": 1,
+  "source_commit": "29c003a6ad541c9a10faf30505235375fa78b9d8",
+  "note": "Runtime contracts for the full Go port. NOT_IMPLEMENTED means the scanner surface is absent, not that a fixture check passed.",
+  "contracts": [
+    {
+      "id": "T01",
+      "title": "Iterative serial walker",
+      "stage": "P1",
+      "status": "IMPLEMENTED",
+      "evidence": ["internal/walk", "internal/walk/walker_test.go"]
+    },
+    {
+      "id": "T02",
+      "title": "Depth, max_open, and error policies",
+      "stage": "P1",
+      "status": "IMPLEMENTED",
+      "evidence": ["internal/walk/options.go", "internal/walk/walker_test.go"]
+    },
+    {
+      "id": "T03",
+      "title": "File root where the Rust walker accepts a file",
+      "stage": "P1",
+      "status": "IMPLEMENTED",
+      "evidence": ["internal/walk/walker_test.go"]
+    },
+    {
+      "id": "T04",
+      "title": "Parallel walkers",
+      "stage": "P4",
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "T05",
+      "title": "Collected, callback, and pull APIs",
+      "stage": "P4",
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "T06",
+      "title": "Ordered and unordered delivery",
+      "stage": "P4",
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "T07",
+      "title": "Walk builders",
+      "stage": "P1",
+      "status": "IMPLEMENTED",
+      "evidence": ["internal/walk/builder.go", "internal/walk/builder_test.go"],
+      "note": "Serial WalkBuilder and MultiWalker only. Parallel builders remain P4."
+    },
+    {
+      "id": "T08",
+      "title": "Contents-first emission",
+      "stage": "P1",
+      "status": "IMPLEMENTED",
+      "evidence": ["internal/walk/builder.go", "internal/walk/builder_test.go"]
+    },
+    {
+      "id": "T09",
+      "title": "Stateful per-directory batches",
+      "stage": "P4",
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "T10",
+      "title": "Several roots with one worker budget",
+      "stage": "P4",
+      "status": "NOT_IMPLEMENTED",
+      "note": "Serial multi-root exists in WalkBuilder. Concurrent multi-root and a shared worker budget do not."
+    },
+    {
+      "id": "T11",
+      "title": "Native paths and invalid UTF-8 within OS rules",
+      "stage": "P1",
+      "status": "PARTIAL",
+      "evidence": ["internal/path", "internal/walk"],
+      "note": "Native path strings are retained. Windows unpaired surrogates and Unix non-UTF-8 names still need dedicated tests."
+    },
+    {
+      "id": "T12",
+      "title": "File and volume identity",
+      "stage": "P1",
+      "status": "PARTIAL",
+      "evidence": ["internal/platform"]
+    },
+    {
+      "id": "T13",
+      "title": "Hidden-file detection",
+      "stage": "P1",
+      "status": "PARTIAL",
+      "evidence": ["internal/platform/hidden.go"]
+    },
+    {
+      "id": "T14",
+      "title": "Symlink and reparse handling",
+      "stage": "P1",
+      "status": "PARTIAL",
+      "evidence": ["internal/walk/visit.go"],
+      "note": "Follow/skip/loop/path-escape are implemented for ordinary symlinks. Windows reparse variants need native tests."
+    },
+    {
+      "id": "T15",
+      "title": "Same-filesystem boundary",
+      "stage": "P1",
+      "status": "PARTIAL",
+      "evidence": ["internal/walk/visit.go", "internal/platform"]
+    },
+    {
+      "id": "T16",
+      "title": "Nested ignore sources",
+      "stage": "P2",
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "T17",
+      "title": "Ignore precedence and overrides",
+      "stage": "P2",
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "T18",
+      "title": "Named file types",
+      "stage": "P2",
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "T19",
+      "title": "Standard skip directories",
+      "stage": "P2",
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "T20",
+      "title": "Reusable selection matchers",
+      "stage": "P2",
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "T21",
+      "title": "Full ScanReport",
+      "stage": "P3",
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "T22",
+      "title": "CompactScanReport without first building a full report",
+      "stage": "P3",
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "T23",
+      "title": "ScanPaths without full-scan I/O",
+      "stage": "P3",
+      "status": "NOT_IMPLEMENTED",
+      "note": "Must not be implemented as Scan plus path extraction. max_file_bytes does not apply to this API."
+    },
+    {
+      "id": "T24",
+      "title": "Sizes, SHA-256, revision, and descriptor v2 exact byte feed",
+      "stage": "P3",
+      "status": "NOT_IMPLEMENTED",
+      "note": "Descriptor is not a JSON hash. Scheduling and cancellation are excluded from the feed."
+    },
+    {
+      "id": "T25",
+      "title": "Typed skips, warnings, and termination",
+      "stage": "P3",
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "T26",
+      "title": "Verified content callbacks",
+      "stage": "P5",
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "T27",
+      "title": "Binary and size read policy",
+      "stage": "P5",
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "T28",
+      "title": "Fast and strict validation",
+      "stage": "P5",
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "T29",
+      "title": "Provisional chunks and FileEnd commit",
+      "stage": "P5",
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "T30",
+      "title": "Executors, admission timeout, bounded queues, cancel, multi-root limits",
+      "stage": "P4",
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "T31",
+      "title": "Cache format 2, prefix invalidation, sessions",
+      "stage": "P6",
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "T32",
+      "title": "Incremental updates, watch plans, and rescan reasons",
+      "stage": "P6",
+      "status": "NOT_IMPLEMENTED",
+      "labels": [
+        "Incremental",
+        "FullRescan:PolicyChanged",
+        "FullRescan:IgnoreInputChanged",
+        "FullRescan:StructuralChange",
+        "FullRescan:IncompletePreviousState"
+      ]
+    },
+    {
+      "id": "T33",
+      "title": "Optional codecs equivalent to Rust serde features",
+      "stage": "P3",
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "T34",
+      "title": "Optional notify/fsnotify event adapter as a separate module",
+      "stage": "P7",
+      "status": "NOT_IMPLEMENTED",
+      "note": "fsnotify must not enter the required dependency graph of the main module."
+    },
+    {
+      "id": "T35",
+      "title": "Native tests, oracles, fuzz/race/leaks, honest benches, compiling examples",
+      "stage": "P8",
+      "status": "NOT_IMPLEMENTED",
+      "note": "P0/P1 add the harness and serial walker tests. That is not a full-port evidence close."
+    }
+  ]
+}

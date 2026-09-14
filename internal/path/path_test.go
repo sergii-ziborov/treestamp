@@ -1,0 +1,35 @@
+package pathx
+
+import (
+	"reflect"
+	"testing"
+)
+
+func TestIsSameOrDescendant(t *testing.T) {
+	if !IsSameOrDescendant("src", "src") {
+		t.Fatal("src")
+	}
+	if !IsSameOrDescendant("src/nested/a.rs", "src") {
+		t.Fatal("nested")
+	}
+	if IsSameOrDescendant("src2", "src") {
+		t.Fatal("src2 must not match src")
+	}
+	if IsSameOrDescendant("src", "src/nested") {
+		t.Fatal("ancestor must not match longer prefix")
+	}
+}
+
+func TestCollapsePathPrefixes(t *testing.T) {
+	got := CollapsePathPrefixes([]string{"src/nested", "src", "src", "src2"})
+	want := []string{"src", "src2"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v want %v", got, want)
+	}
+	if !PathCoveredByPrefixes("src/a.rs", got) {
+		t.Fatal("src/a.rs")
+	}
+	if PathCoveredByPrefixes("src3/c.rs", got) {
+		t.Fatal("src3")
+	}
+}

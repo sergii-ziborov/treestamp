@@ -1,0 +1,57 @@
+{
+  "updated": "2026-09-14",
+  "phase": "P1",
+  "claim": "Treestamp is a native Go port in progress. A serial walker exists. The scanning API does not.",
+  "forbidden_claim": "full port",
+  "stages": {
+    "P0": {
+      "status": "DONE_WITH_REVIEW_GAP",
+      "exit": "Pinned 29c003a6, listed 108 crate-root exports, extracted member inventory, wrote T01-T35, fixture/driver protocol, and a Rust reference driver. Regex inventory is not yet a reviewed complete member list.",
+      "open": [
+        "Review every extracted method, field, and enum variant against rustdoc",
+        "Record rustc/cargo versions used for the first rust test baseline replay"
+      ]
+    },
+    "P1": {
+      "status": "DONE_SERIAL_WALKER",
+      "exit": "Iterative serial walker, WalkBuilder, depth/max_open/errors, file root, platform identity helpers, raw tests.",
+      "open": [
+        "Windows reparse and invalid-name corpus",
+        "Official B01-B03 campaign numbers remain NOT_RUN"
+      ]
+    },
+    "P2": { "status": "NOT_STARTED" },
+    "P3": { "status": "NOT_STARTED" },
+    "P4": { "status": "NOT_STARTED" },
+    "P5": { "status": "NOT_STARTED" },
+    "P6": { "status": "NOT_STARTED" },
+    "P7": { "status": "NOT_STARTED" },
+    "P8": { "status": "NOT_STARTED" }
+  },
+  "benchmarks": {
+    "B01": "NOT_RUN",
+    "B02": "NOT_RUN",
+    "B03": "NOT_RUN",
+    "B04": "NOT_RUN",
+    "B05": "NOT_RUN",
+    "B06": "NOT_RUN",
+    "B07": "NOT_RUN",
+    "B08": "NOT_RUN",
+    "B09": "NOT_RUN",
+    "B10": "NOT_RUN",
+    "B11": "NOT_RUN",
+    "B12": "NOT_RUN",
+    "B13": "NOT_RUN",
+    "B14": "NOT_RUN"
+  },
+  "tests_run_this_stage": [
+    "python tools/audit.py",
+    "python -m unittest discover -s tools -p test_*.py",
+    "python tools/audit.py --require-full (correctly failed)",
+    "GOTOOLCHAIN=go1.25.0 go test ./..."
+  ],
+  "core_gaps": [
+    "Scan, ScanCompact, ScanPaths, and NewScanner return not implemented",
+    "Ignore, selection, reports, hashes, descriptor, cache, incremental, executors, and watch adapter are absent"
+  ]
+}

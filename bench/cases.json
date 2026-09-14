@@ -1,0 +1,92 @@
+{
+  "schema": 1,
+  "rule": "Do not fold these classes into one overall-fastest number. Paths-only must not pay hashing. A full report must not be compared to a walker that only incremented a counter. Ordered APIs include sort and result collection inside the timer. No-retention streaming correctness is a separate run so validation memory cannot distort the measurement.",
+  "sizes": {
+    "overhead": [10, 100, 1000],
+    "required": [10000, 100000, 1000000]
+  },
+  "shapes": ["balanced", "wide", "deep", "skewed", "ignore-heavy"],
+  "contents": ["empty", "1KiB", "64KiB", "1MiB", "binary", "mixed", "max_file_bytes-boundary"],
+  "cases": [
+    {
+      "id": "B01",
+      "class": "raw_unordered",
+      "status": "NOT_RUN",
+      "comparators": ["filepath.WalkDir", "fs.WalkDir", "ReadDir-batch", "fastwalk unordered", "godirwalk unsorted", "weavatrix Walker/ParallelWalker", "jwalk", "dirwalk", "walkdir"]
+    },
+    {
+      "id": "B02",
+      "class": "sorted_paths",
+      "status": "NOT_RUN",
+      "comparators": ["treestamp WalkBuilder sort", "godirwalk sorted", "weavatrix WalkBuilder"]
+    },
+    {
+      "id": "B03",
+      "class": "metadata",
+      "status": "NOT_RUN",
+      "note": "fdir metadata must not be measured only via serial statSync"
+    },
+    {
+      "id": "B04",
+      "class": "git_selection",
+      "status": "NOT_RUN",
+      "comparators": ["gocodewalker", "ignore 0.4.33", "git check-ignore oracle"]
+    },
+    {
+      "id": "B05",
+      "class": "repository_selection",
+      "status": "NOT_RUN",
+      "comparators": ["weavatrix scan_repository_paths", "gocodewalker with matching sources"]
+    },
+    {
+      "id": "B06",
+      "class": "content_hash",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "B07",
+      "class": "full_and_compact_reports",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "B08",
+      "class": "verified_streaming",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "B09",
+      "class": "cache_lifecycle",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "B10",
+      "class": "incremental_lifecycle",
+      "status": "NOT_RUN",
+      "note": "N=10k/100k/1M, k=0/1/10/100/1%/bulk. Compare each quiescent batch to a full rescan. Incremental is not wholly O(k): retained N records and revision still cost."
+    },
+    {
+      "id": "B11",
+      "class": "multi_root",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "B12",
+      "class": "matcher",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "B13",
+      "class": "hardening_overhead",
+      "status": "NOT_RUN",
+      "note": "Separate campaign. An os.Root backend would be a different profile, not a silent default."
+    },
+    {
+      "id": "B14",
+      "class": "downstream_consumer",
+      "status": "NOT_RUN"
+    }
+  ],
+  "composed_rows": {
+    "rule": "A foreign walker may appear in a full-pipeline row only if an independent report/hash layer is built beside it. Label that row COMPOSED. Missing scanner guarantees stay marked. The competitor must not call treestamp under the hood."
+  }
+}
