@@ -26,3 +26,5 @@ Thumbs.db
 # Editor / OS
 .env
 .env.*
+__pycache__/
+*.pyc
