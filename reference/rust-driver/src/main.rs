@@ -1,8 +1,10 @@
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::io::{self, Read};
 use weavatrix_scan::{
-    ErrorPolicy, RootSymlinkPolicy, WalkBuilder, WalkOptions, WalkSkipReason, Walker,
+    CompactScanReport, ErrorPolicy, IgnoreSourceKind, RootSymlinkPolicy, ScanReport,
+    ScanTermination, SkipKind, WalkBuilder, WalkOptions, WalkSkipReason, Walker, scan_repository,
+    scan_repository_compact, scan_repository_paths,
 };
 
 #[derive(Debug, Deserialize)]
@@ -36,6 +38,22 @@ struct DriverOptions {
     contents_first: bool,
 }
 
+struct ReportParts<'a> {
+    files: Vec<Value>,
+    skipped: Vec<Value>,
+    warnings: Vec<Value>,
+    sources: Vec<Value>,
+    revision: &'a str,
+    descriptor_version: u32,
+    descriptor_policy: &'a str,
+    complete: bool,
+    termination: Option<ScanTermination>,
+    portable: bool,
+    reused_hashes: u64,
+    content_reads: u64,
+    fingerprint_reads: u64,
+}
+
 fn main() {
     let mut raw = String::new();
     if let Err(error) = io::stdin().read_to_string(&mut raw) {
@@ -49,12 +67,11 @@ fn main() {
             std::process::exit(1);
         }
     };
+    if run_scan(&request) {
+        return;
+    }
     match request.op.as_str() {
         "raw_walk_serial" | "raw_walk_sorted" => {}
-        "scan" | "scan_compact" | "scan_paths" => {
-            emit_err("use weavatrix-scan directly for scan ops; this driver starts at raw walk");
-            std::process::exit(2);
-        }
         other => {
             emit_err(&format!("unknown op {other}"));
             std::process::exit(1);
@@ -108,6 +125,186 @@ fn main() {
     }
 }
 
+fn run_scan(request: &Request) -> bool {
+    match request.op.as_str() {
+        "scan" => emit_result(scan_repository(&request.root).map(|report| scan_json(&report))),
+        "scan_compact" => {
+            emit_result(scan_repository_compact(&request.root).map(|report| compact_json(&report)))
+        }
+        "scan_paths" => {
+            emit_result(scan_repository_paths(&request.root).map(|paths| json!({ "paths": paths })))
+        }
+        _ => return false,
+    }
+    true
+}
+
+fn emit_result<E: std::fmt::Display>(result: Result<Value, E>) {
+    match result {
+        Ok(data) => println!(
+            "{}",
+            json!({ "data": data, "timing": Value::Null, "error": Value::Null })
+        ),
+        Err(error) => {
+            emit_err(&error.to_string());
+            std::process::exit(1);
+        }
+    }
+}
+
+fn scan_json(report: &ScanReport) -> Value {
+    let files = report
+        .files
+        .iter()
+        .map(|file| {
+            json!({
+                "relative": file.relative,
+                "bytes": file.bytes,
+                "content_hash": file.content_hash,
+                "content_fingerprint": file.content_fingerprint,
+                "binary_checked": file.binary_checked,
+            })
+        })
+        .collect::<Vec<_>>();
+    report_json(ReportParts {
+        files,
+        skipped: report.skipped.iter().map(skip_json).collect(),
+        warnings: report
+            .warnings
+            .iter()
+            .map(|warning| {
+                json!({
+                    "relative": warning.relative,
+                    "message": warning.message,
+                })
+            })
+            .collect(),
+        sources: report.ignore_sources.iter().map(source_json).collect(),
+        revision: &report.revision,
+        descriptor_version: report.descriptor.version,
+        descriptor_policy: &report.descriptor.policy,
+        complete: report.complete,
+        termination: report.termination,
+        portable: report.portable,
+        reused_hashes: report.cache.reused_hashes,
+        content_reads: report.cache.content_reads,
+        fingerprint_reads: report.cache.fingerprint_reads,
+    })
+}
+
+fn compact_json(report: &CompactScanReport) -> Value {
+    let files = report.files.iter().map(|file| {
+        let content = file.content.as_deref();
+        json!({
+            "relative": file.relative.as_ref(),
+            "bytes": file.bytes,
+            "content_hash": file.content_hash(),
+            "content_fingerprint": content.and_then(|value| value.content_fingerprint.as_deref()),
+            "binary_checked": content.is_some_and(|value| value.binary_checked),
+        })
+    }).collect::<Vec<_>>();
+    report_json(ReportParts {
+        files,
+        skipped: report.skipped.iter().map(skip_json).collect(),
+        warnings: report
+            .warnings
+            .iter()
+            .map(|warning| {
+                json!({
+                    "relative": warning.relative,
+                    "message": warning.message,
+                })
+            })
+            .collect(),
+        sources: report.ignore_sources.iter().map(source_json).collect(),
+        revision: &report.revision,
+        descriptor_version: report.descriptor.version,
+        descriptor_policy: &report.descriptor.policy,
+        complete: report.complete,
+        termination: report.termination,
+        portable: report.portable,
+        reused_hashes: report.cache.reused_hashes,
+        content_reads: report.cache.content_reads,
+        fingerprint_reads: report.cache.fingerprint_reads,
+    })
+}
+
+fn report_json(parts: ReportParts<'_>) -> Value {
+    json!({
+        "files": parts.files,
+        "skipped": parts.skipped,
+        "warnings": parts.warnings,
+        "ignore_sources": parts.sources,
+        "revision": parts.revision,
+        "descriptor": { "version": parts.descriptor_version, "policy": parts.descriptor_policy },
+        "complete": parts.complete,
+        "termination": parts.termination.map(termination_label),
+        "portable": parts.portable,
+        "cache": {
+            "reused_hashes": parts.reused_hashes,
+            "content_reads": parts.content_reads,
+            "fingerprint_reads": parts.fingerprint_reads,
+        },
+    })
+}
+
+fn skip_json(entry: &weavatrix_scan::SkippedEntry) -> Value {
+    json!({
+        "relative": entry.relative,
+        "kind": scan_skip_label(entry.kind),
+        "detail": entry.detail,
+    })
+}
+
+fn source_json(source: &weavatrix_scan::IgnoreSourceEvidence) -> Value {
+    json!({
+        "kind": source_label(source.kind),
+        "location": source.location,
+        "content_hash": source.content_hash,
+    })
+}
+
+fn scan_skip_label(kind: SkipKind) -> &'static str {
+    match kind {
+        SkipKind::Binary => "binary",
+        SkipKind::FileSystemBoundary => "filesystem_boundary",
+        SkipKind::Extension => "extension",
+        SkipKind::Ignored => "ignored",
+        SkipKind::IoError => "io_error",
+        SkipKind::MaxDepth => "max_depth",
+        SkipKind::Oversized => "oversized",
+        SkipKind::PathEscape => "path_escape",
+        SkipKind::StandardDirectory => "standard_directory",
+        SkipKind::Hidden => "hidden",
+        SkipKind::Override => "override",
+        SkipKind::Symlink => "symlink",
+        SkipKind::SymlinkLoop => "symlink_loop",
+        SkipKind::ScanLimit => "scan_limit",
+        SkipKind::ConcurrentModification => "concurrent_modification",
+    }
+}
+
+fn source_label(kind: IgnoreSourceKind) -> &'static str {
+    match kind {
+        IgnoreSourceKind::GitGlobal => "git_global",
+        IgnoreSourceKind::GitExclude => "git_exclude",
+        IgnoreSourceKind::GitIgnore => "git_ignore",
+        IgnoreSourceKind::DotIgnore => "dot_ignore",
+        IgnoreSourceKind::Custom => "custom",
+        IgnoreSourceKind::Explicit => "explicit",
+        IgnoreSourceKind::Override => "override",
+    }
+}
+
+fn termination_label(value: ScanTermination) -> &'static str {
+    match value {
+        ScanTermination::MaxEntries => "max_entries",
+        ScanTermination::MaxTotalBytes => "max_total_bytes",
+        ScanTermination::Timeout => "timeout",
+        ScanTermination::Cancelled => "cancelled",
+    }
+}
+
 fn collect<I>(walker: I) -> Result<Vec<Value>, String>
 where
     I: Iterator<Item = Result<weavatrix_scan::WalkEntry, weavatrix_scan::WalkError>>,
@@ -115,10 +312,7 @@ where
     let mut entries = Vec::new();
     for item in walker {
         let entry = item.map_err(|error| error.to_string())?;
-        let relative = entry
-            .relative_path()
-            .to_string_lossy()
-            .replace('\\', "/");
+        let relative = entry.relative_path().to_string_lossy().replace('\\', "/");
         let skip = entry.skip_reason().map(skip_label);
         entries.push(json!({
             "relative": relative,

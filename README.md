@@ -10,20 +10,30 @@ Treestamp is a native Go library for verifiable repository scanning: walk,
 select, read, and produce a deterministic manifest. It is not a parser, search
 engine, graph, embedder, secret scanner, MCP server, web service, or daemon.
 
-**Status on 14 September 2026:** design, bootstrap, and a serial walker.
-The scanning API is not implemented. Benchmarks are `NOT_RUN`. This is not a
-finished scanner and not a full port.
+**Status on 15 September 2026:** native walk, ignore selection, Scan family,
+content visit, cache v2, incremental watch apply, and Go-market walk APIs.
+A Windows/NTFS fixture and a symlink-capable Linux/overlayfs Docker fixture
+pass the pinned Rust driver and equivalent Go-competitor checks, with
+documented platform differences. The official benchmark campaign is still
+open. Benchmarks are `NOT_RUN`.
+This is not a full port.
 
 ## What exists now
 
 | Surface | Status |
 | --- | --- |
-| Iterative serial `Walker`, `WalkBuilder` | Implemented (P1) |
-| Depth, `max_open`, error policy, file root | Implemented (P1) |
-| `Scan`, `ScanCompact`, `ScanPaths`, `NewScanner` | Not implemented |
-| Ignore, named types, matchers | Not implemented |
-| Reports, hashes, descriptor, revision | Not implemented |
-| Parallel executors, cache v2, incremental, watch adapter | Not implemented |
+| Iterative serial `Walker`, `WalkBuilder` | Implemented |
+| `WalkParallel`, `ParallelWalker` visit/collect/pull | Implemented |
+| `Walk` / `WalkUnsorted` / `WalkDefault` / `ReadDirents` / `FileWalker` | Implemented |
+| Nested `.gitignore` / `.ignore` / `.weavatrixignore`, overrides | Implemented |
+| Standard skips, hidden policy, 265 named types, `WithGlobs` | Implemented |
+| `Scan`, `ScanCompact`, `ScanPaths` (no hash / no `max_file_bytes`) | Implemented |
+| SHA-256 (`sha256:`), revision, descriptor v2 byte feed | Implemented |
+| Cache v2, `ScanCached`, `ScanIncremental`, sessions | Implemented |
+| Watch plans, typed rescan reasons, portable report, delta | Implemented |
+| `VisitContent` / `ScanInto` (no retained manifest) / snapshot verify | Implemented |
+| Optional fsnotify module | Not implemented |
+| Rust/Go-competitor functional differential | Windows/NTFS and Linux/overlayfs fixtures pass; broader CI matrix open |
 | Official B01–B14 campaign | `NOT_RUN` |
 
 Do not treat `filepath.WalkDir` usage elsewhere as this library. The serial
@@ -72,14 +82,24 @@ func main() {
 }
 ```
 
-The functions below compile and return a typed not-implemented error. They
-are the intended scan contract, not a working scanner:
+Scan, path-only listing, and compact reports are live. `ScanPaths` does not
+hash and does not apply `max_file_bytes`.
 
 ```go
-_, err := treestamp.Scan(ctx, root)
-_, err = treestamp.ScanCompact(ctx, root)
-_, err = treestamp.ScanPaths(ctx, root)
+paths, err := treestamp.ScanPaths(ctx, root)
+report, err := treestamp.Scan(ctx, root)
+compact, err := treestamp.ScanCompact(ctx, root)
+_ = paths
+_ = report
+_ = compact
 ```
+
+`Walk` / `WalkUnsorted` / `WalkParallel` are the fastwalk/godirwalk-class
+walks. Return `ErrTraverseLink`, `WalkTraverseLink` from a parallel visitor,
+or call `Walker.TraverseCurrentSymlink` to select one directory symlink;
+path-escape, loop, depth, and filesystem guards remain active. `ScanPaths` is
+the gocodewalker-class ignore-aware listing. Cache, incremental watch apply,
+and verified streaming are live; official benches are still `NOT_RUN`.
 
 ## What “full” means later
 
@@ -119,6 +139,7 @@ Pinned oracle: weavatrix-scan **0.5.2**, commit
 ```text
 python3 tools/audit.py
 python3 -m unittest discover -s tools -p "test_*.py"
+python3 tools/run_functional_parity.py
 python3 tools/audit.py --require-full
 ```
 
@@ -127,6 +148,7 @@ evidence. That failure is correct.
 
 ```text
 go test ./...
+cd bench/go-compat && go test ./...
 ```
 
 ## License

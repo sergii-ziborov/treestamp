@@ -1,32 +1,18 @@
 {
-  "updated": "2026-09-14",
-  "phase": "P1",
-  "claim": "Treestamp is a native Go port in progress. A serial walker exists. The scanning API does not.",
+  "updated": "2026-09-15",
+  "phase": "P3-P6",
+  "claim": "Treestamp exposes the Weavatrix Scan method surface and the Go-market walk APIs. Deterministic Windows/NTFS and Linux/overlayfs fixtures pass raw walk, ScanPaths, Scan, and ScanCompact against the pinned Rust process, including exact descriptor/revision evidence; Linux also passes raw follow-links parity. Equivalent Go-competitor checks pass with explicit platform differences. It is not a full port.",
   "forbidden_claim": "full port",
   "stages": {
-    "P0": {
-      "status": "DONE_WITH_REVIEW_GAP",
-      "exit": "Pinned 29c003a6, listed 108 crate-root exports, extracted member inventory, wrote T01-T35, fixture/driver protocol, and a Rust reference driver. Regex inventory is not yet a reviewed complete member list.",
-      "open": [
-        "Review every extracted method, field, and enum variant against rustdoc",
-        "Record rustc/cargo versions used for the first rust test baseline replay"
-      ]
-    },
-    "P1": {
-      "status": "DONE_SERIAL_WALKER",
-      "exit": "Iterative serial walker, WalkBuilder, depth/max_open/errors, file root, platform identity helpers, raw tests.",
-      "open": [
-        "Windows reparse and invalid-name corpus",
-        "Official B01-B03 campaign numbers remain NOT_RUN"
-      ]
-    },
-    "P2": { "status": "NOT_STARTED" },
-    "P3": { "status": "NOT_STARTED" },
-    "P4": { "status": "NOT_STARTED" },
-    "P5": { "status": "NOT_STARTED" },
-    "P6": { "status": "NOT_STARTED" },
-    "P7": { "status": "NOT_STARTED" },
-    "P8": { "status": "NOT_STARTED" }
+    "P0": { "status": "DONE_WITH_REVIEW_GAP" },
+    "P1": { "status": "DONE_SERIAL_WALKER" },
+    "P2": { "status": "DONE_IGNORE_SELECTION" },
+    "P3": { "status": "DONE_SCAN_APIS", "open": ["Broader-options Rust differential and cross-platform CI"] },
+    "P4": { "status": "DONE_PARALLEL", "open": ["Shared executor admission timeout", "True work-stealing lanes"] },
+    "P5": { "status": "DONE_CONTENT_VISIT", "open": ["Streaming discovery overlap"] },
+    "P6": { "status": "DONE_CACHE_INCREMENTAL", "open": ["Git-global path via git config parse"] },
+    "P7": { "status": "NOT_STARTED", "open": ["fsnotify adapter module"] },
+    "P8": { "status": "PARTIAL", "open": ["Official B01-B14 MEASURED", "fuzz/leak campaign"] }
   },
   "benchmarks": {
     "B01": "NOT_RUN",
@@ -44,14 +30,24 @@
     "B13": "NOT_RUN",
     "B14": "NOT_RUN"
   },
+  "functional_parity": {
+    "status": "PASS",
+    "platforms": ["Windows/NTFS", "Linux/overlayfs (Docker)"],
+    "evidence": ["compat/results/windows-ntfs-functional.json", "compat/results/linux-overlayfs-functional.json"],
+    "rust_operations": ["raw_walk_serial", "raw_walk_sorted", "scan_paths", "scan", "scan_compact", "raw_walk_follow (Linux)"],
+    "limits": ["Windows symlink privilege unavailable", "local Docker run is not a CI matrix", "cache/watch sequence not yet compared", "not a benchmark"]
+  },
   "tests_run_this_stage": [
-    "python tools/audit.py",
-    "python -m unittest discover -s tools -p test_*.py",
-    "python tools/audit.py --require-full (correctly failed)",
-    "GOTOOLCHAIN=go1.25.0 go test ./..."
+    "go test ./...",
+    "go test ./... (bench/go-compat module)",
+    "go test -race ./... (Linux Docker, main and go-compat modules)",
+    "go test ./... (Alpine Linux, main and go-compat modules)",
+    "GOOS=darwin go build ./internal/platform ./internal/walk",
+    "python tools/run_functional_parity.py"
   ],
   "core_gaps": [
-    "Scan, ScanCompact, ScanPaths, and NewScanner return not implemented",
-    "Ignore, selection, reports, hashes, descriptor, cache, incremental, executors, and watch adapter are absent"
+    "Optional fsnotify module (must stay out of go.mod)",
+    "Official B01-B14 performance campaign still NOT_RUN",
+    "Cross-platform CI and cache/watch Rust differentials"
   ]
 }

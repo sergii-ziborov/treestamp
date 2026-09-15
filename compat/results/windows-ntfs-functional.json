@@ -1,0 +1,79 @@
+{
+  "schema": 1,
+  "campaign": "functional-parity",
+  "status": "PASS",
+  "recorded_at": "2026-09-15T11:00:55.581930+00:00",
+  "platform": {
+    "os": "Windows-11-10.0.26200-SP0",
+    "filesystem": "NTFS",
+    "architecture": "AMD64",
+    "container": false
+  },
+  "toolchain": {
+    "go": "go version go1.25.0 windows/amd64",
+    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+    "cargo": "cargo 1.97.1 (c980f4866 2026-06-30)"
+  },
+  "pins": {
+    "weavatrix_scan": "0.5.2@29c003a6ad541c9a10faf30505235375fa78b9d8",
+    "fastwalk": "v1.0.14",
+    "gocodewalker": "v1.5.1",
+    "godirwalk": "v1.17.0"
+  },
+  "fixture": "sha256:744170b3ddbb649bb4ea39c11ebf80764d77d1bd67fd347b06cb6649e576133a",
+  "capabilities": {
+    "symlinks": false,
+    "symlink_error": "error 1314: A required privilege is not held by the client"
+  },
+  "rust_oracle": {
+    "raw_walk_serial": {
+      "status": "PASS",
+      "items": 19
+    },
+    "raw_walk_sorted": {
+      "status": "PASS",
+      "items": 19
+    },
+    "scan_paths": {
+      "status": "PASS",
+      "items": 9
+    },
+    "scan": {
+      "status": "PASS",
+      "items": 8
+    },
+    "scan_compact": {
+      "status": "PASS",
+      "items": 8
+    }
+  },
+  "go_competitors": {
+    "status": "PASS",
+    "passed": [
+      "TestBinarySelectionParity",
+      "TestCallbackStopParity",
+      "TestExtensionSelectionParity",
+      "TestGodirwalkUnsortedStatus",
+      "TestHiddenSelectionSemantics",
+      "TestRawWalkNodeSetParity",
+      "TestRepositoryIgnoreSelectionParity",
+      "TestSkipDirectoryParity",
+      "TestSortedDepthFirstParity",
+      "TestStandardDirectorySelectionParity"
+    ],
+    "skipped": [
+      "TestDanglingFollowErrorDifference",
+      "TestDirectorySymlinkFollowParity",
+      "TestFollowRejectsRootEscape",
+      "TestFollowStopsAncestorLoop",
+      "TestMaxDepthPrecedesLoop",
+      "TestRootSymlinkPolicies",
+      "TestSymlinksNotFollowedParity"
+    ],
+    "documented_differences": [
+      "gocodewalker v1.5.1 uses the Windows hidden attribute; Treestamp also treats dot names as hidden",
+      "godirwalk v1.17.0 Unsorted returned EOF after 2 nodes"
+    ]
+  },
+  "benchmark_timings": "NOT_RUN"
+}

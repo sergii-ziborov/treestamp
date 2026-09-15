@@ -1,6 +1,7 @@
 # Driver and fixture protocol
 
-This is the machine contract between Treestamp, the pinned Rust oracle, and later competitor adapters. It is not a scanner.
+This is the machine contract between Treestamp, the pinned Rust oracle, and
+competitor adapters. It is not a scanner.
 
 ## Process shape
 
@@ -41,9 +42,9 @@ Supported now:
 | --- | --- | --- |
 | `raw_walk_serial` | Treestamp walker / Rust `Walker` | Implemented |
 | `raw_walk_sorted` | `WalkBuilder` + sort by file name | Implemented |
-| `scan` | Treestamp `Scan` | Not implemented |
-| `scan_compact` | Treestamp `ScanCompact` | Not implemented |
-| `scan_paths` | Treestamp `ScanPaths` | Not implemented |
+| `scan` | Treestamp / Rust full scan | Implemented |
+| `scan_compact` | Treestamp / Rust compact scan | Implemented |
+| `scan_paths` | Treestamp / Rust path-only scan | Implemented |
 
 ## Response
 
@@ -71,6 +72,18 @@ Supported now:
 
 Relative paths use `/` only **after** comparison normalization. Drivers emit native relatives; the compare tool converts separators and does not rewrite names.
 
+Full and compact scan responses use one normalized semantic shape: selected
+relative path, bytes, content hash/fingerprint, binary-check evidence, typed
+skips, warnings, ignore sources, revision, descriptor, completeness,
+termination, portability, and cache counters. Host-local absolute paths,
+timestamps, and file identities are intentionally absent. `scan_paths` is
+still a distinct content-free operation, so it may retain a binary candidate
+that a full content scan later rejects.
+
+The scan operations currently exercise the pinned default options only.
+`options` in this protocol applies to raw-walk operations; scan callers must
+omit it until the shared scan-option schema is implemented.
+
 ## Comparison rules
 
 - Ordered ops: compare sequences.
@@ -96,3 +109,12 @@ Each measured row must store Go/Rust/dependency versions, OS, filesystem, CPU, R
 States: `NOT_RUN`, `UNSUPPORTED`, `PARITY_FAIL`, `EXECUTION_FAIL`, `MEASURED`.
 
 `speedup = T_reference / T_treestamp`. A value above 1 is a speedup. Missing support is not infinite speedup.
+
+The non-timing functional campaign is:
+
+```text
+python3 tools/run_functional_parity.py
+```
+
+Recorded platform results live under `compat/results/`. They do not change any
+B01–B14 row from `NOT_RUN` to `MEASURED`.

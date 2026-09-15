@@ -28,19 +28,24 @@
       "id": "T04",
       "title": "Parallel walkers",
       "stage": "P4",
-      "status": "NOT_IMPLEMENTED"
+      "status": "IMPLEMENTED",
+      "evidence": ["internal/walk/parallel.go"]
     },
     {
       "id": "T05",
       "title": "Collected, callback, and pull APIs",
       "stage": "P4",
-      "status": "NOT_IMPLEMENTED"
+      "status": "IMPLEMENTED",
+      "evidence": ["internal/walk/parallel.go", "internal/walk/pull.go"],
+      "note": "Callback, collect, and bounded pull iterator exist."
     },
     {
       "id": "T06",
       "title": "Ordered and unordered delivery",
       "stage": "P4",
-      "status": "NOT_IMPLEMENTED"
+      "status": "IMPLEMENTED",
+      "evidence": ["internal/walk/parallel.go", "internal/walk/walker.go"],
+      "note": "Unordered parallel plus optional collect+sort. Ordered DFS is the serial walker."
     },
     {
       "id": "T07",
@@ -61,14 +66,16 @@
       "id": "T09",
       "title": "Stateful per-directory batches",
       "stage": "P4",
-      "status": "NOT_IMPLEMENTED"
+      "status": "IMPLEMENTED",
+      "evidence": ["internal/walk/stateful.go"]
     },
     {
       "id": "T10",
       "title": "Several roots with one worker budget",
       "stage": "P4",
-      "status": "NOT_IMPLEMENTED",
-      "note": "Serial multi-root exists in WalkBuilder. Concurrent multi-root and a shared worker budget do not."
+      "status": "IMPLEMENTED",
+      "evidence": ["multi.go", "parallel.go"],
+      "note": "MultiScanner and ParallelMultiWalker share a bounded worker count across roots."
     },
     {
       "id": "T11",
@@ -97,8 +104,8 @@
       "title": "Symlink and reparse handling",
       "stage": "P1",
       "status": "PARTIAL",
-      "evidence": ["internal/walk/visit.go"],
-      "note": "Follow/skip/loop/path-escape are implemented for ordinary symlinks. Windows reparse variants need native tests."
+      "evidence": ["internal/walk/visit.go", "internal/walk/parallel.go", "bench/go-compat/symlink_parity_test.go", "compat/results/linux-overlayfs-functional.json"],
+      "note": "Serial and parallel follow/skip/loop/path-escape behavior passes ordinary Linux symlink tests. Windows reparse variants still need native tests."
     },
     {
       "id": "T15",
@@ -111,105 +118,123 @@
       "id": "T16",
       "title": "Nested ignore sources",
       "stage": "P2",
-      "status": "NOT_IMPLEMENTED"
+      "status": "IMPLEMENTED",
+      "evidence": ["internal/ignore"]
     },
     {
       "id": "T17",
       "title": "Ignore precedence and overrides",
       "stage": "P2",
-      "status": "NOT_IMPLEMENTED"
+      "status": "IMPLEMENTED",
+      "evidence": ["internal/ignore/engine.go"]
     },
     {
       "id": "T18",
       "title": "Named file types",
       "stage": "P2",
-      "status": "NOT_IMPLEMENTED"
+      "status": "IMPLEMENTED",
+      "evidence": ["internal/filetypes"]
     },
     {
       "id": "T19",
       "title": "Standard skip directories",
       "stage": "P2",
-      "status": "NOT_IMPLEMENTED"
+      "status": "IMPLEMENTED",
+      "evidence": ["internal/selection/matcher.go"]
     },
     {
       "id": "T20",
       "title": "Reusable selection matchers",
       "stage": "P2",
-      "status": "NOT_IMPLEMENTED"
+      "status": "IMPLEMENTED",
+      "evidence": ["selection.go"]
     },
     {
       "id": "T21",
       "title": "Full ScanReport",
       "stage": "P3",
-      "status": "NOT_IMPLEMENTED"
+      "status": "IMPLEMENTED",
+      "evidence": ["internal/scan", "api.go"]
     },
     {
       "id": "T22",
       "title": "CompactScanReport without first building a full report",
       "stage": "P3",
-      "status": "NOT_IMPLEMENTED"
+      "status": "IMPLEMENTED",
+      "evidence": ["internal/scan/scan.go"],
+      "note": "Public compact records never store per-file absolute paths."
     },
     {
       "id": "T23",
       "title": "ScanPaths without full-scan I/O",
       "stage": "P3",
-      "status": "NOT_IMPLEMENTED",
+      "status": "IMPLEMENTED",
       "note": "Must not be implemented as Scan plus path extraction. max_file_bytes does not apply to this API."
     },
     {
       "id": "T24",
       "title": "Sizes, SHA-256, revision, and descriptor v2 exact byte feed",
       "stage": "P3",
-      "status": "NOT_IMPLEMENTED",
-      "note": "Descriptor is not a JSON hash. Scheduling and cancellation are excluded from the feed."
+      "status": "PARTIAL",
+      "evidence": ["tools/run_functional_parity.py", "compat/results/windows-ntfs-functional.json", "compat/results/linux-overlayfs-functional.json"],
+      "note": "Exact default descriptor, revision, hashes, fingerprints, and source evidence pass against the pinned Rust process on Windows/NTFS and Linux/overlayfs. Linux raw follow-links parity also passes; broader scan options and cross-platform CI remain open."
     },
     {
       "id": "T25",
       "title": "Typed skips, warnings, and termination",
       "stage": "P3",
-      "status": "NOT_IMPLEMENTED"
+      "status": "IMPLEMENTED",
+      "evidence": ["internal/scan/discover.go"],
+      "note": "Typed skips, warnings, and MaxEntries/MaxTotalBytes/Timeout/Cancelled termination."
     },
     {
       "id": "T26",
       "title": "Verified content callbacks",
       "stage": "P5",
-      "status": "NOT_IMPLEMENTED"
+      "status": "IMPLEMENTED",
+      "evidence": ["internal/scan/content.go", "content.go"]
     },
     {
       "id": "T27",
       "title": "Binary and size read policy",
       "stage": "P5",
-      "status": "NOT_IMPLEMENTED"
+      "status": "IMPLEMENTED",
+      "evidence": ["internal/scan/inspect.go"]
     },
     {
       "id": "T28",
       "title": "Fast and strict validation",
       "stage": "P5",
-      "status": "NOT_IMPLEMENTED"
+      "status": "IMPLEMENTED",
+      "evidence": ["internal/scan/inspect.go"]
     },
     {
       "id": "T29",
       "title": "Provisional chunks and FileEnd commit",
       "stage": "P5",
-      "status": "NOT_IMPLEMENTED"
+      "status": "IMPLEMENTED",
+      "evidence": ["internal/scan/content.go"]
     },
     {
       "id": "T30",
       "title": "Executors, admission timeout, bounded queues, cancel, multi-root limits",
       "stage": "P4",
-      "status": "NOT_IMPLEMENTED"
+      "status": "PARTIAL",
+      "note": "Executors, cancel, bounded queues, and multi-root limits exist. Admission timeout is not wired."
     },
     {
       "id": "T31",
       "title": "Cache format 2, prefix invalidation, sessions",
       "stage": "P6",
-      "status": "NOT_IMPLEMENTED"
+      "status": "IMPLEMENTED",
+      "evidence": ["cache.go", "session.go"]
     },
     {
       "id": "T32",
       "title": "Incremental updates, watch plans, and rescan reasons",
       "stage": "P6",
-      "status": "NOT_IMPLEMENTED",
+      "status": "IMPLEMENTED",
+      "evidence": ["watch.go", "session.go", "internal/scan/watch.go"],
       "labels": [
         "Incremental",
         "FullRescan:PolicyChanged",
@@ -222,7 +247,8 @@
       "id": "T33",
       "title": "Optional codecs equivalent to Rust serde features",
       "stage": "P3",
-      "status": "NOT_IMPLEMENTED"
+      "status": "IMPLEMENTED",
+      "note": "encoding/json tags on public report, cache, and portable types."
     },
     {
       "id": "T34",
@@ -235,8 +261,9 @@
       "id": "T35",
       "title": "Native tests, oracles, fuzz/race/leaks, honest benches, compiling examples",
       "stage": "P8",
-      "status": "NOT_IMPLEMENTED",
-      "note": "P0/P1 add the harness and serial walker tests. That is not a full-port evidence close."
+      "status": "PARTIAL",
+      "evidence": ["bench/go-compat", "reference/rust-driver", "tools/run_functional_parity.py", "compat/results/linux-overlayfs-functional.json"],
+      "note": "Native tests, compiling examples, Windows and Linux functional differentials, and local race runs exist. Official benches, fuzz/leak, CI-matrix, and cache/watch differential campaigns remain open."
     }
   ]
 }

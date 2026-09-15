@@ -24,6 +24,10 @@ this repository.
 - Do not put `fsnotify` in the main module’s required dependencies.
 - Do not publish Rust timing percentages as Treestamp results.
 - Commits must not add `Co-authored-by` trailers.
+- one file ≤ 600 lines
+- one method ≤ 60 lines
+- ≤ 6 parameters, else wrap in an object
+- one folder ≤ 6 .go files (including tests), else split into speaking-named subfolders
 
 ## Pinned oracle
 
@@ -41,25 +45,27 @@ Following live `main` as the oracle destroys reproducibility.
 
 ## Current stage
 
-P0 is in place with a reviewed-gap inventory. P1 serial walker is implemented.
-P2–P8 remain mandatory scope. Ledger: `compat/ledger.json`.
+P2–P6 method surfaces are implemented: ignore, scan, parallel/pull,
+content visit, cache v2, incremental watch apply. P7 fsnotify module and
+P8 official benches remain open. Ledger: `compat/ledger.json`.
 
 ## Next implementation work
 
-1. Finish the public-member review of `compat/inventory.json` against rustdoc
-   at the pinned commit. No member may be dropped.
-2. Keep the independent Rust driver honest: no scanner-algorithm edits.
-3. Start P2: ignore parser, sources, precedence, types, overrides, matchers.
-4. Close each stage in the ledger with tests actually run and contracts still
-   open.
+1. Put the functional parity campaign in the Windows/Linux/macOS CI matrix
+   and extend it to cache/watch sequences.
+2. Optional `watch` module with fsnotify (never a main-module require).
+3. Admission timeout and tighter multi-root worker accounting.
+4. Honest B01–B14 campaign against fastwalk, gocodewalker, and the rust oracle.
 
 ## Local checks
 
 ```text
 python3 tools/audit.py
 python3 -m unittest discover -s tools -p "test_*.py"
+python3 tools/run_functional_parity.py
 python3 tools/audit.py --require-full
 go test ./...
+cd bench/go-compat && go test ./...
 ```
 
 `--require-full` must fail until the port is actually complete.

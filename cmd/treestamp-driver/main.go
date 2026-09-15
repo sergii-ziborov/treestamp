@@ -1,7 +1,8 @@
-// Command treestamp-driver speaks the fixture protocol for the Go walker.
+// Command treestamp-driver speaks the Treestamp fixture protocol.
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -39,6 +40,55 @@ type entryJSON struct {
 	SkipReason *string `json:"skip_reason"`
 }
 
+type scanFileJSON struct {
+	Relative           string  `json:"relative"`
+	Bytes              uint64  `json:"bytes"`
+	ContentHash        *string `json:"content_hash"`
+	ContentFingerprint *string `json:"content_fingerprint"`
+	BinaryChecked      bool    `json:"binary_checked"`
+}
+
+type skipJSON struct {
+	Relative string  `json:"relative"`
+	Kind     string  `json:"kind"`
+	Detail   *string `json:"detail"`
+}
+
+type warningJSON struct {
+	Relative *string `json:"relative"`
+	Message  string  `json:"message"`
+}
+
+type sourceJSON struct {
+	Kind        string `json:"kind"`
+	Location    string `json:"location"`
+	ContentHash string `json:"content_hash"`
+}
+
+type scanDataJSON struct {
+	Files         []scanFileJSON `json:"files"`
+	Skipped       []skipJSON     `json:"skipped"`
+	Warnings      []warningJSON  `json:"warnings"`
+	IgnoreSources []sourceJSON   `json:"ignore_sources"`
+	Revision      string         `json:"revision"`
+	Descriptor    descriptorJSON `json:"descriptor"`
+	Complete      bool           `json:"complete"`
+	Termination   *string        `json:"termination"`
+	Portable      bool           `json:"portable"`
+	Cache         scanCacheJSON  `json:"cache"`
+}
+
+type descriptorJSON struct {
+	Version uint32 `json:"version"`
+	Policy  string `json:"policy"`
+}
+
+type scanCacheJSON struct {
+	ReusedHashes     uint64 `json:"reused_hashes"`
+	ContentReads     uint64 `json:"content_reads"`
+	FingerprintReads uint64 `json:"fingerprint_reads"`
+}
+
 type response struct {
 	Data   any     `json:"data"`
 	Timing any     `json:"timing"`
@@ -46,54 +96,158 @@ type response struct {
 }
 
 func main() {
-	var req request
-	if err := json.NewDecoder(os.Stdin).Decode(&req); err != nil {
+	req, err := decodeRequest()
+	if err != nil {
 		fail(err.Error())
 	}
-	switch req.Op {
-	case "raw_walk_serial", "raw_walk_sorted":
-	case "scan", "scan_compact", "scan_paths":
-		msg := "scanning API is not implemented"
-		write(response{Error: &msg})
-		os.Exit(2)
-	default:
+	run(req)
+}
+
+func decodeRequest() (request, error) {
+	var req request
+	err := json.NewDecoder(os.Stdin).Decode(&req)
+	return req, err
+}
+
+func run(req request) {
+	if handled := runScanOp(req); handled {
+		return
+	}
+	if req.Op != "raw_walk_serial" && req.Op != "raw_walk_sorted" {
 		fail("unknown op " + req.Op)
 	}
+	runWalk(req)
+}
+
+func runScanOp(req request) bool {
+	switch req.Op {
+	case "scan":
+		report, err := treestamp.Scan(context.Background(), req.Root)
+		if err != nil {
+			fail(err.Error())
+		}
+		write(response{Data: scanData(report)})
+		return true
+	case "scan_compact":
+		report, err := treestamp.ScanCompact(context.Background(), req.Root)
+		if err != nil {
+			fail(err.Error())
+		}
+		write(response{Data: compactData(report)})
+		return true
+	case "scan_paths":
+		paths, err := treestamp.ScanPaths(context.Background(), req.Root)
+		if err != nil {
+			fail(err.Error())
+		}
+		write(response{Data: map[string]any{"paths": paths}})
+		return true
+	default:
+		return false
+	}
+}
+
+func scanData(report *treestamp.ScanReport) scanDataJSON {
+	data := scanMeta(
+		report.Revision, report.Descriptor, report.Complete, report.Termination,
+		report.Portable, report.Cache,
+	)
+	for _, file := range report.Files {
+		data.Files = append(data.Files, scanFileJSON{
+			Relative: file.Relative, Bytes: file.Bytes,
+			ContentHash: optional(file.ContentHash), ContentFingerprint: optional(file.ContentFingerprint),
+			BinaryChecked: file.BinaryChecked,
+		})
+	}
+	addEvidence(&data, report.Skipped, report.Warnings, report.IgnoreSources)
+	return data
+}
+
+func compactData(report *treestamp.CompactScanReport) scanDataJSON {
+	data := scanMeta(
+		report.Revision, report.Descriptor, report.Complete, report.Termination,
+		report.Portable, report.Cache,
+	)
+	for _, file := range report.Files {
+		item := scanFileJSON{Relative: file.Relative, Bytes: file.Bytes, ContentHash: optional(file.ContentHash)}
+		if file.Content != nil {
+			item.ContentFingerprint = optional(file.Content.ContentFingerprint)
+			item.BinaryChecked = file.Content.BinaryChecked
+		}
+		data.Files = append(data.Files, item)
+	}
+	addEvidence(&data, report.Skipped, report.Warnings, report.IgnoreSources)
+	return data
+}
+
+func scanMeta(revision string, descriptor treestamp.ScanDescriptor, complete bool, termination treestamp.ScanTermination, portable bool, cache treestamp.ScanCacheStats) scanDataJSON {
+	var stopped *string
+	if termination != treestamp.TerminationNone {
+		value := termination.String()
+		stopped = &value
+	}
+	return scanDataJSON{
+		Revision: revision, Descriptor: descriptorJSON(descriptor), Complete: complete,
+		Termination: stopped, Portable: portable, Cache: scanCacheJSON(cache),
+		Files: []scanFileJSON{}, Skipped: []skipJSON{}, Warnings: []warningJSON{}, IgnoreSources: []sourceJSON{},
+	}
+}
+
+func addEvidence(data *scanDataJSON, skipped []treestamp.SkippedEntry, warnings []treestamp.ScanWarning, sources []treestamp.IgnoreSourceEvidence) {
+	for _, item := range skipped {
+		data.Skipped = append(data.Skipped, skipJSON{Relative: item.Relative, Kind: item.Kind.String(), Detail: optional(item.Detail)})
+	}
+	for _, item := range warnings {
+		data.Warnings = append(data.Warnings, warningJSON{Relative: optional(item.Relative), Message: item.Message})
+	}
+	for _, item := range sources {
+		data.IgnoreSources = append(data.IgnoreSources, sourceJSON{Kind: item.Kind.String(), Location: item.Location, ContentHash: item.ContentHash})
+	}
+}
+
+func optional(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func runWalk(req request) {
 	opts := treestamp.DefaultWalkOptions()
+	sorted, contentsFirst := req.Op == "raw_walk_sorted", false
 	if len(req.Options) > 0 {
 		var parsed options
 		if err := json.Unmarshal(req.Options, &parsed); err != nil {
 			fail(err.Error())
 		}
-		opts.MinDepth = parsed.MinDepth
-		opts.MaxDepth = parsed.MaxDepth
-		if parsed.MaxOpen > 0 {
-			opts.MaxOpen = parsed.MaxOpen
-		}
-		opts.SameFileSystem = parsed.SameFileSystem
-		opts.FollowLinks = parsed.FollowLinks
-		opts.CollectMetadata = parsed.CollectMetadata
-		if parsed.ErrorPolicy == "abort" {
-			opts.ErrorPolicy = treestamp.ErrorAbort
-		}
-		if parsed.RootSymlinkPolicy == "reject" {
-			opts.RootSymlinkPolicy = treestamp.RootReject
-		}
+		applyWalkOptions(&opts, parsed)
 		if req.Op == "raw_walk_sorted" {
 			parsed.SortByFileName = true
 		}
-		entries, err := walk(req.Root, opts, parsed.SortByFileName, parsed.ContentsFirst)
-		if err != nil {
-			fail(err.Error())
-		}
-		write(response{Data: map[string]any{"entries": entries}})
-		return
+		sorted, contentsFirst = parsed.SortByFileName, parsed.ContentsFirst
 	}
-	entries, err := walk(req.Root, opts, req.Op == "raw_walk_sorted", false)
+	entries, err := walk(req.Root, opts, sorted, contentsFirst)
 	if err != nil {
 		fail(err.Error())
 	}
 	write(response{Data: map[string]any{"entries": entries}})
+}
+
+func applyWalkOptions(opts *treestamp.WalkOptions, parsed options) {
+	opts.MinDepth = parsed.MinDepth
+	opts.MaxDepth = parsed.MaxDepth
+	if parsed.MaxOpen > 0 {
+		opts.MaxOpen = parsed.MaxOpen
+	}
+	opts.SameFileSystem = parsed.SameFileSystem
+	opts.FollowLinks = parsed.FollowLinks
+	opts.CollectMetadata = parsed.CollectMetadata
+	if parsed.ErrorPolicy == "abort" {
+		opts.ErrorPolicy = treestamp.ErrorAbort
+	}
+	if parsed.RootSymlinkPolicy == "reject" {
+		opts.RootSymlinkPolicy = treestamp.RootReject
+	}
 }
 
 func walk(root string, opts treestamp.WalkOptions, sorted, contentsFirst bool) ([]entryJSON, error) {
@@ -120,7 +274,7 @@ func walk(root string, opts treestamp.WalkOptions, sorted, contentsFirst bool) (
 			IsSymlink: entry.IsSymlink(),
 			Bytes:     entry.Bytes(),
 		}
-		if entry.SkipReason() != treestamp.SkipNone {
+		if entry.SkipReason() != treestamp.WalkSkipNone {
 			reason := entry.SkipReason().String()
 			item.SkipReason = &reason
 		}

@@ -4,5 +4,7 @@
 // (github.com/sergii-ziborov/treestamp). It is not published from the
 // Weavatrix or EdgeHawk organizations.
 //
-// A serial walker is implemented. The scanning API is not implemented.
+// Walk, select, hash, cache, and incremental surfaces are implemented. This
+// is still not a claim that every rust differential and official bench is
+// closed.
 package treestamp

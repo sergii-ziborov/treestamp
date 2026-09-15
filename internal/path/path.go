@@ -1,6 +1,28 @@
 package pathx
 
-import "sort"
+import (
+	"path/filepath"
+	"sort"
+	"strings"
+)
+
+// Slash converts a native path to slash form.
+func Slash(p string) string {
+	return filepath.ToSlash(p)
+}
+
+// UnderRoot reports whether path is the root or a descendant of root.
+// "." after Rel is under root. A Rel of ".." or a parent prefix is not.
+func UnderRoot(root, path string) bool {
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return false
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return false
+	}
+	return true
+}
 
 // IsSameOrDescendant reports whether path is prefix or a descendant using
 // '/' component boundaries. "src" matches "src/a.rs" and does not match "src2".

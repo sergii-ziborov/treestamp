@@ -4,6 +4,11 @@
 Treestamp timings. Do not copy weavatrix-scan percentages or millisecond
 figures into README or release notes as if they were measured here.
 
+Separate functional fixture campaigns pass on Windows/NTFS and Linux/overlayfs;
+see `compat/results/windows-ntfs-functional.json` and
+`compat/results/linux-overlayfs-functional.json`. They record no timing and do
+not mark any B01–B14 row as measured.
+
 ## Cases
 
 See `bench/cases.json`. B01–B14 stay separate classes.

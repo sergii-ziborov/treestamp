@@ -109,8 +109,8 @@ def main() -> int:
             errors.append(f"README must not reuse Rust marketing or timings ({forbidden})")
     if "NOT_RUN" not in readme:
         errors.append("README must say benchmarks are NOT_RUN")
-    if "scan" not in readme.lower() or "not implemented" not in readme.lower():
-        errors.append("README must say the scanning API is not implemented")
+    if "full port" in readme.lower() and "not a full port" not in readme.lower() and "not a finished" not in readme.lower():
+        errors.append("README must not claim a full port while later stages remain open")
 
     go_mod = (ROOT / "go.mod").read_text(encoding="utf-8")
     if "module github.com/sergii-ziborov/treestamp" not in go_mod:
@@ -153,7 +153,7 @@ def main() -> int:
     print("BOOTSTRAP AUDIT PASSED")
     print(f"pinned {PINNED_COMMIT}")
     print(f"contracts {len(ids)}; implemented {len(implemented)}")
-    print("require-full would still fail: scanner, ignore, cache, and benches are open")
+    print("require-full would still fail: partial contracts and benchmarks remain open")
     return 0
 
 

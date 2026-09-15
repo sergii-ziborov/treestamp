@@ -11,13 +11,16 @@ P0 condition for calling the inventory complete.
 
 ## Contracts
 
-`compat/contracts.json` lists T01–T35. After P1:
+`compat/contracts.json` lists T01–T35. After P2–P6 method work:
 
 | IDs | Status |
 | --- | --- |
-| T01, T02, T03, T07, T08 | Implemented (serial only) |
-| T11–T15 | Partial platform/path/symlink |
-| T04–T06, T09–T10, T16–T35 | Not implemented |
+| T01–T10, T16–T29, T31–T33 | Implemented or partial with method surface present |
+| T11–T15 | Partial platform/path/symlink/reparse |
+| T24 | Default scan differential passes on Windows and Linux; Linux follow-links walk also passes; broader option/CI matrix remains open |
+| T30 | Executors present; admission timeout not wired |
+| T34 | Optional fsnotify module not started |
+| T35 | Native tests exist; official benches/fuzz/rust diffs remain open |
 
 `python3 tools/audit.py --require-full` must fail while any contract is open.
 
@@ -60,6 +63,20 @@ logical report.
 
 Cross-platform normalization is specified in `bench/protocol.md` before a
 failing test invents it. Native-ID caches are not portable between machines.
+
+The Windows/NTFS and Linux/overlayfs Docker functional campaigns compare raw
+serial/sorted walks, `ScanPaths`, `Scan`, and `ScanCompact` against the pinned
+Rust process, including exact SHA-256, content fingerprints, descriptor v2,
+revision, typed skip order, and ignore-source evidence. Linux also compares a
+follow-links raw walk containing an internal alias, file link, ancestor loop,
+and root escape. The same campaign checks equivalent fastwalk, godirwalk,
+filepath, and gocodewalker behavior through the isolated `bench/go-compat`
+module. Results are `compat/results/windows-ntfs-functional.json` and
+`compat/results/linux-overlayfs-functional.json`.
+
+These are local two-platform results, not the required CI matrix. They close
+neither cache/watch-sequence, mutation-race, fuzz/leak, nor performance work.
+B01–B14 remain `NOT_RUN`.
 
 Controlled clocks and fake filesystems belong to deterministic cancel and
 mutation cases. A live writer racing two engines cannot be required to match

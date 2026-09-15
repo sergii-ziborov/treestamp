@@ -25,6 +25,7 @@ type Walker struct {
 	openHandles   int
 	yieldRoot     bool
 	pending       *pendingDir
+	current       *WalkEntry
 	skipPending   bool
 	active        map[platform.Identity]int
 	finished      bool
@@ -44,24 +45,22 @@ type dirFrame struct {
 	postEntry *WalkEntry
 }
 
-// New creates a walker with default options.
+type walkerConfig struct {
+	sorter        func(a, b os.DirEntry) int
+	filter        func(*WalkEntry) bool
+	skipStdout    *platform.Identity
+	contentsFirst bool
+}
+
 func New(root string) (*Walker, error) {
 	return NewWithOptions(root, DefaultOptions())
 }
 
-// NewWithOptions creates a walker with an explicit policy.
 func NewWithOptions(root string, options WalkOptions) (*Walker, error) {
-	return newWalker(root, options, nil, nil, nil, false)
+	return newWalker(root, options, walkerConfig{})
 }
 
-func newWalker(
-	root string,
-	options WalkOptions,
-	sorter func(a, b os.DirEntry) int,
-	filter func(*WalkEntry) bool,
-	skipStdout *platform.Identity,
-	contentsFirst bool,
-) (*Walker, error) {
+func newWalker(root string, options WalkOptions, cfg walkerConfig) (*Walker, error) {
 	if root == "" {
 		return nil, walkErr(root, 0, OpCanonicalize, os.ErrInvalid)
 	}
@@ -73,103 +72,122 @@ func newWalker(
 	if options.RootSymlinkPolicy == RootReject && info.Mode()&os.ModeSymlink != 0 {
 		return nil, walkErr(root, 0, OpReadMetadata, errRootSymlink)
 	}
+	canonical, err := resolveWalkRoot(root, options)
+	if err != nil {
+		return nil, err
+	}
+	return finishWalker(canonical, options, cfg)
+}
 
-	canonical := root
+func resolveWalkRoot(root string, options WalkOptions) (string, error) {
 	if options.FollowLinks || options.SameFileSystem {
 		abs, absErr := filepath.Abs(root)
 		if absErr != nil {
-			return nil, walkErr(root, 0, OpCanonicalize, absErr)
+			return "", walkErr(root, 0, OpCanonicalize, absErr)
 		}
 		resolved, resErr := filepath.EvalSymlinks(abs)
 		if resErr != nil {
-			return nil, walkErr(root, 0, OpCanonicalize, resErr)
+			return "", walkErr(root, 0, OpCanonicalize, resErr)
 		}
-		canonical = resolved
-	} else if !filepath.IsAbs(root) {
+		return resolved, nil
+	}
+	if !filepath.IsAbs(root) {
 		cwd, cwdErr := os.Getwd()
 		if cwdErr != nil {
-			return nil, walkErr(root, 0, OpCanonicalize, cwdErr)
+			return "", walkErr(root, 0, OpCanonicalize, cwdErr)
 		}
-		canonical = filepath.Join(cwd, root)
+		return filepath.Join(cwd, root), nil
 	}
+	return root, nil
+}
 
+func finishWalker(canonical string, options WalkOptions, cfg walkerConfig) (*Walker, error) {
 	meta, err := os.Stat(canonical)
 	if err != nil {
 		return nil, walkErr(canonical, 0, OpReadMetadata, err)
 	}
-
-	var rootInfo *platform.Info
-	var rootFS *uint64
-	if meta.IsDir() && (options.FollowLinks || options.SameFileSystem) {
-		infoVal, infoErr := platform.DirectoryInfo(canonical)
-		if infoErr != nil {
-			return nil, walkErr(canonical, 0, OpReadMetadata, infoErr)
-		}
-		rootInfo = &infoVal
-		if options.SameFileSystem {
-			fsid := infoVal.FileSystem
-			rootFS = &fsid
-		}
+	rootInfo, rootFS, err := rootPlatform(canonical, meta, options)
+	if err != nil {
+		return nil, err
 	}
-
-	var rootBytes *uint64
-	var rootVersion *FileVersion
-	if options.CollectMetadata && meta.Mode().IsRegular() {
-		size := uint64(meta.Size())
-		rootBytes = &size
-		ver := versionFromInfo(canonical, meta)
-		rootVersion = &ver
-	}
-
-	plain := !options.FollowLinks &&
-		!options.SameFileSystem &&
-		!options.CollectMetadata &&
-		options.MaxDepth == nil &&
-		options.MinDepth == 0 &&
-		filter == nil &&
-		skipStdout == nil &&
-		!contentsFirst
-
+	rootBytes, rootVersion := rootFileMeta(canonical, meta, options)
+	plain := !options.FollowLinks && !options.SameFileSystem && !options.CollectMetadata &&
+		options.MaxDepth == nil && options.MinDepth == 0 &&
+		cfg.filter == nil && cfg.skipStdout == nil && !cfg.contentsFirst
 	return &Walker{
-		root:          canonical,
-		rootIsDir:     meta.IsDir(),
-		rootIsFile:    meta.Mode().IsRegular(),
-		rootIsSymlink: meta.Mode()&os.ModeSymlink != 0,
-		rootBytes:     rootBytes,
-		rootVersion:   rootVersion,
-		rootFS:        rootFS,
-		rootInfo:      rootInfo,
-		options:       options,
-		yieldRoot:     true,
-		active:        make(map[platform.Identity]int),
-		sorter:        sorter,
-		filter:        filter,
-		skipStdout:    skipStdout,
-		contentsFirst: contentsFirst,
-		plainEntries:  plain,
+		root: canonical, rootIsDir: meta.IsDir(), rootIsFile: meta.Mode().IsRegular(),
+		rootIsSymlink: meta.Mode()&os.ModeSymlink != 0, rootBytes: rootBytes, rootVersion: rootVersion,
+		rootFS: rootFS, rootInfo: rootInfo, options: options, yieldRoot: true,
+		active: make(map[platform.Identity]int), sorter: cfg.sorter, filter: cfg.filter,
+		skipStdout: cfg.skipStdout, contentsFirst: cfg.contentsFirst, plainEntries: plain,
 	}, nil
 }
 
-var errRootSymlink = errText("root symlink rejected by policy")
+func rootPlatform(canonical string, meta os.FileInfo, options WalkOptions) (*platform.Info, *uint64, error) {
+	if !meta.IsDir() || (!options.FollowLinks && !options.SameFileSystem) {
+		return nil, nil, nil
+	}
+	infoVal, infoErr := platform.DirectoryInfo(canonical)
+	if infoErr != nil {
+		return nil, nil, walkErr(canonical, 0, OpReadMetadata, infoErr)
+	}
+	var rootFS *uint64
+	if options.SameFileSystem {
+		fsid := infoVal.FileSystem
+		rootFS = &fsid
+	}
+	return &infoVal, rootFS, nil
+}
+
+func rootFileMeta(canonical string, meta os.FileInfo, options WalkOptions) (*uint64, *FileVersion) {
+	if !options.CollectMetadata || !meta.Mode().IsRegular() {
+		return nil, nil
+	}
+	size := uint64(meta.Size())
+	ver := versionFromInfo(canonical, meta)
+	return &size, &ver
+}
+
+var (
+	errRootSymlink      = errText("root symlink rejected by policy")
+	errNoCurrentSymlink = errText("current walk entry is not a symlink")
+)
 
 type errText string
 
 func (e errText) Error() string { return string(e) }
 
-// Root returns the resolved walk root.
-func (w *Walker) Root() string { return w.root }
-
-// Options returns the normalized policy.
+func (w *Walker) Root() string         { return w.root }
 func (w *Walker) Options() WalkOptions { return w.options }
 
-// SkipCurrentDir prevents descent into the directory returned by the previous Next.
 func (w *Walker) SkipCurrentDir() {
 	if w.pending != nil {
 		w.skipPending = true
 	}
 }
 
-// Close releases open directory handles.
+// TraverseCurrentSymlink follows the symlink returned by the last Next call.
+func (w *Walker) TraverseCurrentSymlink() error {
+	entry := w.current
+	if entry == nil {
+		return walkErr(w.root, 0, OpReadMetadata, errNoCurrentSymlink)
+	}
+	info, err := os.Lstat(entry.path)
+	if err != nil {
+		return walkErr(entry.path, entry.depth, OpReadMetadata, err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return walkErr(entry.path, entry.depth, OpReadMetadata, errNoCurrentSymlink)
+	}
+	if entry.hasSkip() || (w.pending != nil && w.pending.path == entry.path) {
+		return nil
+	}
+	if followErr := w.prepareSelectedLink(entry); followErr != nil {
+		return followErr
+	}
+	return nil
+}
+
 func (w *Walker) Close() error {
 	w.finished = true
 	for i := range w.frames {
@@ -178,13 +196,13 @@ func (w *Walker) Close() error {
 	w.frames = nil
 	w.openHandles = 0
 	w.pending = nil
+	w.current = nil
 	w.active = nil
 	return nil
 }
 
-// Next returns the next entry. io.EOF ends the walk. A WalkError is a local
-// failure; ErrorContinue keeps going.
 func (w *Walker) Next() (*WalkEntry, error) {
+	w.current = nil
 	for {
 		if w.finished {
 			return nil, io.EOF
@@ -192,7 +210,7 @@ func (w *Walker) Next() (*WalkEntry, error) {
 		if w.deferred != nil {
 			entry := w.deferred
 			w.deferred = nil
-			return entry, nil
+			return w.remember(entry), nil
 		}
 		if w.yieldRoot {
 			w.yieldRoot = false
@@ -201,77 +219,105 @@ func (w *Walker) Next() (*WalkEntry, error) {
 				return w.yieldError(err)
 			}
 			if entry != nil {
-				return entry, nil
+				return w.remember(entry), nil
 			}
 			continue
 		}
 		if err := w.schedulePending(); err != nil {
 			return w.yieldError(err)
 		}
-		if len(w.frames) == 0 {
-			w.finished = true
-			return nil, io.EOF
-		}
-		frame := &w.frames[len(w.frames)-1]
-		depth := frame.depth + 1
-		dirent, readErr, ok := frame.entries.next()
-		if !ok {
-			wasOpen := frame.entries.isOpen()
-			identity := frame.identity
-			post := frame.postEntry
-			frame.entries.close()
-			w.frames = w.frames[:len(w.frames)-1]
-			if wasOpen {
-				w.openHandles--
-			}
-			if identity != nil {
-				if n := w.active[*identity] - 1; n <= 0 {
-					delete(w.active, *identity)
-				} else {
-					w.active[*identity] = n
-				}
-			}
-			if post != nil {
-				return post, nil
-			}
+		entry, err, cont := w.nextFromFrame()
+		if cont {
 			continue
 		}
-		if readErr != nil {
-			return w.yieldError(walkErr(frame.path, depth, OpReadEntry, readErr))
-		}
-		path := childPath(frame.path, dirent.Name())
-		mode, typeErr := entryMode(dirent)
-		if typeErr != nil {
-			return w.yieldError(walkErr(path, depth, OpReadMetadata, typeErr))
-		}
-		if w.plainEntries {
-			return w.visitPlain(path, depth, mode), nil
-		}
-		var bytes *uint64
-		var version *FileVersion
-		var hidden *bool
-		if w.options.CollectMetadata && mode.IsRegular() && mode&os.ModeSymlink == 0 {
-			info, infoErr := dirent.Info()
-			if infoErr != nil {
-				return w.yieldError(walkErr(path, depth, OpReadMetadata, infoErr))
-			}
-			size := uint64(info.Size())
-			bytes = &size
-			ver := versionFromInfo(path, info)
-			version = &ver
-			h := platform.HiddenFromInfo(path, info)
-			hidden = &h
-		}
-		entry, err := w.visit(path, depth, mode, bytes, version, hidden)
-		if err != nil {
-			return w.yieldError(err)
-		}
-		prepared := w.prepare(entry)
-		if prepared == nil {
-			continue
-		}
-		return prepared, nil
+		return w.remember(entry), err
 	}
+}
+
+func (w *Walker) remember(entry *WalkEntry) *WalkEntry {
+	w.current = entry
+	return entry
+}
+
+func (w *Walker) nextFromFrame() (*WalkEntry, error, bool) {
+	if len(w.frames) == 0 {
+		w.finished = true
+		return nil, io.EOF, false
+	}
+	frame := &w.frames[len(w.frames)-1]
+	depth := frame.depth + 1
+	dirent, readErr, ok := frame.entries.next()
+	if !ok {
+		return w.popFrame(frame)
+	}
+	if readErr != nil {
+		entry, err := w.yieldError(walkErr(frame.path, depth, OpReadEntry, readErr))
+		return entry, err, false
+	}
+	return w.visitDirent(frame.path, dirent, depth)
+}
+
+func (w *Walker) popFrame(frame *dirFrame) (*WalkEntry, error, bool) {
+	wasOpen := frame.entries.isOpen()
+	identity := frame.identity
+	post := frame.postEntry
+	frame.entries.close()
+	w.frames = w.frames[:len(w.frames)-1]
+	if wasOpen {
+		w.openHandles--
+	}
+	if identity != nil {
+		if n := w.active[*identity] - 1; n <= 0 {
+			delete(w.active, *identity)
+		} else {
+			w.active[*identity] = n
+		}
+	}
+	if post != nil {
+		return post, nil, false
+	}
+	return nil, nil, true
+}
+
+func (w *Walker) visitDirent(dir string, dirent os.DirEntry, depth int) (*WalkEntry, error, bool) {
+	path := childPath(dir, dirent.Name())
+	mode, typeErr := entryMode(dirent)
+	if typeErr != nil {
+		entry, err := w.yieldError(walkErr(path, depth, OpReadMetadata, typeErr))
+		return entry, err, false
+	}
+	if w.plainEntries {
+		return w.visitPlain(path, depth, mode), nil, false
+	}
+	bytes, version, hidden, err := w.direntMeta(path, dirent, mode)
+	if err != nil {
+		entry, yieldErr := w.yieldError(err)
+		return entry, yieldErr, false
+	}
+	entry, visitErr := w.visit(path, depth, mode, bytes, version, hidden)
+	if visitErr != nil {
+		out, yieldErr := w.yieldError(visitErr)
+		return out, yieldErr, false
+	}
+	prepared := w.prepare(entry)
+	if prepared == nil {
+		return nil, nil, true
+	}
+	return prepared, nil, false
+}
+
+func (w *Walker) direntMeta(path string, dirent os.DirEntry, mode os.FileMode) (*uint64, *FileVersion, *bool, *WalkError) {
+	if !w.options.CollectMetadata || !mode.IsRegular() || mode&os.ModeSymlink != 0 {
+		return nil, nil, nil, nil
+	}
+	info, infoErr := dirent.Info()
+	if infoErr != nil {
+		return nil, nil, nil, walkErr(path, 0, OpReadMetadata, infoErr)
+	}
+	size := uint64(info.Size())
+	ver := versionFromInfo(path, info)
+	h := platform.HiddenFromInfo(path, info)
+	return &size, &ver, &h, nil
 }
 
 func (w *Walker) takeRoot() (*WalkEntry, *WalkError) {
@@ -333,22 +379,17 @@ func (w *Walker) schedulePending() *WalkError {
 	if w.openHandles >= w.options.MaxOpen {
 		w.bufferOldest()
 	}
+	return w.openPending(pending)
+}
+
+func (w *Walker) openPending(pending *pendingDir) *WalkError {
 	if w.sorter != nil {
 		entries, err := collectSorted(pending.path, w.sorter)
 		if err != nil {
 			w.deferred = pending.postEntry
 			return walkErr(pending.path, pending.depth, OpReadDirectory, err)
 		}
-		w.frames = append(w.frames, dirFrame{
-			path:      pending.path,
-			depth:     pending.depth,
-			entries:   entries,
-			identity:  pending.identity,
-			postEntry: pending.postEntry,
-		})
-		if pending.identity != nil {
-			w.active[*pending.identity]++
-		}
+		w.pushFrame(pending, entries)
 		return nil
 	}
 	opened, err := openDirectory(pending.path)
@@ -356,18 +397,19 @@ func (w *Walker) schedulePending() *WalkError {
 		w.deferred = pending.postEntry
 		return walkErr(pending.path, pending.depth, OpReadDirectory, err)
 	}
+	w.pushFrame(pending, opened)
+	w.openHandles++
+	return nil
+}
+
+func (w *Walker) pushFrame(pending *pendingDir, entries dirEntries) {
 	if pending.identity != nil {
 		w.active[*pending.identity]++
 	}
 	w.frames = append(w.frames, dirFrame{
-		path:      pending.path,
-		depth:     pending.depth,
-		entries:   opened,
-		identity:  pending.identity,
-		postEntry: pending.postEntry,
+		path: pending.path, depth: pending.depth, entries: entries,
+		identity: pending.identity, postEntry: pending.postEntry,
 	})
-	w.openHandles++
-	return nil
 }
 
 func (w *Walker) bufferOldest() {
@@ -401,15 +443,12 @@ func entryMode(entry os.DirEntry) (os.FileMode, error) {
 
 func versionFromInfo(path string, info os.FileInfo) FileVersion {
 	var ver FileVersion
-	if !info.ModTime().IsZero() {
+	if !info.ModTime().IsZero() && info.ModTime().After(time.Unix(0, 0)) {
 		ns := uint64(info.ModTime().UnixNano())
-		if info.ModTime().After(time.Unix(0, 0)) {
-			ver.ModifiedNS = &ns
-		}
+		ver.ModifiedNS = &ns
 	}
 	if id, err := platform.PathIdentity(path); err == nil {
 		ver.Identity = &id
 	}
-	_ = path
 	return ver
 }

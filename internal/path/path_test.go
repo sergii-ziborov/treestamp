@@ -1,6 +1,7 @@
 package pathx
 
 import (
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -17,6 +18,23 @@ func TestIsSameOrDescendant(t *testing.T) {
 	}
 	if IsSameOrDescendant("src", "src/nested") {
 		t.Fatal("ancestor must not match longer prefix")
+	}
+}
+
+func TestSlashAndUnderRoot(t *testing.T) {
+	if Slash(`a\b`) == "" {
+		t.Fatal("slash")
+	}
+	root := t.TempDir()
+	if !UnderRoot(root, root) {
+		t.Fatal("root is under itself")
+	}
+	child := filepath.Join(root, "child")
+	if !UnderRoot(root, child) {
+		t.Fatal("child")
+	}
+	if UnderRoot(root, filepath.Join(root, "..", "outside")) {
+		t.Fatal("parent must not be under root")
 	}
 }
 

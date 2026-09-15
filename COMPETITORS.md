@@ -51,6 +51,55 @@ aggregate revision, descriptor v2, typed skip evidence, portable reports,
 cache v2, or incremental rescan reasons. Capability gaps stay visible even
 when a walker is faster on raw listing.
 
+## Functional differential
+
+The reproducible developer-only module `bench/go-compat` pins fastwalk
+v1.0.14, gocodewalker v1.5.1, and godirwalk v1.17.0 without adding them to the
+Treestamp runtime module. It compares normalized path/type sets, sorted DFS,
+directory skip, callback stop, repository ignores, extensions, standard
+directories, binary selection, and symlink policies.
+
+The 15 September 2026 Windows/NTFS and Linux/overlayfs Docker runs passed every
+equivalent check available on each platform. The Windows run records:
+
+- gocodewalker v1.5.1 uses the Windows hidden attribute; Treestamp follows the
+  Rust oracle and also treats dot-prefixed names as hidden when that option is
+  enabled.
+- godirwalk v1.17.0 `Unsorted` returns `EOF` after a successful Windows
+  enumeration. Equivalent set comparison therefore uses its sorted mode on
+  Windows and records the unsorted behavior separately.
+- gocodewalker v1.5.1 `SetConcurrency` does not change its package-level
+  eight-worker semaphore. A matched-worker benchmark must record this as
+  unsupported rather than claim that the requested count was applied.
+- gocodewalker include/exclude fields overwrite earlier decisions in several
+  combinations. Ignore, hidden, allowlist, and denylist families must be
+  measured separately instead of composing a misleading “same policy”.
+
+Windows symlink cases are `SKIP`: fixture setup itself fails with
+`A required privilege is not held by the client`, before Treestamp is called.
+The same cases run in a Linux container on overlayfs and establish these
+contract differences:
+
+- Treestamp and fastwalk both support callback-selected directory symlinks
+  through `ErrTraverseLink`. Treestamp still applies root-escape, ancestor-loop,
+  depth, and filesystem guards; fastwalk assigns cycle prevention to the caller
+  for this selective mode.
+- Treestamp rejects a followed directory link that escapes the root and emits
+  `path_escape`; fastwalk and godirwalk traverse outside the root.
+- Treestamp emits `symlink_loop`; fastwalk stops ancestor recursion without
+  typed evidence, while godirwalk has no ancestor-loop guard.
+- Treestamp and godirwalk report a dangling followed target; fastwalk silently
+  leaves it as a link entry.
+- With no child-follow option, Treestamp's default root policy still follows a
+  symlink root while preserving link type in the compatibility callback.
+  fastwalk reports that root as a directory; godirwalk rejects it.
+
+Treestamp's serial `raw_walk_follow` output matches the pinned Rust oracle
+exactly on the Linux fixture. See
+`compat/results/windows-ntfs-functional.json` and
+`compat/results/linux-overlayfs-functional.json`. These are functional
+records, not timing results.
+
 ## Headline policy
 
 There is no single “overall fastest” number. Paths-only, metadata, Git

@@ -1,0 +1,84 @@
+{
+  "schema": 1,
+  "campaign": "functional-parity",
+  "status": "PASS",
+  "recorded_at": "2026-09-15T11:01:12.168541+00:00",
+  "platform": {
+    "os": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.36",
+    "filesystem": "overlayfs",
+    "architecture": "x86_64",
+    "container": true
+  },
+  "toolchain": {
+    "go": "go version go1.25.14 linux/amd64",
+    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+    "cargo": "cargo 1.97.1 (c980f4866 2026-06-30)"
+  },
+  "pins": {
+    "weavatrix_scan": "0.5.2@29c003a6ad541c9a10faf30505235375fa78b9d8",
+    "fastwalk": "v1.0.14",
+    "gocodewalker": "v1.5.1",
+    "godirwalk": "v1.17.0"
+  },
+  "fixture": "sha256:f6958336dde417568b1aabf9574a3da6ebdd224bc4e5153093fd45e6464ea9a6",
+  "capabilities": {
+    "symlinks": true,
+    "symlink_error": null
+  },
+  "rust_oracle": {
+    "raw_walk_serial": {
+      "status": "PASS",
+      "items": 24
+    },
+    "raw_walk_sorted": {
+      "status": "PASS",
+      "items": 24
+    },
+    "scan_paths": {
+      "status": "PASS",
+      "items": 9
+    },
+    "scan": {
+      "status": "PASS",
+      "items": 8
+    },
+    "scan_compact": {
+      "status": "PASS",
+      "items": 8
+    },
+    "raw_walk_follow": {
+      "status": "PASS",
+      "items": 27
+    }
+  },
+  "go_competitors": {
+    "status": "PASS",
+    "passed": [
+      "TestBinarySelectionParity",
+      "TestCallbackStopParity",
+      "TestDanglingFollowErrorDifference",
+      "TestDirectorySymlinkFollowParity",
+      "TestExtensionSelectionParity",
+      "TestFollowRejectsRootEscape",
+      "TestFollowStopsAncestorLoop",
+      "TestGodirwalkUnsortedStatus",
+      "TestHiddenSelectionSemantics",
+      "TestMaxDepthPrecedesLoop",
+      "TestRawWalkNodeSetParity",
+      "TestRepositoryIgnoreSelectionParity",
+      "TestRootSymlinkPolicies",
+      "TestSkipDirectoryParity",
+      "TestSortedDepthFirstParity",
+      "TestStandardDirectorySelectionParity",
+      "TestSymlinksNotFollowedParity"
+    ],
+    "skipped": [],
+    "documented_differences": [
+      "Treestamp preserves the root link type while following it; fastwalk reports a directory and godirwalk rejects it",
+      "fastwalk and godirwalk follow directory symlinks outside the walk root; Treestamp records path_escape",
+      "fastwalk silently ignores a dangling target; Treestamp and godirwalk report it",
+      "godirwalk has no ancestor-loop guard; Treestamp records symlink_loop and fastwalk stops recursion"
+    ]
+  },
+  "benchmark_timings": "NOT_RUN"
+}

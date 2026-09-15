@@ -3,24 +3,34 @@
 Treestamp is one importable module. Implementation lives under `internal/`.
 Users should not need a dozen packages.
 
+Public import: `treestamp`. The facade converts oracle-shaped options and
+reports. Work runs as a layered pipeline:
+
 ```text
-treestamp            public API
-internal/path        slash-aware prefix helpers and later normalization
+walk → selection → inspect/stream → report
+```
+
+```text
+treestamp            public facade (types stay in this package)
+internal/path        slash-aware prefix helpers and root containment
 internal/platform    file/volume identity, hidden, stdout identity
-internal/walk        serial walker and serial builders (P1)
-internal/ignore      ignore parser and sources (P2)
-internal/selection   typed matchers and named types (P2)
-internal/runtime     executors and bounded queues (P4)
-internal/content     verified reads and sinks (P5)
-internal/manifest    reports, hashes, descriptor, revision (P3)
-internal/cache       cache format 2 (P6)
-internal/incremental sessions, deltas, watch plans (P6)
+internal/walk        serial, parallel, pull, and stateful walkers
+internal/ignore      ignore parser and sources
+internal/selection   typed matchers and named types
+internal/runtime     executors and bounded queues
+internal/scan        discover, inspect, content visit, cache v2, watch apply
+internal/report      snapshot reads, deltas, portable hashing
+internal/hashx       SHA-256 prefix and content fingerprint
+internal/filetypes   named type catalog
 ```
 
 Optional later modules, not part of the required graph:
 
 - `watch/` — fsnotify adapter
 - `bench/` — competitor harnesses
+
+Unused alias packages (`internal/cache`, `internal/content`,
+`internal/incremental`, `internal/manifest`) are not part of the tree.
 
 ## Runtime constraints
 
@@ -37,7 +47,7 @@ Optional later modules, not part of the required graph:
 - `context.Context` on scan APIs
 - Pull APIs have explicit `Close`
 
-## Scan API shape (not implemented)
+## Scan API shape
 
 ```go
 report, err := treestamp.Scan(ctx, root)
@@ -64,7 +74,9 @@ into memory and closed. `File.ReadDir` is batched; the walker does not call
 A file root is a single yielded file, matching the Rust walker.
 
 `WalkBuilder` adds serial multi-root, name sort, filters, contents-first, and
-stdout-skip. Parallel, pull, and stateful-batch APIs are later stages.
+stdout-skip. `ParallelWalker` adds unordered visit, collect, and a bounded
+pull iterator. `Walk` / `WalkUnsorted` / `ReadDirents` are the Go-market
+callback surfaces.
 
 ## Out of scope
 
