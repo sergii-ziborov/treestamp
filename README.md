@@ -101,6 +101,15 @@ path-escape, loop, depth, and filesystem guards remain active. `ScanPaths` is
 the gocodewalker-class ignore-aware listing. Cache, incremental watch apply,
 and verified streaming are live; official benches are still `NOT_RUN`.
 
+Every OS-walk callback entry implements `treestamp.DirEntry`: `Stat()` returns
+cached target metadata and `Depth()` reports walk depth. `StatDirEntry` and
+`DirEntryDepth` provide fallback helpers matching fastwalk's call pattern.
+
+`WalkFS` and `NewFSWalker` traverse any `fs.FS` with slash paths,
+deterministic lexical DFS, and standard `SkipDir` / `SkipAll` control.
+Child symlinks are not followed, matching `fs.WalkDir`; this is a walk API,
+not a claim that repository scanning works over virtual filesystems.
+
 ## What “full” means later
 
 A full port repeats the Weavatrix Scan contract in Go: serial and parallel

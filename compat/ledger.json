@@ -1,7 +1,7 @@
 {
   "updated": "2026-09-15",
   "phase": "P3-P6",
-  "claim": "Treestamp exposes the Weavatrix Scan method surface and the Go-market walk APIs. Deterministic Windows/NTFS and Linux/overlayfs fixtures pass raw walk, ScanPaths, Scan, and ScanCompact against the pinned Rust process, including exact descriptor/revision evidence; Linux also passes raw follow-links parity. Equivalent Go-competitor checks pass with explicit platform differences. It is not a full port.",
+  "claim": "Treestamp exposes the Weavatrix Scan method surface and the Go-market walk APIs, including selective symlink follow, cached callback target Stat, and deterministic traversal of arbitrary fs.FS implementations. Deterministic Windows/NTFS and Linux/overlayfs fixtures pass raw walk, ScanPaths, Scan, and ScanCompact against the pinned Rust process, including exact descriptor/revision evidence; Linux also passes raw follow-links parity. Equivalent Go-competitor and fs.WalkDir checks pass with explicit platform differences. It is not a full port.",
   "forbidden_claim": "full port",
   "stages": {
     "P0": { "status": "DONE_WITH_REVIEW_GAP" },
@@ -42,6 +42,7 @@
     "go test ./... (bench/go-compat module)",
     "go test -race ./... (Linux Docker, main and go-compat modules)",
     "go test ./... (Alpine Linux, main and go-compat modules)",
+    "Three-capability differential: selective links, fs.FS, cached target Stat",
     "GOOS=darwin go build ./internal/platform ./internal/walk",
     "python tools/run_functional_parity.py"
   ],

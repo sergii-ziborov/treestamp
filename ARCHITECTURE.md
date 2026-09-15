@@ -15,6 +15,7 @@ treestamp            public facade (types stay in this package)
 internal/path        slash-aware prefix helpers and root containment
 internal/platform    file/volume identity, hidden, stdout identity
 internal/walk        serial, parallel, pull, and stateful walkers
+internal/walkfs      deterministic traversal over arbitrary io/fs filesystems
 internal/ignore      ignore parser and sources
 internal/selection   typed matchers and named types
 internal/runtime     executors and bounded queues
@@ -76,7 +77,9 @@ A file root is a single yielded file, matching the Rust walker.
 `WalkBuilder` adds serial multi-root, name sort, filters, contents-first, and
 stdout-skip. `ParallelWalker` adds unordered visit, collect, and a bounded
 pull iterator. `Walk` / `WalkUnsorted` / `ReadDirents` are the Go-market
-callback surfaces.
+callback surfaces. Their callback entries cache target `Stat` results and
+depth. `WalkFS` and `NewFSWalker` provide lexical, no-follow traversal for
+arbitrary `fs.FS` implementations without OS identity claims.
 
 ## Out of scope
 

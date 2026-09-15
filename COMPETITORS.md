@@ -57,7 +57,9 @@ The reproducible developer-only module `bench/go-compat` pins fastwalk
 v1.0.14, gocodewalker v1.5.1, and godirwalk v1.17.0 without adding them to the
 Treestamp runtime module. It compares normalized path/type sets, sorted DFS,
 directory skip, callback stop, repository ignores, extensions, standard
-directories, binary selection, and symlink policies.
+directories, binary selection, symlink policies, and arbitrary-`fs.FS`
+traversal against `fs.WalkDir`. Callback target-`Stat` caching and depth are
+compared directly with fastwalk's `DirEntry` and helper functions.
 
 The 15 September 2026 Windows/NTFS and Linux/overlayfs Docker runs passed every
 equivalent check available on each platform. The Windows run records:

@@ -46,8 +46,9 @@ Following live `main` as the oracle destroys reproducibility.
 ## Current stage
 
 P2–P6 method surfaces are implemented: ignore, scan, parallel/pull,
-content visit, cache v2, incremental watch apply. P7 fsnotify module and
-P8 official benches remain open. Ledger: `compat/ledger.json`.
+content visit, cache v2, incremental watch apply. Go-market extensions include
+selective links, arbitrary `fs.FS`, and cached callback target `Stat`. P7
+fsnotify module and P8 official benches remain open. Ledger: `compat/ledger.json`.
 
 ## Next implementation work
 

@@ -347,7 +347,13 @@ func collectTreestampSelective(root string, workers int) ([]node, error) {
 		out = append(out, makeNode(root, path, entry))
 		mu.Unlock()
 		if relative(root, path) == "chosen" {
-			return treestamp.ErrTraverseLink
+			target, err := treestamp.StatDirEntry(path, entry)
+			if err != nil {
+				return err
+			}
+			if target.IsDir() {
+				return treestamp.ErrTraverseLink
+			}
 		}
 		return nil
 	})
@@ -365,7 +371,13 @@ func collectFastwalkSelective(root string) ([]node, error) {
 		out = append(out, makeNode(root, path, entry))
 		mu.Unlock()
 		if relative(root, path) == "chosen" {
-			return fastwalk.ErrTraverseLink
+			target, err := fastwalk.StatDirEntry(path, entry)
+			if err != nil {
+				return err
+			}
+			if target.IsDir() {
+				return fastwalk.ErrTraverseLink
+			}
 		}
 		return nil
 	})

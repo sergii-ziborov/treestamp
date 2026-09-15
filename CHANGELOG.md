@@ -30,6 +30,11 @@ Method-complete native scanner surfaces. Still not a full port.
 - Added selective directory-symlink traversal through `ErrTraverseLink`,
   `WalkTraverseLink`, and `Walker.TraverseCurrentSymlink`, retaining all
   Treestamp safety guards.
+- Added deterministic arbitrary-`fs.FS` traversal through `WalkFS` and the
+  pull-based `NewFSWalker`, with `fs.WalkDir` callback parity.
+- Added fastwalk-compatible callback `DirEntry`, `StatDirEntry`, and
+  `DirEntryDepth`; target metadata and target errors are cached and reused by
+  selective traversal.
 - Optional fsnotify module and official benches remain open.
 - Benchmark campaign remains `NOT_RUN`.
 

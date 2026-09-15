@@ -218,7 +218,7 @@ func setupConcurrent(root string, opts concurrentOpts) (*concurrentState, error)
 		}
 		state.rootFS, state.haveFS = dir.FileSystem, true
 	}
-	state.rootEntry = makeEntry(abs, abs, 0, info, opts.options)
+	state.rootEntry = makeEntry(abs, abs, 0, info, opts.options, nil)
 	if state.stdout != nil && state.rootEntry.isFile {
 		if match, _ := platform.PathMatchesIdentity(abs, *state.stdout); match {
 			state.rootEntry = nil
@@ -305,12 +305,14 @@ func (s *concurrentState) handleDirent(job dirJob, dent os.DirEntry, queue *dirQ
 	if infoErr != nil {
 		return emit(WalkEvent{Err: walkErr(path, job.depth+1, OpReadMetadata, infoErr)})
 	}
+	var target os.FileInfo
 	if info.Mode()&os.ModeSymlink != 0 && s.opts.options.FollowLinks {
-		if _, targetErr := os.Stat(path); targetErr != nil {
-			return emit(WalkEvent{Err: walkErr(path, job.depth+1, OpReadMetadata, targetErr)})
+		target, infoErr = os.Stat(path)
+		if infoErr != nil {
+			return emit(WalkEvent{Err: walkErr(path, job.depth+1, OpReadMetadata, infoErr)})
 		}
 	}
-	entry := makeEntry(s.abs, path, job.depth+1, info, s.opts.options)
+	entry := makeEntry(s.abs, path, job.depth+1, info, s.opts.options, target)
 	if s.stdout != nil && entry.isFile {
 		if match, _ := platform.PathMatchesIdentity(path, *s.stdout); match {
 			return WalkContinue

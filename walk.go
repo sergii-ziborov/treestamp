@@ -298,7 +298,7 @@ func applyWalkCallback(ev WalkEvent, cfg Config, fn WalkDirFunc, mu *sync.Mutex,
 	if skip && info.Mode().IsRegular() {
 		return WalkContinue
 	}
-	cbErr := fn(path, fs.FileInfoToDirEntry(info), nil)
+	cbErr := fn(path, walk.NewDirEntry(ev.Entry, info), nil)
 	if errors.Is(cbErr, ErrTraverseLink) && info.Mode()&os.ModeSymlink != 0 {
 		return walk.WalkTraverseLink
 	}
@@ -360,7 +360,7 @@ func drainWalk(w interface {
 		if skipFiles && info.Mode().IsRegular() {
 			continue
 		}
-		switch cbErr := fn(path, fs.FileInfoToDirEntry(info), nil); {
+		switch cbErr := fn(path, walk.NewDirEntry(entry, info), nil); {
 		case errors.Is(cbErr, SkipDir):
 			if skipper, ok := w.(interface{ SkipCurrentDir() }); ok {
 				skipper.SkipCurrentDir()

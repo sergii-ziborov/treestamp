@@ -229,7 +229,7 @@ func (w *StatefulWalker[R, E]) Next() (*StatefulWalkEntry[E], error) {
 		if err != nil {
 			return nil, walkErr(w.root, 0, OpReadMetadata, err)
 		}
-		entry := makeEntry(w.root, w.root, 0, info, w.options)
+		entry := makeEntry(w.root, w.root, 0, info, w.options, nil)
 		var state E
 		return &StatefulWalkEntry[E]{Entry: entry, State: state, ReadChildren: entry.isDir}, nil
 	}
@@ -300,7 +300,7 @@ func readBatch[R, E any](spec batchSpec, state R, process ProcessReadDir[R, E]) 
 			batch = append(batch, StatefulResult[E]{Err: walkErr(path, spec.depth+1, OpReadMetadata, infoErr)})
 			continue
 		}
-		entry := makeEntry(spec.root, path, spec.depth+1, info, spec.options)
+		entry := makeEntry(spec.root, path, spec.depth+1, info, spec.options, nil)
 		item := &StatefulWalkEntry[E]{Entry: entry, ReadChildren: entry.isDir && !entry.hasSkip()}
 		batch = append(batch, StatefulResult[E]{Entry: item})
 	}

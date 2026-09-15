@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/sergii-ziborov/treestamp/internal/platform"
 )
@@ -101,6 +103,7 @@ type WalkEntry struct {
 	hidden  *bool
 	dirID   *platform.Identity
 	skip    WalkSkipReason
+	stat    *fileInfoCache
 }
 
 func (e *WalkEntry) Path() string { return e.path }
@@ -135,6 +138,100 @@ func (e *WalkEntry) Bytes() *uint64             { return e.bytes }
 func (e *WalkEntry) Version() *FileVersion      { return e.version }
 func (e *WalkEntry) SkipReason() WalkSkipReason { return e.skip }
 func (e *WalkEntry) hasSkip() bool              { return e.skip != SkipNone }
+
+// Stat returns cached os.Stat metadata for the entry path.
+func (e *WalkEntry) Stat() (fs.FileInfo, error) {
+	if e == nil || e.path == "" {
+		return nil, invalidStatPath("")
+	}
+	if e.stat == nil {
+		return os.Stat(e.path)
+	}
+	return e.stat.get(e.path)
+}
+
+type fileInfoCache struct {
+	once sync.Once
+	info fs.FileInfo
+	err  error
+}
+
+func newFileInfoCache() *fileInfoCache {
+	return &fileInfoCache{}
+}
+
+func (c *fileInfoCache) load(info fs.FileInfo, err error) {
+	c.once.Do(func() {
+		c.info, c.err = info, err
+	})
+}
+
+func (c *fileInfoCache) get(path string) (fs.FileInfo, error) {
+	c.once.Do(func() {
+		c.info, c.err = os.Stat(path)
+	})
+	return c.info, c.err
+}
+
+// DirEntry extends fs.DirEntry with cached target Stat and walk depth.
+type DirEntry interface {
+	fs.DirEntry
+	Stat() (fs.FileInfo, error)
+	Depth() int
+}
+
+type callbackDirEntry struct {
+	fs.DirEntry
+	source *WalkEntry
+}
+
+func (d *callbackDirEntry) Stat() (fs.FileInfo, error) {
+	if d.Type()&os.ModeSymlink == 0 {
+		return d.Info()
+	}
+	return d.source.Stat()
+}
+
+func (d *callbackDirEntry) Depth() int {
+	return d.source.Depth()
+}
+
+// NewDirEntry constructs the cached callback entry for a walk event.
+func NewDirEntry(entry *WalkEntry, info fs.FileInfo) DirEntry {
+	if entry.stat == nil {
+		entry.stat = newFileInfoCache()
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		entry.stat.load(info, nil)
+	}
+	return &callbackDirEntry{DirEntry: fs.FileInfoToDirEntry(info), source: entry}
+}
+
+// StatDirEntry uses cached target metadata when entry supports it.
+func StatDirEntry(path string, entry fs.DirEntry) (fs.FileInfo, error) {
+	if entry == nil {
+		return nil, invalidStatPath(path)
+	}
+	if entry.Type()&os.ModeSymlink == 0 {
+		return entry.Info()
+	}
+	if cached, ok := entry.(interface{ Stat() (fs.FileInfo, error) }); ok {
+		return cached.Stat()
+	}
+	return os.Stat(path)
+}
+
+func invalidStatPath(path string) error {
+	return &os.PathError{Op: "stat", Path: path, Err: fs.ErrInvalid}
+}
+
+// DirEntryDepth returns callback depth or -1 for another DirEntry type.
+func DirEntryDepth(entry fs.DirEntry) int {
+	if entry, ok := entry.(interface{ Depth() int }); ok {
+		return entry.Depth()
+	}
+	return -1
+}
 
 type WalkOperation int
 

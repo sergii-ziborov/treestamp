@@ -32,7 +32,10 @@ func (w *Walker) visitPlain(path string, depth int, mode os.FileMode) *WalkEntry
 	if isDir {
 		w.pending = &pendingDir{path: path, depth: depth}
 	}
-	return &WalkEntry{root: w.root, path: path, depth: depth, isFile: isFile, isDir: isDir, symlink: symlink}
+	return &WalkEntry{
+		root: w.root, path: path, depth: depth, isFile: isFile, isDir: isDir,
+		symlink: symlink, stat: newFileInfoCache(),
+	}
 }
 
 func (w *Walker) visit(path string, depth int, mode os.FileMode, bytes *uint64, version *FileVersion, hidden *bool) (*WalkEntry, *WalkError) {
@@ -69,9 +72,13 @@ func (w *Walker) visit(path string, depth int, mode os.FileMode, bytes *uint64, 
 	if isDir && skip == SkipNone {
 		w.pending = &pendingDir{path: path, depth: depth, identity: dirID}
 	}
+	stat := newFileInfoCache()
+	if target != nil {
+		stat.load(target, nil)
+	}
 	return &WalkEntry{
 		root: w.root, path: path, depth: depth, isFile: isFile, isDir: isDir,
-		symlink: symlink, bytes: bytes, version: version, hidden: hidden, dirID: dirID, skip: skip,
+		symlink: symlink, bytes: bytes, version: version, hidden: hidden, dirID: dirID, skip: skip, stat: stat,
 	}, nil
 }
 
@@ -163,6 +170,7 @@ type selectedLinkPolicy struct {
 	root     string
 	path     string
 	depth    int
+	entry    *WalkEntry
 	options  WalkOptions
 	rootFS   *uint64
 	ancestor func(platform.Identity) (bool, *WalkError)
@@ -174,7 +182,7 @@ type selectedLinkResult struct {
 }
 
 func inspectSelectedLink(p selectedLinkPolicy) (selectedLinkResult, *WalkError) {
-	target, err := os.Stat(p.path)
+	target, err := p.entry.Stat()
 	if err != nil {
 		return selectedLinkResult{}, walkErr(p.path, p.depth, OpReadMetadata, err)
 	}
@@ -219,7 +227,7 @@ func applySelectedLink(entry *WalkEntry, result selectedLinkResult) {
 
 func (w *Walker) prepareSelectedLink(entry *WalkEntry) *WalkError {
 	result, err := inspectSelectedLink(selectedLinkPolicy{
-		root: w.root, path: entry.path, depth: entry.depth, options: w.options, rootFS: w.rootFS,
+		root: w.root, path: entry.path, depth: entry.depth, entry: entry, options: w.options, rootFS: w.rootFS,
 		ancestor: func(id platform.Identity) (bool, *WalkError) {
 			return w.selectedAncestor(id, entry.depth)
 		},
@@ -257,7 +265,7 @@ func (s *concurrentState) prepareSelectedLink(entry *WalkEntry, job dirJob) (*Wa
 		rootFS = &fsid
 	}
 	result, err := inspectSelectedLink(selectedLinkPolicy{
-		root: s.abs, path: entry.path, depth: entry.depth, options: s.opts.options, rootFS: rootFS,
+		root: s.abs, path: entry.path, depth: entry.depth, entry: entry, options: s.opts.options, rootFS: rootFS,
 		ancestor: func(id platform.Identity) (bool, *WalkError) {
 			return s.selectedAncestor(job.path, id, entry.depth)
 		},
@@ -310,13 +318,17 @@ func (s *concurrentState) selectedAncestor(path string, id platform.Identity, de
 	}
 }
 
-func makeEntry(root, path string, depth int, info os.FileInfo, options WalkOptions) *WalkEntry {
+func makeEntry(root, path string, depth int, info os.FileInfo, options WalkOptions, target os.FileInfo) *WalkEntry {
+	source := info
 	mode := info.Mode()
 	symlink := mode&os.ModeSymlink != 0
 	isFile := mode.IsRegular() && !symlink
 	isDir := info.IsDir() && !symlink
 	if symlink && options.FollowLinks {
-		if target, err := os.Stat(path); err == nil {
+		if target == nil {
+			target, _ = os.Stat(path)
+		}
+		if target != nil {
 			isFile = target.Mode().IsRegular()
 			isDir = target.IsDir()
 			info = target
@@ -326,7 +338,15 @@ func makeEntry(root, path string, depth int, info os.FileInfo, options WalkOptio
 	} else if symlink {
 		isFile, isDir = false, false
 	}
-	entry := &WalkEntry{root: root, path: path, depth: depth, isFile: isFile, isDir: isDir, symlink: symlink}
+	stat := newFileInfoCache()
+	if symlink && target != nil {
+		stat.load(target, nil)
+	} else if !symlink {
+		stat.load(source, nil)
+	}
+	entry := &WalkEntry{
+		root: root, path: path, depth: depth, isFile: isFile, isDir: isDir, symlink: symlink, stat: stat,
+	}
 	if options.CollectMetadata && isFile {
 		size := uint64(info.Size())
 		entry.bytes = &size
