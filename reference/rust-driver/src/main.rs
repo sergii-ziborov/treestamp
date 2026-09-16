@@ -2,9 +2,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::io::{self, Read};
 use weavatrix_scan::{
-    CompactScanReport, ErrorPolicy, IgnoreSourceKind, RootSymlinkPolicy, ScanReport,
-    ScanTermination, SkipKind, WalkBuilder, WalkOptions, WalkSkipReason, Walker, scan_repository,
-    scan_repository_compact, scan_repository_paths,
+    CompactScanReport, ErrorPolicy, IgnoreSourceKind, RootSymlinkPolicy, ScanReport, Scanner,
+    ScanTermination, SkipKind, WalkBuilder, WalkOptions, WalkSkipReason, Walker, WatchPlan,
+    scan_repository, scan_repository_compact, scan_repository_paths,
 };
 
 #[derive(Debug, Deserialize)]
@@ -13,6 +13,10 @@ struct Request {
     root: String,
     #[serde(default)]
     options: DriverOptions,
+    #[serde(default)]
+    session: Option<String>,
+    #[serde(default)]
+    plan: PlanOptions,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -36,6 +40,18 @@ struct DriverOptions {
     sort_by_file_name: bool,
     #[serde(default)]
     contents_first: bool,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct PlanOptions {
+    #[serde(default)]
+    changed: Vec<String>,
+    #[serde(default)]
+    removed: Vec<String>,
+    #[serde(default)]
+    full_rescan: bool,
+    #[serde(default)]
+    rejected_events: u64,
 }
 
 struct ReportParts<'a> {
@@ -127,16 +143,75 @@ fn main() {
 
 fn run_scan(request: &Request) -> bool {
     match request.op.as_str() {
-        "scan" => emit_result(scan_repository(&request.root).map(|report| scan_json(&report))),
+        "scan" => emit_result(scan_and_store(request)),
         "scan_compact" => {
             emit_result(scan_repository_compact(&request.root).map(|report| compact_json(&report)))
         }
         "scan_paths" => {
             emit_result(scan_repository_paths(&request.root).map(|paths| json!({ "paths": paths })))
         }
+        "scan_cached" => emit_result(scan_cached(request)),
+        "scan_incremental" => emit_result(scan_incremental(request)),
+        "scan_watch" => emit_result(scan_watch(request)),
         _ => return false,
     }
     true
+}
+
+fn scan_and_store(request: &Request) -> Result<Value, String> {
+    let report = scan_repository(&request.root).map_err(|error| error.to_string())?;
+    store_session(request, &report)?;
+    Ok(scan_json(&report))
+}
+
+fn scan_cached(request: &Request) -> Result<Value, String> {
+    let previous = load_session(request)?;
+    let cache = previous.to_cache();
+    let report = Scanner::new(&request.root)
+        .scan_cached(&cache)
+        .map_err(|error| error.to_string())?;
+    store_session(request, &report)?;
+    Ok(scan_json(&report))
+}
+
+fn scan_incremental(request: &Request) -> Result<Value, String> {
+    let previous = load_session(request)?;
+    let report = Scanner::new(&request.root)
+        .scan_incremental(&previous)
+        .map_err(|error| error.to_string())?;
+    store_session(request, &report)?;
+    Ok(scan_json(&report))
+}
+
+fn scan_watch(request: &Request) -> Result<Value, String> {
+    let previous = load_session(request)?;
+    let plan = WatchPlan {
+        changed: request.plan.changed.clone(),
+        removed: request.plan.removed.clone(),
+        full_rescan: request.plan.full_rescan,
+        rejected_events: request.plan.rejected_events,
+    };
+    let update = Scanner::new(&request.root)
+        .scan_watch_plan_detailed(&previous, &plan)
+        .map_err(|error| error.to_string())?;
+    store_session(request, &update.report)?;
+    let mut data = scan_json(&update.report);
+    data["watch_reason"] = json!(update.reason.as_str());
+    Ok(data)
+}
+
+fn load_session(request: &Request) -> Result<ScanReport, String> {
+    let path = request.session.as_ref().ok_or_else(|| "session path required".to_string())?;
+    let raw = std::fs::read(path).map_err(|error| error.to_string())?;
+    serde_json::from_slice(&raw).map_err(|error| error.to_string())
+}
+
+fn store_session(request: &Request, report: &ScanReport) -> Result<(), String> {
+    let Some(path) = &request.session else {
+        return Ok(());
+    };
+    let raw = serde_json::to_vec(report).map_err(|error| error.to_string())?;
+    std::fs::write(path, raw).map_err(|error| error.to_string())
 }
 
 fn emit_result<E: std::fmt::Display>(result: Result<Value, E>) {

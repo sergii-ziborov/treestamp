@@ -24,16 +24,19 @@ This is not a full port.
 | --- | --- |
 | Iterative serial `Walker`, `WalkBuilder` | Implemented |
 | `WalkParallel`, `ParallelWalker` visit/collect/pull | Implemented |
-| `Walk` / `WalkUnsorted` / `WalkDefault` / `ReadDirents` / `FileWalker` | Implemented |
+| `Walk` / `WalkDirs` / `WalkUnsorted` / `ReadDirents` / `DirScanner` / `FileWalker` | Implemented; files-first/dirs-first, post-children, regex filters |
 | Nested `.gitignore` / `.ignore` / `.weavatrixignore`, overrides | Implemented |
+| Optional `.gitmodules` path skip (`WithGitModules`, off by default) | Implemented |
+| `FindRepositoryRoot`, `Filters`, FileWalker terminate/error helpers | Implemented |
 | Standard skips, hidden policy, 265 named types, `WithGlobs` | Implemented |
 | `Scan`, `ScanCompact`, `ScanPaths` (no hash / no `max_file_bytes`) | Implemented |
 | SHA-256 (`sha256:`), revision, descriptor v2 byte feed | Implemented |
 | Cache v2, `ScanCached`, `ScanIncremental`, sessions | Implemented |
-| Watch plans, typed rescan reasons, portable report, delta | Implemented |
+| Watch plans, typed rescan reasons, portable report, delta | Implemented; `..` confined, prefix skip/warning replace |
+| `VisitChangedContent` | Implemented; visits only `WatchPlan.Changed` |
 | `VisitContent` / `ScanInto` (no retained manifest) / snapshot verify | Implemented |
 | Optional fsnotify module | Not implemented |
-| Rust/Go-competitor functional differential | Windows/NTFS and Linux/overlayfs fixtures pass; broader CI matrix open |
+| Rust/Go-competitor functional differential | Windows/Linux/macOS CI plus local NTFS/overlayfs records; cache/watch sequences included |
 | Official B01–B14 campaign | `NOT_RUN` |
 
 Do not treat `filepath.WalkDir` usage elsewhere as this library. The serial
@@ -42,7 +45,7 @@ wrapper renamed as a port.
 
 ## Requirements
 
-- Go 1.25.0 or newer
+- Go 1.23.0 or newer
 - `CGO_ENABLED=0` for the intended runtime
 - Rust is optional and only for developers who run the pinned oracle and
   differential drivers
@@ -109,6 +112,10 @@ cached target metadata and `Depth()` reports walk depth. `StatDirEntry` and
 deterministic lexical DFS, and standard `SkipDir` / `SkipAll` control.
 Child symlinks are not followed, matching `fs.WalkDir`; this is a walk API,
 not a claim that repository scanning works over virtual filesystems.
+
+`DirScanner` yields one child at a time from a single directory. Loop
+`ReadDirentsScratch` / `ReadDirnames` with `NewScratchBuffer` to reuse the
+getdents scratch on Linux. This is not the repository `Scanner`.
 
 ## What “full” means later
 

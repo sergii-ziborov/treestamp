@@ -2,7 +2,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -14,7 +13,16 @@ import (
 type request struct {
 	Op      string          `json:"op"`
 	Root    string          `json:"root"`
+	Session string          `json:"session"`
 	Options json.RawMessage `json:"options"`
+	Plan    watchPlanJSON   `json:"plan"`
+}
+
+type watchPlanJSON struct {
+	Changed        []string `json:"changed"`
+	Removed        []string `json:"removed"`
+	FullRescan     bool     `json:"full_rescan"`
+	RejectedEvents uint64   `json:"rejected_events"`
 }
 
 type options struct {
@@ -76,6 +84,7 @@ type scanDataJSON struct {
 	Termination   *string        `json:"termination"`
 	Portable      bool           `json:"portable"`
 	Cache         scanCacheJSON  `json:"cache"`
+	WatchReason   *string        `json:"watch_reason,omitempty"`
 }
 
 type descriptorJSON struct {
@@ -121,26 +130,8 @@ func run(req request) {
 
 func runScanOp(req request) bool {
 	switch req.Op {
-	case "scan":
-		report, err := treestamp.Scan(context.Background(), req.Root)
-		if err != nil {
-			fail(err.Error())
-		}
-		write(response{Data: scanData(report)})
-		return true
-	case "scan_compact":
-		report, err := treestamp.ScanCompact(context.Background(), req.Root)
-		if err != nil {
-			fail(err.Error())
-		}
-		write(response{Data: compactData(report)})
-		return true
-	case "scan_paths":
-		paths, err := treestamp.ScanPaths(context.Background(), req.Root)
-		if err != nil {
-			fail(err.Error())
-		}
-		write(response{Data: map[string]any{"paths": paths}})
+	case "scan", "scan_compact", "scan_paths", "scan_cached", "scan_incremental", "scan_watch":
+		runSessionScan(req)
 		return true
 	default:
 		return false

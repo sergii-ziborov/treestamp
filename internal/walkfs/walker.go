@@ -4,7 +4,6 @@ package walkfs
 import (
 	"io"
 	"io/fs"
-	"path"
 	"strings"
 )
 
@@ -78,6 +77,13 @@ func newEntry(root, name string, depth int, entry fs.DirEntry) *Entry {
 	return &Entry{root: root, path: name, depth: depth, entry: entry}
 }
 
+func joinFS(dir, name string) string {
+	if dir == "." {
+		return name
+	}
+	return dir + "/" + name
+}
+
 func (w *Walker) Root() string { return w.root }
 func (w *Walker) FS() fs.FS    { return w.fsys }
 
@@ -109,7 +115,7 @@ func (w *Walker) Next() (*Entry, error) {
 		}
 		dirEntry := top.entries[top.index]
 		top.index++
-		entry := newEntry(w.root, path.Join(top.path, dirEntry.Name()), top.depth+1, dirEntry)
+		entry := newEntry(w.root, joinFS(top.path, dirEntry.Name()), top.depth+1, dirEntry)
 		w.current = entry
 		if entry.IsDir() {
 			w.pending = entry
@@ -183,46 +189,37 @@ func Walk(fsys fs.FS, root string, fn fs.WalkDirFunc) error {
 	if fn == nil {
 		return invalidPath(root)
 	}
-	walker, err := New(fsys, root)
+	info, err := fs.Stat(fsys, root)
 	if err != nil {
 		return finish(fn(root, nil, err))
 	}
-	defer walker.Close()
-	for {
-		entry, nextErr := walker.Next()
-		if nextErr == io.EOF {
+	return finish(walkFS(fsys, root, fs.FileInfoToDirEntry(info), fn))
+}
+
+func walkFS(fsys fs.FS, name string, d fs.DirEntry, fn fs.WalkDirFunc) error {
+	if err := fn(name, d, nil); err != nil || !d.IsDir() {
+		if err == fs.SkipDir && d.IsDir() {
 			return nil
 		}
-		if nextErr != nil {
-			if err := handleReadError(walker, entry, nextErr, fn); err != nil {
-				return finish(err)
-			}
-			continue
-		}
-		if err := handleEntry(walker, entry, fn); err != nil {
-			return finish(err)
-		}
-	}
-}
-
-func handleReadError(walker *Walker, entry *Entry, readErr error, fn fs.WalkDirFunc) error {
-	err := fn(entry.Path(), entry.DirEntry(), readErr)
-	if err == fs.SkipDir {
-		walker.SkipCurrentDir()
-		return nil
-	}
-	return err
-}
-
-func handleEntry(walker *Walker, entry *Entry, fn fs.WalkDirFunc) error {
-	err := fn(entry.Path(), entry.DirEntry(), nil)
-	if err != fs.SkipDir {
 		return err
 	}
-	if entry.IsDir() {
-		walker.SkipCurrentDir()
-	} else {
-		walker.skipCurrentParent()
+	children, err := fs.ReadDir(fsys, name)
+	if err != nil {
+		err = fn(name, d, err)
+		if err != nil {
+			if err == fs.SkipDir && d.IsDir() {
+				return nil
+			}
+			return err
+		}
+	}
+	for _, child := range children {
+		if err := walkFS(fsys, joinFS(name, child.Name()), child, fn); err != nil {
+			if err == fs.SkipDir {
+				break
+			}
+			return err
+		}
 	}
 	return nil
 }

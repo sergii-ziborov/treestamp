@@ -35,7 +35,35 @@ Method-complete native scanner surfaces. Still not a full port.
 - Added fastwalk-compatible callback `DirEntry`, `StatDirEntry`, and
   `DirEntryDepth`; target metadata and target errors are cached and reused by
   selective traversal.
+- Added a godirwalk-class lazy `DirScanner` and reusable scratch-buffer
+  `ReadDirentsScratch` / `ReadDirnames`. Official B01–B14 remain `NOT_RUN`.
+- Optional `.gitmodules` handling via `WithGitModules` (off by default; not
+  added to the first ignore preset).
+- Minimum Go is 1.23.0.
+- `VisitContentManifest` now returns the same-pass visit manifest.
+- Strict reads bind opened identity/mtime; snapshot reads confine canonical
+  paths and compare snapshot mtime; cache reuse follows the current policy;
+  mid-file `ContentQuit` no longer commits the file.
+- Optional `.gitmodules` handling via `WithGitModules`; default stays off.
+- Minimum Go is 1.23.0.
+- `VisitContentManifest` now returns the same-pass compact manifest.
+- Strict reads bind opened identity/mtime; snapshot reads confine through
+  intermediate directory links and compare snapshot version before hashing.
+- Content visit commits a file only after `FileEnd`; mid-chunk `Quit` does not.
+- Cache reuse requires the current hash/binary policy plus cache root/format.
+- Functional parity now includes cache reuse and watch-plan sequences against
+  the pinned Rust driver, and the campaign runs in the Windows/Linux/macOS CI
+  matrix. Official B01–B14 benches remain `NOT_RUN`.
 - Optional fsnotify module and official benches remain open.
+- `VisitChangedContent` visits only `WatchPlan.Changed`.
+- Watch apply confines `..`, records Lstat failures as skips, stamps candidate
+  versions, and replaces skip/warning evidence under changed prefixes.
+- `Runtime.Run` / `Group.Go` wait for admission; caller-runs is opt-in via
+  `OverflowCallerRuns`. `ParallelWalker` admits workers through the executor.
+- Public `encoding/json` goldens for `ScannedFile` and `ScanCache`.
+- `Runtime.WithAdmitTimeout` / `AdmitWait`; multi-root scans share a dedicated worker budget.
+- Declarative `Filters` (name/dir/regex/location), full `FileWalker` gocodewalker-class fields, `FindRepositoryRoot`, `WalkDirs` hooks, parallel files-first/dirs-first.
+- Informal competitor benches and a method table live in `bench/go-compat/BENEFITS.md` and `COMPETITORS.md`. Official B01–B14 remain `NOT_RUN`.
 - Benchmark campaign remains `NOT_RUN`.
 
 ## 0.1.0-alpha.0 (2026-09-14)

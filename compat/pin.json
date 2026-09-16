@@ -12,7 +12,7 @@
   "visibility": "public",
   "hosting": "personal GitHub account of Sergii Ziborov; not Weavatrix; not EdgeHawk",
   "module": "github.com/sergii-ziborov/treestamp",
-  "go_minimum": "1.25.0",
+  "go_minimum": "1.23.0",
   "cgo": "disabled",
   "license": "MIT",
   "copyright": "Copyright (c) 2026 Sergii Ziborov",

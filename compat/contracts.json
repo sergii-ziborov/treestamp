@@ -177,7 +177,7 @@
       "stage": "P3",
       "status": "PARTIAL",
       "evidence": ["tools/run_functional_parity.py", "compat/results/windows-ntfs-functional.json", "compat/results/linux-overlayfs-functional.json"],
-      "note": "Exact default descriptor, revision, hashes, fingerprints, and source evidence pass against the pinned Rust process on Windows/NTFS and Linux/overlayfs. Linux raw follow-links parity also passes; broader scan options and cross-platform CI remain open."
+      "note": "Exact default descriptor, revision, hashes, fingerprints, and source evidence pass against the pinned Rust process on Windows/NTFS and Linux/overlayfs. Cache/watch sequences and the Windows/Linux/macOS CI matrix are included. Linux raw follow-links still needs symlink privilege; broader scan options remain open."
     },
     {
       "id": "T25",
@@ -262,8 +262,8 @@
       "title": "Native tests, oracles, fuzz/race/leaks, honest benches, compiling examples",
       "stage": "P8",
       "status": "PARTIAL",
-      "evidence": ["bench/go-compat", "reference/rust-driver", "tools/run_functional_parity.py", "compat/results/linux-overlayfs-functional.json"],
-      "note": "Native tests, compiling examples, Windows and Linux functional differentials, and local race runs exist. Official benches, fuzz/leak, CI-matrix, and cache/watch differential campaigns remain open."
+      "evidence": ["bench/go-compat", "reference/rust-driver", "tools/run_functional_parity.py", ".github/workflows/ci.yml", "compat/results/linux-overlayfs-functional.json"],
+      "note": "Native tests, compiling examples, CI functional parity, cache/watch sequences, and local race runs exist. Official benches and fuzz/leak remain open."
     }
   ]
 }

@@ -593,3 +593,30 @@ func TestOpenCloseYieldAndOps(t *testing.T) {
 type errWalker struct{}
 
 func (errWalker) Next() (*WalkEntry, error) { return nil, io.ErrUnexpectedEOF }
+
+func TestParallelRootSkipAndMaxDepthZero(t *testing.T) {
+	root := t.TempDir()
+	mustMkdir(t, filepath.Join(root, "sub"))
+	mustWrite(t, filepath.Join(root, "a.txt"), "a")
+	mustWrite(t, filepath.Join(root, "sub", "b.txt"), "b")
+	var seen []string
+	_, err := NewParallelWalker(root).Visit(func(ev WalkEvent) WalkControl {
+		if ev.Entry != nil {
+			seen = append(seen, ev.Entry.RelativePath())
+		}
+		return WalkSkip
+	})
+	if err != nil || len(seen) != 1 {
+		t.Fatalf("root skip %v %v", seen, err)
+	}
+	zero := 0
+	report, err := NewParallelWalker(root).Options(WalkOptions{MaxDepth: &zero}).Walk()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range report.Entries {
+		if !e.IsDir() && e.Depth() > 0 {
+			t.Fatalf("descended %+v", e.RelativePath())
+		}
+	}
+}

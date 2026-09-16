@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/sergii-ziborov/treestamp/internal/dirread"
 	pathx "github.com/sergii-ziborov/treestamp/internal/path"
 	"github.com/sergii-ziborov/treestamp/internal/platform"
 	rtruntime "github.com/sergii-ziborov/treestamp/internal/runtime"
@@ -81,7 +82,10 @@ func (p *ParallelWalker) Visit(fn ControlFunc) (*ParallelVisitReport, error) {
 }
 
 func (p *ParallelWalker) VisitWithToken(token *rtruntime.Token, fn ControlFunc) (*ParallelVisitReport, error) {
-	return walkConcurrent(p.root, concurrentOpts{options: p.options.Normalize(), workers: p.workerCount(), skipStdout: p.skipStdout, token: token}, fn)
+	return walkConcurrent(p.root, concurrentOpts{
+		options: p.options.Normalize(), workers: p.workerCount(), skipStdout: p.skipStdout,
+		token: token, runtime: p.runtime,
+	}, fn)
 }
 
 func WalkParallel(root string, workers int, fn WalkFunc) error {
@@ -141,6 +145,7 @@ type concurrentOpts struct {
 	workers    int
 	skipStdout bool
 	token      *rtruntime.Token
+	runtime    rtruntime.Runtime
 }
 
 type concurrentState struct {
@@ -165,7 +170,8 @@ func walkConcurrent(root string, opts concurrentOpts, fn ControlFunc) (*Parallel
 		return nil, err
 	}
 	emit := state.makeEmit(fn)
-	if emit(WalkEvent{Entry: state.rootEntry}) == WalkQuit || !state.rootEntry.isDir || state.rootEntry.hasSkip() {
+	control := emit(WalkEvent{Entry: state.rootEntry})
+	if control == WalkQuit || control == WalkSkip || !state.rootEntry.isDir || state.rootEntry.hasSkip() {
 		return state.report, state.first
 	}
 	queue := newDirQueue()
@@ -177,7 +183,7 @@ func walkConcurrent(root string, opts concurrentOpts, fn ControlFunc) (*Parallel
 	var wg sync.WaitGroup
 	wg.Add(opts.workers)
 	for i := 0; i < opts.workers; i++ {
-		go func() {
+		opts.runtime.Admit(func() {
 			defer wg.Done()
 			for !state.quit.Load() {
 				job, ok := queue.pop()
@@ -187,7 +193,7 @@ func walkConcurrent(root string, opts concurrentOpts, fn ControlFunc) (*Parallel
 				state.processJob(job, queue, emit)
 			}
 			queue.close()
-		}()
+		})
 	}
 	wg.Wait()
 	return state.report, state.first
@@ -219,6 +225,9 @@ func setupConcurrent(root string, opts concurrentOpts) (*concurrentState, error)
 		state.rootFS, state.haveFS = dir.FileSystem, true
 	}
 	state.rootEntry = makeEntry(abs, abs, 0, info, opts.options, nil)
+	if state.rootEntry.isDir && opts.options.atOrBeyondMaxDepth(0) {
+		state.rootEntry.skip = SkipMaxDepth
+	}
 	if state.stdout != nil && state.rootEntry.isFile {
 		if match, _ := platform.PathMatchesIdentity(abs, *state.stdout); match {
 			state.rootEntry = nil
@@ -256,7 +265,9 @@ func concurrentRoot(root string, options WalkOptions) (string, os.FileInfo, erro
 func (s *concurrentState) makeEmit(fn ControlFunc) func(WalkEvent) WalkControl {
 	return func(ev WalkEvent) WalkControl {
 		if s.opts.token.Cancelled() {
+			s.mu.Lock()
 			s.report.Cancelled = true
+			s.mu.Unlock()
 			s.quit.Store(true)
 			return WalkQuit
 		}
@@ -282,13 +293,13 @@ func (s *concurrentState) makeEmit(fn ControlFunc) func(WalkEvent) WalkControl {
 }
 
 func (s *concurrentState) processJob(job dirJob, queue *dirQueue, emit func(WalkEvent) WalkControl) {
-	entries, readErr := os.ReadDir(job.path)
+	entries, readErr := dirread.OSEntries(job.path)
 	if readErr != nil {
 		emit(WalkEvent{Err: walkErr(job.path, job.depth+1, OpReadDirectory, readErr)})
 		queue.done()
 		return
 	}
-	for _, dent := range entries {
+	for _, dent := range orderDirents(entries, s.opts.options) {
 		if s.quit.Load() {
 			break
 		}
@@ -300,19 +311,11 @@ func (s *concurrentState) processJob(job dirJob, queue *dirQueue, emit func(Walk
 }
 
 func (s *concurrentState) handleDirent(job dirJob, dent os.DirEntry, queue *dirQueue, emit func(WalkEvent) WalkControl) WalkControl {
-	path := filepath.Join(job.path, dent.Name())
-	info, infoErr := dent.Info()
-	if infoErr != nil {
-		return emit(WalkEvent{Err: walkErr(path, job.depth+1, OpReadMetadata, infoErr)})
+	path := childPath(job.path, dent.Name())
+	entry, err := s.entryFromDent(job, dent, path)
+	if err != nil {
+		return emit(WalkEvent{Err: err})
 	}
-	var target os.FileInfo
-	if info.Mode()&os.ModeSymlink != 0 && s.opts.options.FollowLinks {
-		target, infoErr = os.Stat(path)
-		if infoErr != nil {
-			return emit(WalkEvent{Err: walkErr(path, job.depth+1, OpReadMetadata, infoErr)})
-		}
-	}
-	entry := makeEntry(s.abs, path, job.depth+1, info, s.opts.options, target)
 	if s.stdout != nil && entry.isFile {
 		if match, _ := platform.PathMatchesIdentity(path, *s.stdout); match {
 			return WalkContinue
@@ -438,6 +441,31 @@ func (q *dirQueue) done() {
 	q.mu.Unlock()
 }
 
+func orderDirents(entries []os.DirEntry, opts WalkOptions) []os.DirEntry {
+	if !opts.ContentsFirst && !opts.DirsFirst {
+		return entries
+	}
+	files, dirs, other := splitDirents(entries)
+	if opts.ContentsFirst {
+		return append(append(files, other...), dirs...)
+	}
+	return append(append(dirs, other...), files...)
+}
+
+func splitDirents(entries []os.DirEntry) (files, dirs, other []os.DirEntry) {
+	for _, dent := range entries {
+		switch {
+		case dent.Type().IsRegular():
+			files = append(files, dent)
+		case dent.IsDir() || dent.Type()&os.ModeDir != 0:
+			dirs = append(dirs, dent)
+		default:
+			other = append(other, dent)
+		}
+	}
+	return files, dirs, other
+}
+
 func (q *dirQueue) close() {
 	q.mu.Lock()
 	q.closed = true
@@ -509,7 +537,7 @@ func (p *ParallelWalker) TryIntoIterOrderedBounded(capacity int) (*ParallelWalkI
 	quit := make(chan struct{})
 	flag := &cancelFlag{fn: func() { close(quit) }}
 	iter := &ParallelWalkIter{ch: ch, token: flag}
-	go func() {
+	p.runtime.Admit(func() {
 		defer close(ch)
 		defer walker.Close()
 		for {
@@ -533,7 +561,7 @@ func (p *ParallelWalker) TryIntoIterOrderedBounded(capacity int) (*ParallelWalkI
 			case ch <- it:
 			}
 		}
-	}()
+	})
 	return iter, nil
 }
 
@@ -545,7 +573,7 @@ func (p *ParallelWalker) IntoIterBounded(capacity int) *ParallelWalkIter {
 	quit := make(chan struct{})
 	flag := &cancelFlag{fn: func() { close(quit) }}
 	iter := &ParallelWalkIter{ch: ch, token: flag}
-	go func() {
+	p.runtime.Admit(func() {
 		defer close(ch)
 		_, _ = p.Visit(func(ev WalkEvent) WalkControl {
 			select {
@@ -567,7 +595,7 @@ func (p *ParallelWalker) IntoIterBounded(capacity int) *ParallelWalkIter {
 				return WalkContinue
 			}
 		})
-	}()
+	})
 	return iter
 }
 

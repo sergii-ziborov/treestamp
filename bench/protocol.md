@@ -45,6 +45,14 @@ Supported now:
 | `scan` | Treestamp / Rust full scan | Implemented |
 | `scan_compact` | Treestamp / Rust compact scan | Implemented |
 | `scan_paths` | Treestamp / Rust path-only scan | Implemented |
+| `scan_cached` | Session cache reuse | Implemented |
+| `scan_incremental` | Previous-report incremental scan | Implemented |
+| `scan_watch` | Watch plan apply; optional `watch_reason` | Implemented |
+
+`scan_cached`, `scan_incremental`, and `scan_watch` take a driver-local
+`session` file written by a prior `scan` on that same engine. Native cache
+identities are not exchanged between Go and Rust. `scan_watch` also accepts
+`plan.changed`, `plan.removed`, and `plan.full_rescan`.
 
 ## Response
 

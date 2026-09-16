@@ -198,6 +198,47 @@ func TestPolicyAllowsKindsAndParent(t *testing.T) {
 	}
 }
 
+func TestGitModulesOptional(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, ".gitmodules"), `[submodule "contracts/lib/forge-std"]
+	path = contracts/lib/forge-std
+	url = https://github.com/foundry-rs/forge-std
+[submodule "lib/java-tron"]
+	path = lib/java-tron
+`)
+	off := NewEngine(nil, false, nil)
+	off.LoadDir(dir, "")
+	if off.Match("contracts/lib/forge-std", true).IsIgnored() {
+		t.Fatal("default must not honor .gitmodules")
+	}
+	on := NewEngine(nil, false, nil)
+	on.SetGitModules(true)
+	on.LoadDir(dir, "")
+	if !on.Match("contracts/lib/forge-std", true).IsIgnored() {
+		t.Fatal("submodule dir")
+	}
+	if !on.Match("contracts/lib/forge-std/src.go", false).IsIgnored() {
+		t.Fatal("submodule file")
+	}
+	if on.Match("contracts/keep.go", false).IsIgnored() {
+		t.Fatal("sibling")
+	}
+	if !on.Match("lib/java-tron", true).IsIgnored() {
+		t.Fatal("second module")
+	}
+	sources := on.Sources()
+	if len(sources) != 1 || sources[0].Kind != SourceGitModules || sources[0].Location != ".gitmodules" {
+		t.Fatalf("source %+v", sources)
+	}
+	if SourceGitModules.String() != "git_modules" {
+		t.Fatal(SourceGitModules.String())
+	}
+	got := extractGitModuleFolders("path = vendor/foo\npath = .\npath = ..\npath =\n")
+	if len(got) != 1 || got[0] != "vendor/foo" {
+		t.Fatalf("extract %v", got)
+	}
+}
+
 func TestGlobParseAndEngineEdges(t *testing.T) {
 	if (*Engine)(nil).Clone() == nil || (*Engine)(nil).Sources() != nil {
 		t.Fatal("nil engine")

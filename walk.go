@@ -7,11 +7,13 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	goruntime "runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/sergii-ziborov/treestamp/internal/ignore"
 	pathx "github.com/sergii-ziborov/treestamp/internal/path"
@@ -194,15 +196,18 @@ func NewSelectionMatcher(root string, opts Options) (*SelectionMatcher, error) {
 	return selection.NewMatcher(abs, selection.Config{
 		IgnoreFiles: opts.IgnoreFiles, IgnoreCase: opts.IgnoreCase, IgnorePolicy: opts.IgnorePolicy.inner,
 		OverrideRules: opts.OverrideRules, Extensions: opts.Extensions, FileTypes: opts.FileTypes,
-		SkipHidden: opts.SkipHidden, StandardSkips: opts.StandardSkips, MaxFileBytes: opts.MaxFileBytes,
+		SkipHidden: opts.SkipHidden, StandardSkips: opts.StandardSkips, GitModules: opts.GitModules,
+		Filters: opts.Filters,
+		MaxFileBytes:  opts.MaxFileBytes,
 		ApplyMaxBytes: true, MinDepth: opts.Walk.MinDepth, MaxDepth: opts.Walk.MaxDepth, FollowLinks: opts.Walk.FollowLinks,
 	})
 }
 
 var (
-	SkipDir      = fs.SkipDir
-	SkipAll      = fs.SkipAll
-	ErrSkipFiles = errors.New("skip remaining files in this directory")
+	SkipDir         = fs.SkipDir
+	SkipAll         = fs.SkipAll
+	ErrSkipFiles    = walk.ErrSkipFiles
+	ErrAdmitTimeout = runtime.ErrAdmitTimeout
 	// ErrTraverseLink requests traversal of the callback's directory symlink.
 	ErrTraverseLink = walk.ErrTraverseLink
 )
@@ -216,11 +221,13 @@ func WalkUnsorted(root string, fn WalkDirFunc) error {
 }
 
 type Config struct {
-	Follow     bool
-	Sort       bool
-	NumWorkers int
-	MaxDepth   int
-	ToSlash    bool
+	Follow        bool
+	Sort          bool
+	NumWorkers    int
+	MaxDepth      int
+	ToSlash       bool
+	ContentsFirst bool
+	DirsFirst     bool
 }
 
 // WalkWithConfig uses serial traversal when deterministic sorting is requested.
@@ -234,20 +241,19 @@ func WalkWithConfig(root string, cfg Config, fn WalkDirFunc) error {
 
 func walkSerialConfig(root string, cfg Config, fn WalkDirFunc) error {
 	if !cfg.Follow && cfg.MaxDepth == 0 && !cfg.Sort {
-		walker, err := NewWalker(root)
-		if err != nil {
-			return fn(root, nil, err)
-		}
-		defer walker.Close()
-		return drainWalk(walker, fn, cfg.ToSlash)
+		return walk.WalkCallbackHooks(root, fn, nil, cfg.ToSlash, cfg.ContentsFirst)
 	}
 	opts := DefaultWalkOptions()
 	opts.FollowLinks = cfg.Follow
+	opts.ContentsFirst, opts.DirsFirst = cfg.ContentsFirst, cfg.DirsFirst
 	if cfg.MaxDepth > 0 {
 		d := cfg.MaxDepth
 		opts.MaxDepth = &d
 	}
 	builder := NewWalkBuilder(root).Options(opts)
+	if cfg.ContentsFirst {
+		builder = builder.ContentsFirst(true)
+	}
 	if cfg.Sort {
 		builder = builder.SortByFileName()
 	}
@@ -261,8 +267,12 @@ func walkParallelConfig(root string, cfg Config, fn WalkDirFunc) error {
 	if workers < 0 {
 		workers = 0
 	}
+	if !cfg.Follow && cfg.MaxDepth == 0 && !cfg.ContentsFirst && !cfg.DirsFirst {
+		return walk.WalkCallbackParallel(root, workers, fn, cfg.ToSlash)
+	}
 	opts := DefaultWalkOptions()
 	opts.FollowLinks = cfg.Follow
+	opts.ContentsFirst, opts.DirsFirst = cfg.ContentsFirst, cfg.DirsFirst
 	if cfg.MaxDepth > 0 {
 		d := cfg.MaxDepth
 		opts.MaxDepth = &d
@@ -287,20 +297,22 @@ func applyWalkCallback(ev WalkEvent, cfg Config, fn WalkDirFunc, mu *sync.Mutex,
 	if cfg.ToSlash {
 		path = filepath.ToSlash(path)
 	}
-	info, err := os.Lstat(ev.Entry.Path())
-	if err != nil {
-		return walkCallbackControl(fn(path, nil, err), mu, skipFiles, filepath.Dir(ev.Entry.Path()), callbackErr)
+	if len(skipFiles) > 0 && ev.Entry.IsFile() {
+		parent := filepath.Dir(ev.Entry.Path())
+		mu.Lock()
+		_, skip := skipFiles[parent]
+		mu.Unlock()
+		if skip {
+			return WalkContinue
+		}
 	}
-	parent := filepath.Dir(ev.Entry.Path())
-	mu.Lock()
-	_, skip := skipFiles[parent]
-	mu.Unlock()
-	if skip && info.Mode().IsRegular() {
-		return WalkContinue
-	}
-	cbErr := fn(path, walk.NewDirEntry(ev.Entry, info), nil)
-	if errors.Is(cbErr, ErrTraverseLink) && info.Mode()&os.ModeSymlink != 0 {
+	cbErr := fn(path, walk.NewDirEntry(ev.Entry), nil)
+	if errors.Is(cbErr, ErrTraverseLink) && ev.Entry.IsSymlink() {
 		return walk.WalkTraverseLink
+	}
+	parent := ""
+	if errors.Is(cbErr, ErrSkipFiles) {
+		parent = filepath.Dir(ev.Entry.Path())
 	}
 	return walkCallbackControl(cbErr, mu, skipFiles, parent, callbackErr)
 }
@@ -346,21 +358,10 @@ func drainWalk(w interface {
 		if toSlash {
 			path = filepath.ToSlash(path)
 		}
-		info, statErr := os.Lstat(entry.Path())
-		if statErr != nil {
-			if fn(path, nil, statErr) != nil {
-				return statErr
-			}
+		if skipFiles && entry.IsFile() && filepath.Dir(entry.Path()) == skipDir {
 			continue
 		}
-		parent := filepath.Dir(entry.Path())
-		if parent != skipDir {
-			skipFiles, skipDir = false, parent
-		}
-		if skipFiles && info.Mode().IsRegular() {
-			continue
-		}
-		switch cbErr := fn(path, walk.NewDirEntry(entry, info), nil); {
+		switch cbErr := fn(path, walk.NewDirEntry(entry), nil); {
 		case errors.Is(cbErr, SkipDir):
 			if skipper, ok := w.(interface{ SkipCurrentDir() }); ok {
 				skipper.SkipCurrentDir()
@@ -368,8 +369,8 @@ func drainWalk(w interface {
 		case errors.Is(cbErr, SkipAll):
 			return nil
 		case errors.Is(cbErr, ErrSkipFiles):
-			skipFiles = true
-		case errors.Is(cbErr, ErrTraverseLink) && info.Mode()&os.ModeSymlink != 0:
+			skipFiles, skipDir = true, filepath.Dir(entry.Path())
+		case errors.Is(cbErr, ErrTraverseLink) && entry.IsSymlink():
 			follower, ok := w.(interface{ TraverseCurrentSymlink() error })
 			if !ok {
 				return cbErr
@@ -416,8 +417,6 @@ func ignoreDuplicate(fn WalkDirFunc, dirsOnly bool) WalkDirFunc {
 	}
 }
 
-func ReadDirents(dirname string) ([]os.DirEntry, error) { return os.ReadDir(dirname) }
-
 type File struct {
 	Location string
 	Filename string
@@ -434,13 +433,33 @@ func (f *File) Path() string {
 }
 
 type FileWalker struct {
-	roots           []string
-	queue           chan *File
-	exts            []string
-	ignoreGitignore bool
-	workers         int
-	terminate       atomic.Bool
-	closeOnce       sync.Once
+	roots                    []string
+	queue                    chan *File
+	exts                     []string
+	ignoreGitignore          bool
+	ignoreIgnoreFile         bool
+	gitModules               bool
+	workers                  int
+	maxDepth                 int
+	includeHidden            *bool
+	ignoreBinary             bool
+	binaryBytes              int
+	errorHandler             func(error) bool
+	walking                  atomic.Bool
+	terminate                atomic.Bool
+	closeOnce                sync.Once
+	LocationExcludePattern   []string
+	IncludeDirectory         []string
+	ExcludeDirectory         []string
+	IncludeFilename          []string
+	ExcludeFilename          []string
+	IncludeDirectoryRegex    []*regexp.Regexp
+	ExcludeDirectoryRegex    []*regexp.Regexp
+	IncludeFilenameRegex     []*regexp.Regexp
+	ExcludeFilenameRegex     []*regexp.Regexp
+	ExcludeListExtensions    []string
+	CustomIgnore             []string
+	CustomIgnorePatterns     []string
 }
 
 func NewFileWalker(directory string, queue chan *File) *FileWalker {
@@ -458,56 +477,22 @@ func (w *FileWalker) AllowListExtensions(exts ...string) *FileWalker {
 	return w
 }
 func (w *FileWalker) SetConcurrency(n int) *FileWalker { w.workers = n; return w }
-func (w *FileWalker) IgnoreGitignore() *FileWalker     { w.ignoreGitignore = true; return w }
-func (w *FileWalker) Terminate()                       { w.terminate.Store(true) }
-
-func (w *FileWalker) Start() error {
-	defer w.closeOnce.Do(func() {
-		if w.queue != nil {
-			close(w.queue)
-		}
-	})
-	if w.queue == nil {
-		return &Error{Code: CodeInvalid, Op: "FileWalker.Start", Err: errString("file queue is nil")}
-	}
-	opts := DefaultOptions().MetadataOnly()
-	if w.ignoreGitignore {
-		kept := opts.IgnoreFiles[:0]
-		for _, name := range opts.IgnoreFiles {
-			if name != ".gitignore" {
-				kept = append(kept, name)
-			}
-		}
-		opts.IgnoreFiles = kept
-	}
-	if len(w.exts) > 0 {
-		opts.Extensions = append([]string(nil), w.exts...)
-	}
-	if w.workers > 0 {
-		opts.TraversalWorkers = w.workers
-	}
-	for _, root := range w.roots {
-		if w.terminate.Load() {
-			return nil
-		}
-		scanner, err := NewScanner(root, WithOptions(opts))
-		if err != nil {
-			return err
-		}
-		paths, err := scanner.ScanPaths(context.Background())
-		if err != nil {
-			return err
-		}
-		for _, rel := range paths {
-			if w.terminate.Load() {
-				return nil
-			}
-			native := filepath.FromSlash(rel)
-			w.queue <- &File{Location: filepath.Join(root, filepath.Dir(native)), Filename: filepath.Base(native)}
-		}
-	}
-	return nil
+func (w *FileWalker) IgnoreGitignore() *FileWalker   { w.ignoreGitignore = true; return w }
+func (w *FileWalker) IgnoreIgnoreFile() *FileWalker  { w.ignoreIgnoreFile = true; return w }
+func (w *FileWalker) RespectGitModules() *FileWalker { w.gitModules = true; return w }
+func (w *FileWalker) IncludeHidden(enabled bool) *FileWalker {
+	w.includeHidden = &enabled
+	return w
 }
+func (w *FileWalker) IgnoreBinaryFiles() *FileWalker { w.ignoreBinary = true; return w }
+func (w *FileWalker) SetMaxDepth(n int) *FileWalker  { w.maxDepth = n; return w }
+func (w *FileWalker) Terminate()                     { w.terminate.Store(true) }
+func (w *FileWalker) Walking() bool                  { return w.walking.Load() }
+func (w *FileWalker) SetErrorHandler(fn func(error) bool) *FileWalker {
+	w.errorHandler = fn
+	return w
+}
+func (w *FileWalker) Start() error { return runFileWalker(w) }
 
 type MultiScanReport struct{ Reports []*ScanReport }
 
@@ -518,6 +503,7 @@ type MultiScanner struct {
 	roots           []string
 	options         Options
 	rootParallelism int
+	admitTimeout    time.Duration
 }
 
 func NewMultiScanner(root string) *MultiScanner {
@@ -526,6 +512,10 @@ func NewMultiScanner(root string) *MultiScanner {
 func (m *MultiScanner) AddRoot(root string) *MultiScanner       { m.roots = append(m.roots, root); return m }
 func (m *MultiScanner) Options(options Options) *MultiScanner   { m.options = options; return m }
 func (m *MultiScanner) WithRootParallelism(n int) *MultiScanner { m.rootParallelism = n; return m }
+func (m *MultiScanner) WithAdmitTimeout(d time.Duration) *MultiScanner {
+	m.admitTimeout = d
+	return m
+}
 
 func (m *MultiScanner) Scan(ctx context.Context) (*MultiScanReport, error) {
 	workers := m.rootParallelism
@@ -550,8 +540,9 @@ func (m *MultiScanner) Scan(ctx context.Context) (*MultiScanReport, error) {
 	jobs, results := make(chan int), make(chan item, len(m.roots))
 	var wg sync.WaitGroup
 	wg.Add(workers)
+	rt := runtime.Dedicated(workers).WithAdmitTimeout(m.admitTimeout)
 	for i := 0; i < workers; i++ {
-		go func() {
+		if err := rt.AdmitWait(func() {
 			defer wg.Done()
 			for idx := range jobs {
 				scanner, err := NewScanner(m.roots[idx], WithOptions(m.options))
@@ -562,7 +553,13 @@ func (m *MultiScanner) Scan(ctx context.Context) (*MultiScanReport, error) {
 				report, err := scanner.Scan(ctx)
 				results <- item{i: idx, report: report, err: err}
 			}
-		}()
+		}); err != nil {
+			wg.Done()
+			close(jobs)
+			wg.Wait()
+			close(results)
+			return &MultiScanReport{Reports: out}, err
+		}
 	}
 	go func() {
 		for i := range m.roots {

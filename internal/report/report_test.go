@@ -134,6 +134,48 @@ func TestSnapshotValidateErrors(t *testing.T) {
 	}
 }
 
+func TestSnapshotRejectsStaleVersionAndEscape(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "a.txt")
+	if err := os.WriteFile(path, []byte("abc"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := uint64(1)
+	files := []File{{Absolute: path, Relative: "a.txt", Bytes: 3, ModifiedNS: &old}}
+	if _, _, err := ReadBounded(root, files, "a.txt", 10); err == nil {
+		t.Fatal("stale version accepted")
+	}
+	ns := uint64(info.ModTime().UnixNano())
+	ok := []File{{Absolute: path, Relative: "a.txt", Bytes: 3, ModifiedNS: &ns}}
+	if data, ev, err := ReadBounded(root, ok, "a.txt", 10); err != nil || string(data) != "abc" || ev != EvidenceFileVersion {
+		t.Fatalf("version read %q %d %v", data, ev, err)
+	}
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "data.txt"), []byte("abc"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(root, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "sub", "data.txt"), []byte("abc"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	escaped := []File{{Absolute: filepath.Join(root, "sub", "data.txt"), Relative: "sub/data.txt", Bytes: 3, ContentHash: hashx.SHA256Prefix([]byte("abc"))}}
+	if err := os.RemoveAll(filepath.Join(root, "sub")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "sub")); err != nil {
+		t.Skip(err)
+	}
+	if _, _, err := ReadBounded(root, escaped, "sub/data.txt", 10); err == nil {
+		t.Fatal("directory symlink escape accepted")
+	}
+}
+
 func TestMapIOAndSlashRel(t *testing.T) {
 	if err := mapIO("gone.txt", os.ErrNotExist); err == nil {
 		t.Fatal("stale")

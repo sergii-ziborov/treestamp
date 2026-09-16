@@ -42,6 +42,7 @@ func discover(ctx context.Context, root string, opts Options, needMeta bool) (*d
 	}
 	defer walker.Close()
 	var selected, totalBytes uint64
+	mergeIgnoreSources(&out.sources, matcher.Sources())
 	for {
 		if err := ctx.Err(); err != nil {
 			out.term = TermCancelled
@@ -69,9 +70,7 @@ func discover(ctx context.Context, root string, opts Options, needMeta bool) (*d
 		}
 		considerEntry(considerArgs{walker: walker, matcher: matcher, snapshots: &snapshots, out: out, opts: opts, entry: entry, needMeta: needMeta}, &selected, &totalBytes)
 	}
-	for _, source := range matcher.Sources() {
-		out.sources = append(out.sources, IgnoreSource{Kind: source.Kind, Location: source.Location, ContentHash: source.ContentHash})
-	}
+	mergeIgnoreSources(&out.sources, matcher.Sources())
 	if opts.IgnorePolicy.GitGlobal || opts.IgnorePolicy.GitExclude {
 		out.portable = false
 	}
@@ -114,7 +113,9 @@ func selectionConfig(opts Options, walkOpts walk.WalkOptions, needMeta bool) sel
 	return selection.Config{
 		IgnoreFiles: opts.IgnoreFiles, IgnoreCase: opts.IgnoreCase, IgnorePolicy: opts.IgnorePolicy,
 		OverrideRules: opts.OverrideRules, Extensions: opts.Extensions, FileTypes: opts.FileTypes,
-		SkipHidden: opts.SkipHidden, StandardSkips: opts.StandardSkips, MaxFileBytes: opts.MaxFileBytes,
+		SkipHidden: opts.SkipHidden, StandardSkips: opts.StandardSkips, GitModules: opts.GitModules,
+		Filters: opts.Filters,
+		MaxFileBytes:  opts.MaxFileBytes,
 		ApplyMaxBytes: needMeta, MinDepth: walkOpts.MinDepth, MaxDepth: walkOpts.MaxDepth,
 	}
 }
@@ -138,6 +139,7 @@ func considerEntry(a considerArgs, selected, totalBytes *uint64) {
 			a.out.warnings = append(a.out.warnings, Warning{Relative: rel, Message: w})
 			a.out.complete = false
 		}
+		mergeIgnoreSources(&a.out.sources, a.matcher.Sources())
 		for len(*a.snapshots) <= a.entry.Depth() {
 			*a.snapshots = append(*a.snapshots, a.matcher.Engine().Clone())
 		}
@@ -181,6 +183,22 @@ func recordSelected(a considerArgs, rel string, selected, totalBytes *uint64) {
 	a.out.candidates = append(a.out.candidates, candidate{abs: a.entry.Path(), rel: rel, size: size, version: version})
 	*selected++
 	*totalBytes += size
+}
+
+func mergeIgnoreSources(dst *[]IgnoreSource, src []ignore.Source) {
+	for _, source := range src {
+		item := IgnoreSource{Kind: source.Kind, Location: source.Location, ContentHash: source.ContentHash}
+		dup := false
+		for _, have := range *dst {
+			if have.Kind == item.Kind && have.Location == item.Location && have.ContentHash == item.ContentHash {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			*dst = append(*dst, item)
+		}
+	}
 }
 
 func restoreMatcher(matcher *selection.Matcher, snaps []*ignore.Engine, depth int) {

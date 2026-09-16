@@ -93,39 +93,49 @@ func (s *Scanner) VisitContentStreaming(ctx context.Context, factory func(worker
 	return s.visitContent(ctx, ContentVisitStreaming, factory)
 }
 func (s *Scanner) VisitContentManifest(ctx context.Context, factory func(worker int) ContentVisitor) (*CompactScanReport, error) {
-	report, err := s.visitContent(ctx, ContentVisitRevision, factory)
-	if err != nil || report == nil {
-		return nil, err
-	}
-	compact, err := s.ScanCompact(ctx)
-	if err != nil {
-		return nil, err
-	}
-	compact.Revision = report.Revision
-	return compact, nil
-}
-func (s *Scanner) VisitChangedContent(ctx context.Context, plan WatchPlan, factory func(worker int) ContentVisitor) (ChangedContentVisitOutcome, error) {
-	if plan.FullRescan {
-		return ChangedContentVisitOutcome{FullRescanRequired: true}, nil
-	}
-	report, err := s.visitContent(ctx, ContentVisitRevision, factory)
-	if err != nil {
-		return ChangedContentVisitOutcome{}, err
-	}
-	return ChangedContentVisitOutcome{Visited: &ChangedContentVisitReport{Content: *report, Removed: plan.Removed}}, nil
-}
-
-func (s *Scanner) visitContent(ctx context.Context, mode ContentVisitMode, factory func(worker int) ContentVisitor) (*ContentVisitReport, error) {
-	inner, err := scan.VisitContent(ctx, s.root, toScanOptions(s.options), scan.ContentVisitMode(mode), func(worker int) scan.ContentVisitor {
+	inner, err := scan.VisitContent(ctx, s.root, toScanOptions(s.options), scan.VisitRevision, func(worker int) scan.ContentVisitor {
 		visitor := factory(worker)
 		return func(ev scan.ContentVisitEvent) scan.ContentVisitControl {
 			return scan.ContentVisitControl(visitor(fromContentEvent(ev)))
 		}
 	})
 	if err != nil {
+		return nil, wrap(err, "VisitContentManifest", s.root)
+	}
+	if inner.Manifest == nil {
+		return fromCompact(&scan.CompactReport{
+			Root: inner.Root, Revision: inner.Revision, Complete: inner.Complete && !inner.Stopped,
+			Termination: inner.Termination, Portable: inner.Portable, Cache: inner.Cache,
+		}), nil
+	}
+	return fromCompact(inner.Manifest), nil
+}
+func (s *Scanner) VisitChangedContent(ctx context.Context, plan WatchPlan, factory func(worker int) ContentVisitor) (ChangedContentVisitOutcome, error) {
+	if plan.FullRescan {
+		return ChangedContentVisitOutcome{FullRescanRequired: true}, nil
+	}
+	inner, err := scan.VisitChanged(ctx, s.root, toScanOptions(s.options), toInternalPlan(plan), wrapContentVisitor(factory))
+	if err != nil {
+		return ChangedContentVisitOutcome{}, wrap(err, "VisitChangedContent", s.root)
+	}
+	return ChangedContentVisitOutcome{Visited: &ChangedContentVisitReport{Content: *fromContentReport(inner), Removed: plan.Removed}}, nil
+}
+
+func (s *Scanner) visitContent(ctx context.Context, mode ContentVisitMode, factory func(worker int) ContentVisitor) (*ContentVisitReport, error) {
+	inner, err := scan.VisitContent(ctx, s.root, toScanOptions(s.options), scan.ContentVisitMode(mode), wrapContentVisitor(factory))
+	if err != nil {
 		return nil, wrap(err, "VisitContent", s.root)
 	}
 	return fromContentReport(inner), nil
+}
+
+func wrapContentVisitor(factory func(worker int) ContentVisitor) func(int) scan.ContentVisitor {
+	return func(worker int) scan.ContentVisitor {
+		visitor := factory(worker)
+		return func(ev scan.ContentVisitEvent) scan.ContentVisitControl {
+			return scan.ContentVisitControl(visitor(fromContentEvent(ev)))
+		}
+	}
 }
 
 func fromContentEvent(ev scan.ContentVisitEvent) ContentVisitEvent {

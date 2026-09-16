@@ -6,16 +6,18 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"hash"
 	"io"
 	"os"
-	"runtime"
+	stdlib "runtime"
 	"sort"
-	"sync"
 
+	"github.com/sergii-ziborov/treestamp/internal/fileread"
 	"github.com/sergii-ziborov/treestamp/internal/filetypes"
 	"github.com/sergii-ziborov/treestamp/internal/hashx"
 	"github.com/sergii-ziborov/treestamp/internal/ignore"
+	"github.com/sergii-ziborov/treestamp/internal/runtime"
 	"github.com/sergii-ziborov/treestamp/internal/selection"
 	"github.com/sergii-ziborov/treestamp/internal/walk"
 )
@@ -33,7 +35,7 @@ func inspect(ctx context.Context, files []candidate, opts Options) ([]ScannedFil
 	if workers <= 0 {
 		workers = 1
 		if opts.HashFileContents && len(files) > 8 {
-			workers = min(runtime.GOMAXPROCS(0), 4)
+			workers = min(stdlib.GOMAXPROCS(0), 4)
 		}
 	}
 	runOne := func(c candidate) inspectResult {
@@ -64,17 +66,17 @@ func inspectSerial(ctx context.Context, files []candidate, runOne func(candidate
 }
 
 func inspectParallel(ctx context.Context, files []candidate, workers int, runOne func(candidate) inspectResult) ([]ScannedFile, []Skipped, CacheStats, error) {
+	rt := runtime.Dedicated(workers)
 	ch := make(chan candidate)
 	res := make(chan inspectResult, workers)
-	var wg sync.WaitGroup
+	grp := rt.Group()
 	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		grp.Go(func() error {
 			for c := range ch {
 				res <- runOne(c)
 			}
-		}()
+			return nil
+		})
 	}
 	go func() {
 		defer close(ch)
@@ -86,7 +88,7 @@ func inspectParallel(ctx context.Context, files []candidate, workers int, runOne
 			}
 		}
 	}()
-	go func() { wg.Wait(); close(res) }()
+	go func() { _ = grp.Wait(); close(res) }()
 	var out []ScannedFile
 	var skipped []Skipped
 	var stats CacheStats
@@ -144,10 +146,11 @@ func applyInspectResult(out inspectOut, item inspectResult, asCompact bool) {
 
 func cacheIndex(opts Options) map[string]CacheEntry {
 	index := map[string]CacheEntry{}
-	if opts.Cache != nil {
-		for _, entry := range opts.Cache.Entries {
-			index[entry.Relative] = entry
-		}
+	if opts.Cache == nil || (opts.Root != "" && !opts.Cache.Compatible(opts.Root)) {
+		return index
+	}
+	for _, entry := range opts.Cache.Entries {
+		index[entry.Relative] = entry
 	}
 	return index
 }
@@ -165,27 +168,60 @@ func inspectOne(c candidate, opts Options, index map[string]CacheEntry) (Scanned
 
 func reuseCached(c candidate, opts Options, index map[string]CacheEntry, file *ScannedFile) (error, *Skipped, CacheStats, bool) {
 	cached, ok := index[c.rel]
-	if !ok || cached.Bytes != c.size || !cached.Version.Reusable(c.version) {
+	if !ok || !canReuse(c, opts, cached) {
 		return nil, nil, CacheStats{}, false
 	}
+	apply := func() {
+		if opts.HashFileContents {
+			file.ContentHash, file.ContentFingerprint = cached.ContentHash, cached.ContentFingerprint
+		}
+		file.BinaryChecked = opts.DetectBinary && cached.BinaryChecked
+	}
 	if opts.CacheValidation == CacheFast {
-		file.ContentHash, file.ContentFingerprint, file.BinaryChecked = cached.ContentHash, cached.ContentFingerprint, cached.BinaryChecked
+		apply()
 		return nil, nil, CacheStats{ReusedHashes: 1}, true
 	}
 	fp, err := fingerprintFile(c.abs)
 	if err == nil && fp == cached.ContentFingerprint {
-		file.ContentHash, file.ContentFingerprint, file.BinaryChecked = cached.ContentHash, cached.ContentFingerprint, cached.BinaryChecked
+		apply()
 		return nil, nil, CacheStats{ReusedHashes: 1, FingerprintReads: 1}, true
 	}
 	return nil, nil, CacheStats{}, false
 }
 
+func canReuse(c candidate, opts Options, cached CacheEntry) bool {
+	if cached.Bytes != c.size || !cached.Version.Reusable(c.version) {
+		return false
+	}
+	if opts.HashFileContents && cached.ContentHash == "" {
+		return false
+	}
+	if opts.DetectBinary && !cached.BinaryChecked {
+		return false
+	}
+	if opts.CacheValidation == CacheStrict && cached.ContentFingerprint == "" {
+		return false
+	}
+	return true
+}
+
 func hashOpened(c candidate, opts Options, file ScannedFile) (ScannedFile, *Skipped, CacheStats, error) {
-	f, err := os.Open(c.abs)
+	path := c.abs
+	if opts.Root != "" {
+		if confined, err := fileread.Confine(opts.Root, c.abs); err == nil {
+			path = confined
+		} else if errors.Is(err, fileread.ErrEscape) || errors.Is(err, fileread.ErrSymlink) {
+			return file, &Skipped{Relative: c.rel, Kind: selection.SkipPathEscape, Detail: err.Error()}, CacheStats{}, nil
+		}
+	}
+	f, err := os.Open(path)
 	if err != nil {
 		return file, &Skipped{Relative: c.rel, Kind: selection.SkipIOError, Detail: err.Error()}, CacheStats{}, nil
 	}
 	defer f.Close()
+	if skip := checkContentSize(f, c, opts); skip != nil {
+		return file, skip, CacheStats{}, nil
+	}
 	var h hash.Hash
 	if opts.HashFileContents {
 		h = sha256.New()
@@ -236,8 +272,11 @@ func checkContentSize(f *os.File, c candidate, opts Options) *Skipped {
 	if opts.ContentValidation != ContentStrict {
 		return nil
 	}
-	info, statErr := f.Stat()
-	if statErr == nil && uint64(info.Size()) != c.size {
+	opened, info, err := fileread.FromFile(f)
+	if err != nil {
+		return &Skipped{Relative: c.rel, Kind: selection.SkipConcurrentModification, Detail: err.Error()}
+	}
+	if !fileread.SameObject(opened, c.version, uint64(info.Size()), c.size) {
 		return &Skipped{Relative: c.rel, Kind: selection.SkipConcurrentModification}
 	}
 	return nil
@@ -305,6 +344,12 @@ func writeDescriptorFlags(h hash.Hash, opts Options) {
 	writeBool(h, opts.IgnoreCase)
 	writeBool(h, opts.SkipHidden)
 	writeByteFlag(h, opts.StandardSkips, 1, 0)
+	if opts.GitModules {
+		writeBool(h, true)
+	}
+	if !opts.Filters.Empty() {
+		opts.Filters.WritePolicy(h)
+	}
 	writeBool(h, opts.HashFileContents)
 	writeBool(h, opts.DetectBinary)
 	writeByteFlag(h, opts.RecordSkipped, 1, 2)

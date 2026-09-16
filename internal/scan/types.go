@@ -2,6 +2,7 @@ package scan
 
 import (
 	"context"
+	"path/filepath"
 	"sort"
 	"time"
 
@@ -25,6 +26,8 @@ type Options struct {
 	IgnoreCase        bool
 	SkipHidden        bool
 	StandardSkips     bool
+	GitModules        bool
+	Filters           selection.Filters
 	HashFileContents  bool
 	DetectBinary      bool
 	RecordSkipped     bool
@@ -38,6 +41,7 @@ type Options struct {
 	ContentDiscovery  ContentDiscovery
 	Cache             *Cache
 	Started           time.Time
+	Root              string
 }
 
 type Limits struct {
@@ -227,7 +231,14 @@ func CacheFromCompact(report *CompactReport) Cache {
 }
 
 func (c *Cache) Compatible(root string) bool {
-	return c != nil && c.FormatVersion == CacheFormatVersion && c.Root == root
+	if c == nil || c.FormatVersion != CacheFormatVersion {
+		return false
+	}
+	if c.Root == root {
+		return true
+	}
+	abs, err := filepath.Abs(root)
+	return err == nil && c.Root == abs
 }
 
 func (c *Cache) Invalidate(relatives []string) int {
@@ -261,6 +272,9 @@ func Paths(ctx context.Context, root string, opts Options) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	if discovered.term == TermCancelled {
+		return nil, context.Canceled
+	}
 	sort.Strings(discovered.paths)
 	return discovered.paths, nil
 }
@@ -269,6 +283,10 @@ func Full(ctx context.Context, root string, opts Options) (*Report, error) {
 	discovered, err := discover(ctx, root, opts, true)
 	if err != nil {
 		return nil, err
+	}
+	opts.Root = discovered.root
+	if opts.Cache != nil && !opts.Cache.Compatible(opts.Root) {
+		opts.Cache = nil
 	}
 	files, extraSkip, stats, err := inspect(ctx, discovered.candidates, opts)
 	if err != nil {
@@ -287,6 +305,10 @@ func Compact(ctx context.Context, root string, opts Options) (*CompactReport, er
 	discovered, err := discover(ctx, root, opts, true)
 	if err != nil {
 		return nil, err
+	}
+	opts.Root = discovered.root
+	if opts.Cache != nil && !opts.Cache.Compatible(opts.Root) {
+		opts.Cache = nil
 	}
 	files, extraSkip, stats, err := inspectCompact(ctx, discovered.candidates, opts)
 	if err != nil {
@@ -334,8 +356,10 @@ func Incremental(ctx context.Context, root string, opts Options, previous *Repor
 }
 
 func Cached(ctx context.Context, root string, opts Options, cache *Cache) (*Report, error) {
-	if cache != nil {
+	if cache != nil && cache.Compatible(root) {
 		opts.Cache = cache
+	} else {
+		opts.Cache = nil
 	}
 	return Full(ctx, root, opts)
 }

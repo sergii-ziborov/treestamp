@@ -68,6 +68,7 @@ const (
 	SourceCustom
 	SourceExplicit
 	SourceOverride
+	SourceGitModules
 )
 
 func (k SourceKind) String() string {
@@ -86,6 +87,8 @@ func (k SourceKind) String() string {
 		return "explicit"
 	case SourceOverride:
 		return "override"
+	case SourceGitModules:
+		return "git_modules"
 	default:
 		return ""
 	}

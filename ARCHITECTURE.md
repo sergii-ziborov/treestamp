@@ -35,7 +35,7 @@ Unused alias packages (`internal/cache`, `internal/content`,
 
 ## Runtime constraints
 
-- Minimum Go: 1.25.0
+- Minimum Go: 1.23.0
 - Intended build: `CGO_ENABLED=0`
 - `golang.org/x/sys` is allowed where the standard library cannot express
   volume/file identity
@@ -43,6 +43,9 @@ Unused alias packages (`internal/cache`, `internal/content`,
 - No goroutine-per-file
 - Do not change the host `GOMAXPROCS`
 - Host executor accepts a job once or rejects it; it does not store the job
+- `Runtime.Run` and `Group.Go` admit and wait; they do not silently caller-run
+  unless `OverflowCallerRuns` is set
+- `WithAdmitTimeout` bounds how long a job waits for a worker slot
 - One worker budget across several roots
 - Callback-scoped `[]byte`; owned reports
 - `context.Context` on scan APIs
@@ -76,10 +79,11 @@ A file root is a single yielded file, matching the Rust walker.
 
 `WalkBuilder` adds serial multi-root, name sort, filters, contents-first, and
 stdout-skip. `ParallelWalker` adds unordered visit, collect, and a bounded
-pull iterator. `Walk` / `WalkUnsorted` / `ReadDirents` are the Go-market
+pull iterator. `Walk` / `WalkUnsorted` / `ReadDirents` / `DirScanner` are the Go-market
 callback surfaces. Their callback entries cache target `Stat` results and
 depth. `WalkFS` and `NewFSWalker` provide lexical, no-follow traversal for
 arbitrary `fs.FS` implementations without OS identity claims.
+`DirScanner` and `ReadDirentsScratch` reuse an optional getdents buffer.
 
 ## Out of scope
 

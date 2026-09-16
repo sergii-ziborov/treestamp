@@ -1,15 +1,18 @@
 package compat_test
 
 import (
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"testing/fstest"
 
+	"github.com/karrick/godirwalk"
 	"github.com/sergii-ziborov/treestamp"
 )
 
@@ -142,4 +145,255 @@ func virtualTree() fstest.MapFS {
 		"repo/link":          {Mode: fs.ModeSymlink},
 		"repo/skip/file.txt": {Data: []byte("skip")},
 	}
+}
+
+func wideMapFS() fstest.MapFS {
+	fsys := fstest.MapFS{}
+	for dir := 0; dir < 40; dir++ {
+		for file := 0; file < 50; file++ {
+			name := fmt.Sprintf("d%02d/f%02d.txt", dir, file)
+			fsys[name] = &fstest.MapFile{Data: []byte("x")}
+		}
+	}
+	return fsys
+}
+
+func BenchmarkArbitraryFSWalkDir(b *testing.B) {
+	benchArbitraryFS(b, fs.WalkDir)
+}
+
+func BenchmarkArbitraryFSWalkFS(b *testing.B) {
+	benchArbitraryFS(b, treestamp.WalkFS)
+}
+
+func benchArbitraryFS(b *testing.B, walk fsWalkOperation) {
+	fsys := wideMapFS()
+	benchRepeat(b, func() (int, error) {
+		n := 0
+		err := walk(fsys, ".", func(_ string, _ fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			n++
+			return nil
+		})
+		return n, err
+	})
+}
+
+func TestReadDirentsScratchParity(t *testing.T) {
+	root := makeTree(t)
+	scratch := make([]byte, sharedScratchSize())
+	want, err := godirwalk.ReadDirents(root, scratch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := treestamp.ReadDirentsScratch(root, scratch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(treestampDirentKeys(got), godirwalkDirentKeys(want)) {
+		t.Fatalf("dirents differ\nwant: %#v\n got: %#v", godirwalkDirentKeys(want), treestampDirentKeys(got))
+	}
+}
+
+func TestReadDirnamesParity(t *testing.T) {
+	root := makeTree(t)
+	scratch := make([]byte, sharedScratchSize())
+	want, err := godirwalk.ReadDirnames(root, scratch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := treestamp.ReadDirnames(root, scratch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sort.Strings(want)
+	sort.Strings(got)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("names differ\nwant: %#v\n got: %#v", want, got)
+	}
+}
+
+func TestDirScannerParity(t *testing.T) {
+	root := makeTree(t)
+	scratch := make([]byte, sharedScratchSize())
+	want := collectGodirwalkScanner(t, root, scratch)
+	got := collectTreestampScanner(t, root, scratch)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("scanner entries differ\nwant: %#v\n got: %#v", want, got)
+	}
+}
+
+func TestScratchBufferReuse(t *testing.T) {
+	root := makeTree(t)
+	scratch := treestamp.NewScratchBuffer()
+	dirs := []string{root, filepath.Join(root, "keep"), filepath.Join(root, "skip"), filepath.Join(root, "deep")}
+	for _, dir := range dirs {
+		want, err := godirwalk.ReadDirnames(dir, scratch)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := treestamp.ReadDirnames(dir, scratch)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sort.Strings(want)
+		sort.Strings(got)
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s names differ\nwant: %#v\n got: %#v", dir, want, got)
+		}
+	}
+}
+
+func TestDirScannerEmptyAndMissing(t *testing.T) {
+	empty := t.TempDir()
+	scanner, err := treestamp.NewDirScanner(empty)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scanner.Scan() {
+		t.Fatal("empty directory yielded an entry")
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := treestamp.NewDirScanner(filepath.Join(empty, "missing")); err == nil {
+		t.Fatal("missing directory opened")
+	}
+}
+
+func BenchmarkGodirwalkReadDirents(b *testing.B) {
+	benchReadDirents(b, func(dir string, scratch []byte) (int, error) {
+		ents, err := godirwalk.ReadDirents(dir, scratch)
+		return len(ents), err
+	})
+}
+
+func BenchmarkTreestampReadDirentsScratch(b *testing.B) {
+	benchReadDirents(b, func(dir string, scratch []byte) (int, error) {
+		ents, err := treestamp.ReadDirentsScratch(dir, scratch)
+		return len(ents), err
+	})
+}
+
+func BenchmarkGodirwalkScanner(b *testing.B) {
+	benchDirScanner(b, func(dir string, scratch []byte) (int, error) {
+		scanner, err := godirwalk.NewScannerWithScratchBuffer(dir, scratch)
+		if err != nil {
+			return 0, err
+		}
+		n := 0
+		for scanner.Scan() {
+			n++
+		}
+		err = scanner.Err()
+		if err == io.EOF {
+			err = nil
+		}
+		return n, err
+	})
+}
+
+func BenchmarkTreestampDirScanner(b *testing.B) {
+	benchDirScanner(b, func(dir string, scratch []byte) (int, error) {
+		scanner, err := treestamp.NewDirScannerScratch(dir, scratch)
+		if err != nil {
+			return 0, err
+		}
+		n := 0
+		for scanner.Scan() {
+			n++
+		}
+		return n, scanner.Err()
+	})
+}
+
+func benchReadDirents(b *testing.B, read func(string, []byte) (int, error)) {
+	root := makeWideDir(b, 4000)
+	scratch := make([]byte, sharedScratchSize())
+	benchRepeat(b, func() (int, error) { return read(root, scratch) })
+}
+
+func benchDirScanner(b *testing.B, scan func(string, []byte) (int, error)) {
+	root := makeWideDir(b, 4000)
+	scratch := make([]byte, sharedScratchSize())
+	benchRepeat(b, func() (int, error) { return scan(root, scratch) })
+}
+
+func collectTreestampScanner(t *testing.T, dir string, scratch []byte) []string {
+	t.Helper()
+	scanner, err := treestamp.NewDirScannerScratch(dir, scratch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for scanner.Scan() {
+		dent, err := scanner.Dirent()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if dent.Name() != scanner.Name() {
+			t.Fatalf("name %q vs %q", dent.Name(), scanner.Name())
+		}
+		out = append(out, dent.Name()+":"+dent.Type().String())
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatal(err)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func collectGodirwalkScanner(t *testing.T, dir string, scratch []byte) []string {
+	t.Helper()
+	scanner, err := godirwalk.NewScannerWithScratchBuffer(dir, scratch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for scanner.Scan() {
+		dent, err := scanner.Dirent()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if dent.Name() != scanner.Name() {
+			t.Fatalf("name %q vs %q", dent.Name(), scanner.Name())
+		}
+		out = append(out, dent.Name()+":"+dent.ModeType().String())
+	}
+	if err := scanner.Err(); err != nil && err != io.EOF {
+		t.Fatal(err)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func treestampDirentKeys(ents []os.DirEntry) []string {
+	out := make([]string, len(ents))
+	for i, ent := range ents {
+		out[i] = ent.Name() + ":" + ent.Type().String()
+	}
+	sort.Strings(out)
+	return out
+}
+
+func godirwalkDirentKeys(ents godirwalk.Dirents) []string {
+	out := make([]string, len(ents))
+	for i, ent := range ents {
+		out[i] = ent.Name() + ":" + ent.ModeType().String()
+	}
+	sort.Strings(out)
+	return out
+}
+
+func sharedScratchSize() int {
+	n := godirwalk.MinimumScratchBufferSize
+	if m := treestamp.MinimumScratchBufferSize(); m > n {
+		n = m
+	}
+	if n < 32768 {
+		n = 32768
+	}
+	return n
 }

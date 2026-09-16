@@ -83,3 +83,53 @@ func TestDedicatedZeroUsesAvailable(t *testing.T) {
 		t.Fatal("group err")
 	}
 }
+
+func TestAdmitWaitsWithoutCallerRun(t *testing.T) {
+	busy := Dedicated(1)
+	started := make(chan struct{})
+	_ = busy.TryExecute(func() {
+		close(started)
+		time.Sleep(40 * time.Millisecond)
+	})
+	<-started
+	var ran atomic.Bool
+	done := make(chan struct{})
+	go func() {
+		busy.Run(func() { ran.Store(true) })
+		close(done)
+	}()
+	time.Sleep(10 * time.Millisecond)
+	if ran.Load() {
+		t.Fatal("caller-ran while the slot was held")
+	}
+	<-done
+	for i := 0; i < 50 && !ran.Load(); i++ {
+		time.Sleep(time.Millisecond)
+	}
+	if !ran.Load() {
+		t.Fatal("admit")
+	}
+}
+
+func TestAdmitTimeout(t *testing.T) {
+	busy := Dedicated(1).WithAdmitTimeout(15 * time.Millisecond)
+	started := make(chan struct{})
+	_ = busy.TryExecute(func() {
+		close(started)
+		time.Sleep(80 * time.Millisecond)
+	})
+	<-started
+	if err := busy.AdmitWait(func() {}); err != ErrAdmitTimeout {
+		t.Fatalf("timeout %v", err)
+	}
+}
+
+func TestOverflowCallerRuns(t *testing.T) {
+	busy := Dedicated(1).OverflowCallerRuns()
+	_ = busy.TryExecute(func() { time.Sleep(20 * time.Millisecond) })
+	var ran atomic.Bool
+	busy.Run(func() { ran.Store(true) })
+	if !ran.Load() {
+		t.Fatal("caller runs")
+	}
+}

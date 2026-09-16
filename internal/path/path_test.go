@@ -51,3 +51,21 @@ func TestCollapsePathPrefixes(t *testing.T) {
 		t.Fatal("src3")
 	}
 }
+
+func TestSafeRelative(t *testing.T) {
+	if got, ok := SafeRelative("src/a.go"); !ok || got != "src/a.go" {
+		t.Fatal(got, ok)
+	}
+	if got, ok := SafeRelative("."); !ok || got != "." {
+		t.Fatal(got, ok)
+	}
+	if _, ok := SafeRelative(".."); ok {
+		t.Fatal("parent")
+	}
+	if _, ok := SafeRelative("src/../secret"); ok {
+		t.Fatal("escape")
+	}
+	if _, ok := SafeRelative("/abs"); ok {
+		t.Fatal("abs")
+	}
+}

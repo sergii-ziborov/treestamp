@@ -9,8 +9,8 @@ import (
 // Identity is a native file or volume identity. It is not portable across
 // machines even when encoded as JSON.
 type Identity struct {
-	FileSystem uint64
-	File       uint64
+	FileSystem uint64 `json:"file_system"`
+	File       uint64 `json:"file"`
 }
 
 // Info is directory identity used for same-filesystem and symlink-loop checks.

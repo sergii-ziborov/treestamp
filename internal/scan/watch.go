@@ -2,10 +2,13 @@ package scan
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 
+	"github.com/sergii-ziborov/treestamp/internal/fileread"
 	"github.com/sergii-ziborov/treestamp/internal/ignore"
+	pathx "github.com/sergii-ziborov/treestamp/internal/path"
 	"github.com/sergii-ziborov/treestamp/internal/selection"
 )
 
@@ -22,7 +25,7 @@ func (p WatchPlan) Invalidated() []string {
 
 func (p WatchPlan) Invalidates(relative string) bool {
 	for _, prefix := range p.Invalidated() {
-		if relative == prefix || (len(relative) > len(prefix) && relative[:len(prefix)] == prefix && relative[len(prefix)] == '/') {
+		if pathx.IsSameOrDescendant(relative, prefix) {
 			return true
 		}
 	}
@@ -62,6 +65,7 @@ type WatchUpdate struct {
 }
 
 func Watch(ctx context.Context, root string, opts Options, previous *Report, plan WatchPlan) (*WatchUpdate, error) {
+	plan = sanitizePlan(plan)
 	if reason, ok := earlyRescan(previous, plan, opts); ok {
 		return rescanUpdate(ctx, root, opts, previous, reason)
 	}
@@ -78,17 +82,17 @@ func Watch(ctx context.Context, root string, opts Options, previous *Report, pla
 		return nil, err
 	}
 	scope := watchScope{ctx: ctx, root: root, abs: abs, opts: opts, previous: previous, matcher: matcher, plan: plan}
-	candidates, structural, err := changedCandidates(scope)
+	set, err := collectChanges(scope, true)
 	if err != nil {
 		return nil, err
 	}
-	if structural != nil {
-		return structural, nil
+	if set.structural != nil {
+		return set.structural, nil
 	}
 	if ignoreChanged(previous, matcher.Sources()) {
 		return rescanUpdate(ctx, root, opts, previous, WatchFullIgnore)
 	}
-	return finishWatch(scope, kept, candidates)
+	return finishWatch(scope, kept, set)
 }
 
 func rescanUpdate(ctx context.Context, root string, opts Options, previous *Report, reason WatchReason) (*WatchUpdate, error) {
@@ -130,45 +134,163 @@ type watchScope struct {
 	plan     WatchPlan
 }
 
-func changedCandidates(s watchScope) ([]candidate, *WatchUpdate, error) {
-	var candidates []candidate
-	for _, rel := range s.plan.Changed {
-		path := filepath.Join(s.abs, filepath.FromSlash(rel))
-		info, statErr := os.Lstat(path)
-		if statErr != nil {
-			continue
-		}
-		if info.IsDir() {
-			update, err := rescanUpdate(s.ctx, s.root, s.opts, s.previous, WatchFullStructural)
-			return nil, update, err
-		}
-		size := uint64(info.Size())
-		dec := s.matcher.DecidePath(selection.PathQuery{
-			Rel: rel, Name: filepath.Base(rel), IsFile: info.Mode().IsRegular(),
-			IsSymlink: info.Mode()&os.ModeSymlink != 0, Size: &size,
-		})
-		if dec.IsSelected() {
-			candidates = append(candidates, candidate{abs: path, rel: rel, size: size})
-		}
-	}
-	return candidates, nil, nil
+type changeSet struct {
+	candidates []candidate
+	skipped    []Skipped
+	structural *WatchUpdate
 }
 
-func finishWatch(s watchScope, kept []ScannedFile, candidates []candidate) (*WatchUpdate, error) {
-	inspected, extraSkip, stats, err := inspect(s.ctx, candidates, s.opts)
+func collectChanges(s watchScope, dirMeansStructural bool) (changeSet, error) {
+	var set changeSet
+	for _, rel := range s.plan.Changed {
+		if err := s.ctx.Err(); err != nil {
+			return set, err
+		}
+		item, update, err := changeOne(s, rel, dirMeansStructural)
+		if err != nil || update != nil {
+			set.structural = update
+			return set, err
+		}
+		if item.skip != nil {
+			set.skipped = append(set.skipped, *item.skip)
+			continue
+		}
+		if item.ok {
+			set.candidates = append(set.candidates, item.cand)
+		}
+	}
+	return set, nil
+}
+
+type changeItem struct {
+	cand candidate
+	skip *Skipped
+	ok   bool
+}
+
+func changeOne(s watchScope, rel string, dirMeansStructural bool) (changeItem, *WatchUpdate, error) {
+	if _, ok := pathx.SafeRelative(rel); !ok {
+		return changeItem{skip: &Skipped{Relative: rel, Kind: selection.SkipPathEscape}}, nil, nil
+	}
+	path := filepath.Join(s.abs, filepath.FromSlash(rel))
+	if !pathx.UnderRoot(s.abs, path) {
+		return changeItem{skip: &Skipped{Relative: rel, Kind: selection.SkipPathEscape}}, nil, nil
+	}
+	info, statErr := os.Lstat(path)
+	if statErr != nil {
+		return changeItem{skip: &Skipped{Relative: rel, Kind: selection.SkipIOError, Detail: statErr.Error()}}, nil, nil
+	}
+	if _, err := fileread.Confine(s.abs, path); err != nil {
+		return changeItem{skip: &Skipped{Relative: rel, Kind: confineSkipKind(err), Detail: err.Error()}}, nil, nil
+	}
+	if info.IsDir() {
+		if !dirMeansStructural {
+			return changeItem{}, nil, nil
+		}
+		update, err := rescanUpdate(s.ctx, s.root, s.opts, s.previous, WatchFullStructural)
+		return changeItem{}, update, err
+	}
+	return selectChanged(s, rel, path, info)
+}
+
+func selectChanged(s watchScope, rel, path string, info os.FileInfo) (changeItem, *WatchUpdate, error) {
+	size := uint64(info.Size())
+	dec := s.matcher.DecidePath(selection.PathQuery{
+		Rel: rel, Name: filepath.Base(rel), IsFile: info.Mode().IsRegular(),
+		IsSymlink: info.Mode()&os.ModeSymlink != 0, Size: &size,
+	})
+	if !dec.IsSelected() {
+		if s.opts.RecordSkipped && dec.Skip != selection.SkipNone {
+			return changeItem{skip: &Skipped{Relative: rel, Kind: dec.Skip}}, nil, nil
+		}
+		return changeItem{}, nil, nil
+	}
+	return changeItem{ok: true, cand: candidate{
+		abs: path, rel: rel, size: size, version: fileread.FromInfo(path, info),
+	}}, nil, nil
+}
+
+func finishWatch(s watchScope, kept []ScannedFile, set changeSet) (*WatchUpdate, error) {
+	s.opts.Root = s.abs
+	inspected, extraSkip, stats, err := inspect(s.ctx, set.candidates, s.opts)
 	if err != nil {
 		return nil, err
 	}
+	prefixes := append(append([]string(nil), s.plan.Changed...), s.plan.Removed...)
+	skips := append(set.skipped, extraSkip...)
 	report := &Report{
-		Root: s.abs, Files: append(kept, inspected...), Skipped: extraSkip, Complete: true,
+		Root: s.abs, Files: append(kept, inspected...), Complete: true,
 		Portable: portablePolicy(s.opts), Cache: stats, IgnoreSources: toIgnoreSources(s.matcher.Sources()),
 	}
 	if s.previous != nil {
-		report.Skipped = append(append([]Skipped(nil), s.previous.Skipped...), report.Skipped...)
-		report.Warnings = append([]Warning(nil), s.previous.Warnings...)
+		report.Skipped = append(keepUncoveredSkips(s.previous.Skipped, prefixes), skips...)
+		report.Warnings = keepUncoveredWarnings(s.previous.Warnings, prefixes)
+	} else {
+		report.Skipped = skips
 	}
 	finalize(report, s.opts)
 	return &WatchUpdate{Report: report, Reason: WatchIncremental}, nil
+}
+
+func sanitizePlan(plan WatchPlan) WatchPlan {
+	plan.Changed = sanitizeRels(plan.Changed, &plan.RejectedEvents)
+	plan.Removed = sanitizeRels(plan.Removed, &plan.RejectedEvents)
+	return plan
+}
+
+func confineSkipKind(err error) selection.SkipKind {
+	if errors.Is(err, fileread.ErrEscape) || errors.Is(err, fileread.ErrSymlink) {
+		return selection.SkipPathEscape
+	}
+	return selection.SkipIOError
+}
+
+func rejectedRels(in []string) []string {
+	var out []string
+	for _, rel := range in {
+		if _, ok := pathx.SafeRelative(rel); !ok {
+			out = append(out, rel)
+		}
+	}
+	return out
+}
+
+func sanitizeRels(in []string, rejected *uint64) []string {
+	var out []string
+	seen := map[string]struct{}{}
+	for _, rel := range in {
+		clean, ok := pathx.SafeRelative(rel)
+		if !ok {
+			*rejected++
+			continue
+		}
+		if _, dup := seen[clean]; dup {
+			continue
+		}
+		seen[clean] = struct{}{}
+		out = append(out, clean)
+	}
+	return out
+}
+
+func keepUncoveredSkips(previous []Skipped, prefixes []string) []Skipped {
+	var keep []Skipped
+	for _, item := range previous {
+		if !pathx.PathCoveredByPrefixes(item.Relative, prefixes) {
+			keep = append(keep, item)
+		}
+	}
+	return keep
+}
+
+func keepUncoveredWarnings(previous []Warning, prefixes []string) []Warning {
+	var keep []Warning
+	for _, item := range previous {
+		if !pathx.PathCoveredByPrefixes(item.Relative, prefixes) {
+			keep = append(keep, item)
+		}
+	}
+	return keep
 }
 
 func earlyRescan(previous *Report, plan WatchPlan, opts Options) (WatchReason, bool) {

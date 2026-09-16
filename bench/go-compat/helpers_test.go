@@ -1,10 +1,12 @@
 package compat_test
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
+	"sync/atomic"
 	"testing"
 )
 
@@ -24,13 +26,88 @@ func makeTree(t *testing.T) string {
 	return root
 }
 
-func write(t *testing.T, path, contents string) {
-	t.Helper()
+func write(tb testing.TB, path, contents string) {
+	tb.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
+	}
+}
+
+func makeSelectiveCorpus(tb testing.TB, groups int) string {
+	tb.Helper()
+	root := tb.TempDir()
+	for i := 0; i < groups; i++ {
+		group := filepath.Join(root, fmt.Sprintf("g%02d", i))
+		write(tb, filepath.Join(group, "chosen-target", "file.txt"), "c")
+		write(tb, filepath.Join(group, "ignored-target", "file.txt"), "i")
+		mustSymlink(tb, filepath.Join(group, "chosen-target"), filepath.Join(group, "chosen"))
+		mustSymlink(tb, filepath.Join(group, "ignored-target"), filepath.Join(group, "ignored"))
+	}
+	return root
+}
+
+func makeWideDir(tb testing.TB, files int) string {
+	tb.Helper()
+	root := tb.TempDir()
+	for i := 0; i < files; i++ {
+		write(tb, filepath.Join(root, fmt.Sprintf("f%04d.txt", i)), "x")
+	}
+	if err := os.Mkdir(filepath.Join(root, "sub"), 0o755); err != nil {
+		tb.Fatal(err)
+	}
+	return root
+}
+
+func makeStatCorpus(tb testing.TB, files, links int) string {
+	tb.Helper()
+	root := tb.TempDir()
+	for i := 0; i < files; i++ {
+		write(tb, filepath.Join(root, "files", fmt.Sprintf("f%03d.txt", i)), "x")
+	}
+	if links > 0 {
+		if err := os.MkdirAll(filepath.Join(root, "links"), 0o755); err != nil {
+			tb.Fatal(err)
+		}
+	}
+	for i := 0; i < links; i++ {
+		target := filepath.Join(root, "files", fmt.Sprintf("f%03d.txt", i%files))
+		mustSymlink(tb, target, filepath.Join(root, "links", fmt.Sprintf("l%03d", i)))
+	}
+	return root
+}
+
+func countWalk(walk func(string, fs.WalkDirFunc) error, root string, visit fs.WalkDirFunc) (int, error) {
+	var n atomic.Int64
+	err := walk(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		n.Add(1)
+		if visit != nil {
+			return visit(path, entry, nil)
+		}
+		return nil
+	})
+	return int(n.Load()), err
+}
+
+func benchRepeat(b *testing.B, run func() (int, error)) {
+	b.Helper()
+	b.ReportAllocs()
+	seen := 0
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		n, err := run()
+		if err != nil {
+			b.Fatal(err)
+		}
+		seen = n
+	}
+	if seen == 0 {
+		b.Fatal("empty walk")
 	}
 }
 

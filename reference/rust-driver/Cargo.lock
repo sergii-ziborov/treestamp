@@ -106,6 +106,7 @@ name = "weavatrix-scan"
 version = "0.5.2"
 source = "git+https://github.com/Weavatrix/weavatrix-scan?rev=29c003a6ad541c9a10faf30505235375fa78b9d8#29c003a6ad541c9a10faf30505235375fa78b9d8"
 dependencies = [
+ "serde",
  "winapi-util",
 ]
 

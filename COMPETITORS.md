@@ -13,7 +13,7 @@ required for the port.
 
 | Participant | Role | Pin observed 2026-09-14 |
 | --- | --- | --- |
-| `filepath.WalkDir` | Required stdlib baseline | Go 1.25+ (use WalkDir, not only the older Walk) |
+| `filepath.WalkDir` | Required stdlib baseline | Go 1.23+ (use WalkDir, not only the older Walk) |
 | `fs.WalkDir` | `io/fs` baseline | Same real filesystem adapter; do not score MemFS against disk |
 | Manual iterative `File.ReadDir(n)` | Minimum-overhead control | Not a product |
 | [charlievieth/fastwalk](https://github.com/charlievieth/fastwalk) | Main parallel Go comparator | **v1.0.14** (2025-09-10). Latest tagged release found. Measure unordered callbacks and collect+sort separately. |
@@ -101,6 +101,24 @@ exactly on the Linux fixture. See
 `compat/results/windows-ntfs-functional.json` and
 `compat/results/linux-overlayfs-functional.json`. These are functional
 records, not timing results.
+
+## Method surface versus pinned Go walkers
+
+| Method family | Treestamp | fastwalk v1.0.14 | gocodewalker v1.5.1 | godirwalk v1.17.0 |
+| --- | --- | --- | --- | --- |
+| Callback walk / skip / stop | `Walk`, `WalkDirs`, `ErrTraverseLink` | `Walk`, `ErrTraverseLink` | channel `FileWalker` | `Walk` + `Callback` |
+| Post-children callback | `DirWalkOptions.PostChildrenCallback` | no | no | `PostChildrenCallback` |
+| Files-first / dirs-first | `Config.ContentsFirst` / `DirsFirst` | OS order | files then dirs | `Unsorted` only |
+| Scratch / lazy dir scan | `DirScanner`, `ReadDirentsScratch` | no | no | `Scanner`, `ReadDirents` |
+| Cached callback `Stat` | `StatDirEntry` | `DirEntry.Stat` | no | per-call `Stat` |
+| `.gitmodules` | `WithGitModules` (off by default) | no | `IgnoreGitModules` inverted | no |
+| Regex / name / dir filters | `Filters`, `FileWalker` fields | no | include/exclude fields; later include-regex overwrites name exclude | no |
+| Find repo root | `FindRepositoryRoot(start)` walks up from `start` | no | `FindRepositoryRoot` walks `Getwd()` | no |
+| Terminate / error handler | `Terminate`, `Walking`, `SetErrorHandler`, `ErrTerminateWalk` | cancel via callback error | `Terminate`, `SetErrorHandler` | callback error |
+| Report / hash / cache / watch | yes | no | no | no |
+
+Informal timing for the walk/select rows lives in
+`bench/go-compat/BENEFITS.md`. Official B01–B14 remain `NOT_RUN`.
 
 ## Headline policy
 

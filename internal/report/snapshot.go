@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/sergii-ziborov/treestamp/internal/fileread"
 	"github.com/sergii-ziborov/treestamp/internal/hashx"
 	pathx "github.com/sergii-ziborov/treestamp/internal/path"
 )
@@ -134,35 +135,31 @@ func ReadBounded(root string, files []File, relative string, maxBytes uint64) ([
 
 func readBytes(root string, snapshot File) ([]byte, int, error) {
 	relative := snapshot.Relative
-	info, err := os.Lstat(snapshot.Absolute)
+	confined, err := fileread.Confine(root, snapshot.Absolute)
 	if err != nil {
+		if errors.Is(err, fileread.ErrEscape) || errors.Is(err, fileread.ErrSymlink) {
+			return nil, 0, stale(relative)
+		}
 		return nil, 0, mapIO(relative, err)
 	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		return nil, 0, stale(relative)
-	}
-	abs, err := filepath.Abs(snapshot.Absolute)
-	if err != nil {
-		return nil, 0, mapIO(relative, err)
-	}
-	if !pathx.UnderRoot(root, abs) {
-		return nil, 0, stale(relative)
-	}
-	return openAndHash(snapshot)
+	return openAndHash(snapshot, confined)
 }
 
-func openAndHash(snapshot File) ([]byte, int, error) {
+func openAndHash(snapshot File, path string) ([]byte, int, error) {
 	relative := snapshot.Relative
-	f, err := os.Open(snapshot.Absolute)
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, 0, mapIO(relative, err)
 	}
 	defer f.Close()
-	before, err := f.Stat()
+	beforeVer, before, err := fileread.FromFile(f)
 	if err != nil {
 		return nil, 0, mapIO(relative, err)
 	}
 	if !before.Mode().IsRegular() || uint64(before.Size()) != snapshot.Bytes {
+		return nil, 0, stale(relative)
+	}
+	if snapshot.ModifiedNS != nil && (beforeVer.ModifiedNS == nil || *beforeVer.ModifiedNS != *snapshot.ModifiedNS) {
 		return nil, 0, stale(relative)
 	}
 	data, err := io.ReadAll(io.LimitReader(f, int64(snapshot.Bytes)+1))
@@ -172,11 +169,11 @@ func openAndHash(snapshot File) ([]byte, int, error) {
 	if uint64(len(data)) != snapshot.Bytes {
 		return nil, 0, stale(relative)
 	}
-	after, err := f.Stat()
+	afterVer, after, err := fileread.FromFile(f)
 	if err != nil {
 		return nil, 0, mapIO(relative, err)
 	}
-	if after.Size() != before.Size() || !after.ModTime().Equal(before.ModTime()) {
+	if after.Size() != before.Size() || !fileread.SameObject(afterVer, beforeVer, uint64(after.Size()), uint64(before.Size())) {
 		return nil, 0, stale(relative)
 	}
 	if snapshot.ContentHash != "" {

@@ -3,6 +3,7 @@ package selection
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 
 	"github.com/sergii-ziborov/treestamp/internal/filetypes"
@@ -42,7 +43,10 @@ func TestMatchedAndRefresh(t *testing.T) {
 	mustWrite(t, filepath.Join(root, ".gitignore"), "skip.txt\n")
 	mustWrite(t, filepath.Join(root, "keep.go"), "package k")
 	mustWrite(t, filepath.Join(root, "skip.txt"), "no")
-	m, err := NewMatcher(root, Config{IgnoreFiles: []string{".gitignore"}})
+	mustWrite(t, filepath.Join(root, ".gitmodules"), "path = extra\n")
+	mustMkdir(t, filepath.Join(root, "extra"))
+	mustWrite(t, filepath.Join(root, "extra", "lib.go"), "package extra")
+	m, err := NewMatcher(root, Config{IgnoreFiles: []string{".gitignore"}, GitModules: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,4 +180,32 @@ func TestMinDepthAncestorsAndWalkSkips(t *testing.T) {
 	_ = walkSkipKind(walk.SkipMaxDepth)
 	_ = relativeDepth("")
 	_ = relativeDepth("a/b")
+}
+
+func TestDeclarativeFilters(t *testing.T) {
+	root := t.TempDir()
+	m, err := NewMatcher(root, Config{Filters: Filters{
+		IncludeNameRegex: []*regexp.Regexp{regexp.MustCompile(`\.go$`)},
+		ExcludeNames:     []string{"skip.go"},
+		ExcludeDirs:      []string{"vendor"},
+		LocationExclude:  []string{"zz-drop"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.DecidePath(PathQuery{Rel: "keep.go", Name: "keep.go", IsFile: true}).IsSelected() {
+		t.Fatal("keep")
+	}
+	if m.DecidePath(PathQuery{Rel: "skip.go", Name: "skip.go", IsFile: true}).IsSelected() {
+		t.Fatal("exclude name")
+	}
+	if m.DecidePath(PathQuery{Rel: "notes.md", Name: "notes.md", IsFile: true}).IsSelected() {
+		t.Fatal("regex")
+	}
+	if m.DecidePath(PathQuery{Rel: "vendor", Name: "vendor", IsDir: true}).ShouldDescend() {
+		t.Fatal("exclude dir")
+	}
+	if m.DecidePath(PathQuery{Rel: "zz-drop/a.go", Name: "a.go", IsFile: true}).IsSelected() {
+		t.Fatal("location")
+	}
 }

@@ -89,11 +89,13 @@ type Config struct {
 	FileTypes     *filetypes.NamedFileTypes
 	SkipHidden    bool
 	StandardSkips bool
+	GitModules    bool
 	MaxFileBytes  uint64
 	ApplyMaxBytes bool
 	MinDepth      int
 	MaxDepth      *int
 	FollowLinks   bool
+	Filters       Filters
 }
 
 type PathQuery struct {
@@ -116,6 +118,7 @@ func NewMatcher(root string, cfg Config) (*Matcher, error) {
 		return nil, err
 	}
 	eng := ignore.NewEngine(cfg.IgnoreFiles, cfg.IgnoreCase, cfg.OverrideRules)
+	eng.SetGitModules(cfg.GitModules)
 	if cfg.IgnorePolicy.Specified() {
 		eng.ApplyPolicy(abs, cfg.IgnorePolicy)
 	} else {
@@ -264,6 +267,9 @@ func (m *Matcher) decide(q PathQuery) Decision {
 			return Decision{Disposition: Skipped, Skip: SkipStandardDirectory}
 		}
 	}
+	if m.rejectByFilter(q) {
+		return Decision{Disposition: Skipped, Skip: SkipIgnored, Repo: ignore.MatchNone}
+	}
 	repo := m.engine.Match(q.Rel, q.IsDir)
 	if repo.IsIgnored() {
 		skip := SkipIgnored
@@ -275,6 +281,20 @@ func (m *Matcher) decide(q PathQuery) Decision {
 		return Decision{Disposition: Skipped, Skip: skip, Repo: repo}
 	}
 	return m.decideSelected(q, repo)
+}
+
+func (m *Matcher) rejectByFilter(q PathQuery) bool {
+	if m.cfg.Filters.Empty() {
+		return false
+	}
+	joined := filepath.Join(m.root, filepath.FromSlash(q.Rel))
+	if q.IsDir {
+		return m.cfg.Filters.rejectDir(q.Rel, q.Name, joined)
+	}
+	if q.IsFile {
+		return m.cfg.Filters.rejectFile(q.Name, joined)
+	}
+	return false
 }
 
 func (m *Matcher) decideSelected(q PathQuery, repo ignore.Match) Decision {

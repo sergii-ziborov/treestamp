@@ -446,11 +446,52 @@ func workerLabel(workers int) string {
 	return "parallel"
 }
 
-func mustSymlink(t *testing.T, target, link string) {
-	t.Helper()
+func mustSymlink(tb testing.TB, target, link string) {
+	tb.Helper()
 	if err := os.Symlink(target, link); err != nil {
-		t.Skipf("symlinks unavailable: %v", err)
+		tb.Skipf("symlinks unavailable: %v", err)
 	}
+}
+
+func BenchmarkSelectiveFollowTreestampSerial(b *testing.B) {
+	benchSelectiveFollow(b, func(root string, fn fs.WalkDirFunc) error {
+		return treestamp.WalkWithConfig(root, treestamp.Config{}, fn)
+	}, treestamp.StatDirEntry, treestamp.ErrTraverseLink)
+}
+
+func BenchmarkSelectiveFollowTreestampParallel(b *testing.B) {
+	benchSelectiveFollow(b, func(root string, fn fs.WalkDirFunc) error {
+		return treestamp.WalkWithConfig(root, treestamp.Config{NumWorkers: 2}, fn)
+	}, treestamp.StatDirEntry, treestamp.ErrTraverseLink)
+}
+
+func BenchmarkSelectiveFollowFastwalk(b *testing.B) {
+	benchSelectiveFollow(b, func(root string, fn fs.WalkDirFunc) error {
+		return fastwalk.Walk(&fastwalk.Config{NumWorkers: 2}, root, fn)
+	}, fastwalk.StatDirEntry, fastwalk.ErrTraverseLink)
+}
+
+func benchSelectiveFollow(
+	b *testing.B,
+	walk func(string, fs.WalkDirFunc) error,
+	stat func(string, fs.DirEntry) (fs.FileInfo, error),
+	traverse error,
+) {
+	root := makeSelectiveCorpus(b, 32)
+	visit := func(path string, entry fs.DirEntry, _ error) error {
+		if filepath.Base(path) != "chosen" || entry.Type()&os.ModeSymlink == 0 {
+			return nil
+		}
+		target, err := stat(path, entry)
+		if err != nil {
+			return err
+		}
+		if target.IsDir() {
+			return traverse
+		}
+		return nil
+	}
+	benchRepeat(b, func() (int, error) { return countWalk(walk, root, visit) })
 }
 
 func hasNode(nodes []node, relative string) bool {

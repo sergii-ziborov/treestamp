@@ -2,7 +2,9 @@ package compat_test
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"testing"
 
@@ -121,6 +123,44 @@ func TestStandardDirectorySelectionParity(t *testing.T) {
 	assertPaths(t, tree, map[string][]string{"gocodewalker": code})
 }
 
+func TestGitModulesSelectionParity(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, ".gitmodules"), `[submodule "contracts/lib/forge-std"]
+	path = contracts/lib/forge-std
+	url = https://github.com/foundry-rs/forge-std
+`)
+	write(t, filepath.Join(root, "main.go"), "package main")
+	write(t, filepath.Join(root, "contracts", "keep.go"), "package keep")
+	write(t, filepath.Join(root, "contracts", "lib", "forge-std", "src.go"), "package std")
+
+	off, err := treestampPaths(root, func(opts treestamp.Options) treestamp.Options {
+		return opts
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasPath(off, "contracts/lib/forge-std/src.go") {
+		t.Fatalf("default Treestamp dropped a submodule file: %v", off)
+	}
+	tree, err := treestampPaths(root, func(opts treestamp.Options) treestamp.Options {
+		return opts.WithGitModules(true)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, err := codewalkerPaths(root, func(w *gocodewalker.FileWalker) {
+		w.IncludeHidden = true
+		w.IgnoreGitModules = false
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertPaths(t, tree, map[string][]string{"gocodewalker": code})
+	if hasPath(tree, "contracts/lib/forge-std/src.go") || !hasPath(tree, "contracts/keep.go") {
+		t.Fatalf("gitmodules selection: %v", tree)
+	}
+}
+
 func TestBinarySelectionParity(t *testing.T) {
 	root := t.TempDir()
 	write(t, filepath.Join(root, "text.txt"), "text")
@@ -180,6 +220,102 @@ func codewalkerPaths(root string, configure func(*gocodewalker.FileWalker)) ([]s
 		out = append(out, relative(root, file.Location))
 	}
 	return out, <-done
+}
+
+func TestRegexAndDirectoryFilterParity(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "keep.go"), "package keep")
+	write(t, filepath.Join(root, "drop.md"), "md")
+	write(t, filepath.Join(root, "skip.go"), "package skip")
+	write(t, filepath.Join(root, "vendor", "lib.go"), "package lib")
+
+	tree, err := treestampPaths(root, func(opts treestamp.Options) treestamp.Options {
+		return opts.WithIncludeFilenameRegex(`\.go$`).WithExcludeFilenames("skip.go").WithExcludeDirectories("vendor")
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, err := codewalkerPaths(root, func(w *gocodewalker.FileWalker) {
+		w.IncludeHidden = true
+		w.IgnoreGitModules = true
+		w.IncludeFilenameRegex = []*regexp.Regexp{regexp.MustCompile(`\.go$`)}
+		w.ExcludeFilename = []string{"skip.go"}
+		w.ExcludeDirectory = []string{"vendor"}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasPath(tree, "keep.go") || hasPath(tree, "drop.md") || hasPath(tree, "skip.go") || hasPath(tree, "vendor/lib.go") {
+		t.Fatalf("treestamp filters %v", tree)
+	}
+	if !hasPath(code, "keep.go") || hasPath(code, "drop.md") || hasPath(code, "vendor/lib.go") {
+		t.Fatalf("gocodewalker regex/dir %v", code)
+	}
+	if !hasPath(code, "skip.go") {
+		t.Fatal("expected gocodewalker include-regex to overwrite ExcludeFilename")
+	}
+}
+
+func TestFileWalkerAndRepoRootHelpers(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, ".git", "HEAD"), "ref")
+	write(t, filepath.Join(root, "nested", "keep.go"), "package keep")
+	write(t, filepath.Join(root, "nested", "drop.txt"), "x")
+	if got := treestamp.FindRepositoryRoot(filepath.Join(root, "nested")); filepath.Clean(got) != filepath.Clean(root) {
+		t.Fatalf("repo root %s want %s", got, root)
+	}
+	files := make(chan *treestamp.File, 8)
+	walker := treestamp.NewFileWalker(root, files)
+	walker.IncludeFilenameRegex = []*regexp.Regexp{regexp.MustCompile(`\.go$`)}
+	walker.IncludeHidden(true)
+	if err := walker.Start(); err != nil {
+		t.Fatal(err)
+	}
+	var seen []string
+	for file := range files {
+		seen = append(seen, file.Filename)
+	}
+	if len(seen) != 1 || seen[0] != "keep.go" {
+		t.Fatalf("filewalker %v", seen)
+	}
+}
+
+func BenchmarkSelectTreestamp(b *testing.B) {
+	root := makeSelectCorpus(b)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := treestampPaths(root, func(opts treestamp.Options) treestamp.Options {
+			return opts.WithIncludeFilenameRegex(`\.go$`)
+		}); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkSelectGocodewalker(b *testing.B) {
+	root := makeSelectCorpus(b)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := codewalkerPaths(root, func(w *gocodewalker.FileWalker) {
+			w.IncludeHidden = true
+			w.IgnoreGitModules = true
+			w.IncludeFilenameRegex = []*regexp.Regexp{regexp.MustCompile(`\.go$`)}
+		}); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func makeSelectCorpus(tb testing.TB) string {
+	tb.Helper()
+	root := tb.TempDir()
+	for i := 0; i < 80; i++ {
+		write(tb, filepath.Join(root, "src", filepath.Join(fmt.Sprintf("g%d", i), "f.go")), "package f")
+		write(tb, filepath.Join(root, "src", filepath.Join(fmt.Sprintf("g%d", i), "f.md")), "md")
+	}
+	return root
 }
 
 func hasPath(paths []string, wanted string) bool {

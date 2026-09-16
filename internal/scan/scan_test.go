@@ -379,3 +379,86 @@ func TestDiscoveryWatchVisitEdges(t *testing.T) {
 	})
 	_, _ = Into(context.Background(), "", DefaultOptions(), func(*ScannedFile) StreamControl { return SinkContinue })
 }
+
+func TestVisitChangedOnlyPlanFiles(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "keep.go"), "package keep\n")
+	mustWrite(t, filepath.Join(root, "other.go"), "package other\n")
+	var seen []string
+	report, err := VisitChanged(context.Background(), root, DefaultOptions(), WatchPlan{Changed: []string{"keep.go", "../escape", "missing.go"}}, func(int) ContentVisitor {
+		return func(ev ContentVisitEvent) ContentVisitControl {
+			if ev.Kind == ContentFileStart {
+				seen = append(seen, ev.File.Relative)
+			}
+			return ContentContinue
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 1 || seen[0] != "keep.go" {
+		t.Fatalf("visited %v", seen)
+	}
+	var ioSkip, escapeSkip bool
+	for _, s := range report.Skipped {
+		if s.Kind == selection.SkipIOError {
+			ioSkip = true
+		}
+		if s.Kind == selection.SkipPathEscape {
+			escapeSkip = true
+		}
+	}
+	if !ioSkip || !escapeSkip {
+		t.Fatalf("skips %+v", report.Skipped)
+	}
+}
+
+func TestWatchReplacesPrefixEvidenceAndRejectsEscape(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "keep.go"), "package keep\n")
+	mustWrite(t, filepath.Join(root, "stale.go"), "package stale\n")
+	first, err := Full(context.Background(), root, DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	first.Skipped = append(first.Skipped, Skipped{Relative: "keep.go", Kind: selection.SkipIOError, Detail: "old"})
+	first.Skipped = append(first.Skipped, Skipped{Relative: "other.go", Kind: selection.SkipIOError, Detail: "keep"})
+	first.Warnings = []Warning{{Relative: "keep.go", Message: "old"}, {Relative: "other.go", Message: "keep"}}
+	update, err := Watch(context.Background(), root, DefaultOptions(), first, WatchPlan{Changed: []string{"keep.go", "../secret"}})
+	if err != nil || update.Reason != WatchIncremental {
+		t.Fatalf("watch %+v %v", update, err)
+	}
+	if update.Report == nil {
+		t.Fatal("report")
+	}
+	for _, s := range update.Report.Skipped {
+		if s.Relative == "keep.go" && s.Detail == "old" {
+			t.Fatal("stale skip kept")
+		}
+		if s.Kind == selection.SkipPathEscape && s.Relative == "../secret" {
+			t.Fatal("escaped path recorded as a live relative")
+		}
+	}
+	var keptOther bool
+	for _, s := range update.Report.Skipped {
+		if s.Relative == "other.go" {
+			keptOther = true
+		}
+	}
+	if !keptOther {
+		t.Fatalf("unrelated skip dropped %+v", update.Report.Skipped)
+	}
+	missing, err := Watch(context.Background(), root, DefaultOptions(), first, WatchPlan{Changed: []string{"gone.go"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sawIO bool
+	for _, s := range missing.Report.Skipped {
+		if s.Relative == "gone.go" && s.Kind == selection.SkipIOError {
+			sawIO = true
+		}
+	}
+	if !sawIO {
+		t.Fatalf("missing %+v", missing.Report.Skipped)
+	}
+}

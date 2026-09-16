@@ -187,6 +187,87 @@ func sameInfo(left, right fs.FileInfo) bool {
 		left.ModTime() == right.ModTime()
 }
 
+func BenchmarkCachedStatTreestampSerial(b *testing.B) {
+	benchCachedStat(b, func(root string, fn fs.WalkDirFunc) error {
+		return treestamp.WalkWithConfig(root, treestamp.Config{}, fn)
+	}, treestamp.StatDirEntry, true)
+}
+
+func BenchmarkCachedStatTreestampParallel(b *testing.B) {
+	benchCachedStat(b, func(root string, fn fs.WalkDirFunc) error {
+		return treestamp.WalkWithConfig(root, treestamp.Config{NumWorkers: 2}, fn)
+	}, treestamp.StatDirEntry, true)
+}
+
+func BenchmarkCachedStatFastwalk(b *testing.B) {
+	benchCachedStat(b, func(root string, fn fs.WalkDirFunc) error {
+		return fastwalk.Walk(&fastwalk.Config{NumWorkers: 2}, root, fn)
+	}, fastwalk.StatDirEntry, true)
+}
+
+func BenchmarkCachedStatOsStat(b *testing.B) {
+	benchCachedStat(b, func(root string, fn fs.WalkDirFunc) error {
+		return treestamp.WalkWithConfig(root, treestamp.Config{}, fn)
+	}, func(path string, _ fs.DirEntry) (fs.FileInfo, error) {
+		return os.Stat(path)
+	}, true)
+}
+
+func BenchmarkCachedStatRegularTreestamp(b *testing.B) {
+	benchCachedStat(b, func(root string, fn fs.WalkDirFunc) error {
+		return treestamp.WalkWithConfig(root, treestamp.Config{}, fn)
+	}, treestamp.StatDirEntry, false)
+}
+
+func BenchmarkCachedStatRegularTreestampParallel(b *testing.B) {
+	benchCachedStat(b, func(root string, fn fs.WalkDirFunc) error {
+		return treestamp.WalkWithConfig(root, treestamp.Config{NumWorkers: 2}, fn)
+	}, treestamp.StatDirEntry, false)
+}
+
+func BenchmarkCachedStatRegularFastwalk(b *testing.B) {
+	benchCachedStat(b, func(root string, fn fs.WalkDirFunc) error {
+		return fastwalk.Walk(&fastwalk.Config{NumWorkers: 2}, root, fn)
+	}, fastwalk.StatDirEntry, false)
+}
+
+func BenchmarkCachedStatRegularFastwalkSerial(b *testing.B) {
+	benchCachedStat(b, func(root string, fn fs.WalkDirFunc) error {
+		return fastwalk.Walk(&fastwalk.Config{NumWorkers: 1}, root, fn)
+	}, fastwalk.StatDirEntry, false)
+}
+
+func BenchmarkCachedStatRegularOsStat(b *testing.B) {
+	benchCachedStat(b, func(root string, fn fs.WalkDirFunc) error {
+		return treestamp.WalkWithConfig(root, treestamp.Config{}, fn)
+	}, func(path string, _ fs.DirEntry) (fs.FileInfo, error) {
+		return os.Stat(path)
+	}, false)
+}
+
+func benchCachedStat(
+	b *testing.B,
+	walk func(string, fs.WalkDirFunc) error,
+	stat func(string, fs.DirEntry) (fs.FileInfo, error),
+	withLinks bool,
+) {
+	links := 0
+	if withLinks {
+		links = 200
+	}
+	root := makeStatCorpus(b, 400, links)
+	visit := func(path string, entry fs.DirEntry, _ error) error {
+		if _, err := stat(path, entry); err != nil {
+			return err
+		}
+		if _, err := stat(path, entry); err != nil {
+			return err
+		}
+		return nil
+	}
+	benchRepeat(b, func() (int, error) { return countWalk(walk, root, visit) })
+}
+
 func cachedStatCases() []cachedStatCase {
 	return []cachedStatCase{
 		{

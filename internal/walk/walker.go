@@ -1,11 +1,17 @@
 package walk
 
 import (
+	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/sergii-ziborov/treestamp/internal/dirread"
 	"github.com/sergii-ziborov/treestamp/internal/platform"
 )
 
@@ -35,6 +41,7 @@ type Walker struct {
 	contentsFirst bool
 	deferred      *WalkEntry
 	plainEntries  bool
+	rootMeta      os.FileInfo
 }
 
 type dirFrame struct {
@@ -76,7 +83,7 @@ func newWalker(root string, options WalkOptions, cfg walkerConfig) (*Walker, err
 	if err != nil {
 		return nil, err
 	}
-	return finishWalker(canonical, options, cfg)
+	return finishWalker(canonical, options, cfg, info)
 }
 
 func resolveWalkRoot(root string, options WalkOptions) (string, error) {
@@ -101,7 +108,7 @@ func resolveWalkRoot(root string, options WalkOptions) (string, error) {
 	return root, nil
 }
 
-func finishWalker(canonical string, options WalkOptions, cfg walkerConfig) (*Walker, error) {
+func finishWalker(canonical string, options WalkOptions, cfg walkerConfig, linkInfo os.FileInfo) (*Walker, error) {
 	meta, err := os.Stat(canonical)
 	if err != nil {
 		return nil, walkErr(canonical, 0, OpReadMetadata, err)
@@ -119,7 +126,7 @@ func finishWalker(canonical string, options WalkOptions, cfg walkerConfig) (*Wal
 		rootIsSymlink: meta.Mode()&os.ModeSymlink != 0, rootBytes: rootBytes, rootVersion: rootVersion,
 		rootFS: rootFS, rootInfo: rootInfo, options: options, yieldRoot: true,
 		active: make(map[platform.Identity]int), sorter: cfg.sorter, filter: cfg.filter,
-		skipStdout: cfg.skipStdout, contentsFirst: cfg.contentsFirst, plainEntries: plain,
+		skipStdout: cfg.skipStdout, contentsFirst: cfg.contentsFirst, plainEntries: plain, rootMeta: linkInfo,
 	}, nil
 }
 
@@ -172,11 +179,7 @@ func (w *Walker) TraverseCurrentSymlink() error {
 	if entry == nil {
 		return walkErr(w.root, 0, OpReadMetadata, errNoCurrentSymlink)
 	}
-	info, err := os.Lstat(entry.path)
-	if err != nil {
-		return walkErr(entry.path, entry.depth, OpReadMetadata, err)
-	}
-	if info.Mode()&os.ModeSymlink == 0 {
+	if !entry.symlink {
 		return walkErr(entry.path, entry.depth, OpReadMetadata, errNoCurrentSymlink)
 	}
 	if entry.hasSkip() || (w.pending != nil && w.pending.path == entry.path) {
@@ -287,7 +290,7 @@ func (w *Walker) visitDirent(dir string, dirent os.DirEntry, depth int) (*WalkEn
 		return entry, err, false
 	}
 	if w.plainEntries {
-		return w.visitPlain(path, depth, mode), nil, false
+		return w.visitPlain(path, depth, dirent, nil), nil, false
 	}
 	bytes, version, hidden, err := w.direntMeta(path, dirent, mode)
 	if err != nil {
@@ -299,6 +302,7 @@ func (w *Walker) visitDirent(dir string, dirent os.DirEntry, depth int) (*WalkEn
 		out, yieldErr := w.yieldError(visitErr)
 		return out, yieldErr, false
 	}
+	entry.dent = dirent
 	prepared := w.prepare(entry)
 	if prepared == nil {
 		return nil, nil, true
@@ -329,12 +333,17 @@ func (w *Walker) takeRoot() (*WalkEntry, *WalkError) {
 		mode |= os.ModeSymlink
 	}
 	if w.plainEntries {
-		return w.visitPlain(w.root, 0, mode), nil
+		entry := w.visitPlain(w.root, 0, nil, w.rootMeta)
+		if w.rootIsDir && w.pending == nil {
+			w.pending = &pendingDir{path: w.root, depth: 0}
+		}
+		return entry, nil
 	}
 	entry, err := w.visit(w.root, 0, mode, w.rootBytes, w.rootVersion, nil)
 	if err != nil {
 		return nil, err
 	}
+	entry.info = w.rootMeta
 	return w.prepare(entry), nil
 }
 
@@ -429,18 +438,6 @@ func (w *Walker) yieldError(err *WalkError) (*WalkEntry, error) {
 	return nil, err
 }
 
-func entryMode(entry os.DirEntry) (os.FileMode, error) {
-	mode := entry.Type()
-	if mode != 0 {
-		return mode, nil
-	}
-	info, err := entry.Info()
-	if err != nil {
-		return 0, err
-	}
-	return info.Mode(), nil
-}
-
 func versionFromInfo(path string, info os.FileInfo) FileVersion {
 	var ver FileVersion
 	if !info.ModTime().IsZero() && info.ModTime().After(time.Unix(0, 0)) {
@@ -451,4 +448,151 @@ func versionFromInfo(path string, info os.FileInfo) FileVersion {
 		ver.Identity = &id
 	}
 	return ver
+}
+
+type callbackWork struct {
+	root    string
+	fn      fs.WalkDirFunc
+	toSlash bool
+	queue   *dirQueue
+	mu      sync.Mutex
+	err     error
+	quit    atomic.Bool
+}
+
+func WalkCallbackParallel(root string, workers int, fn fs.WalkDirFunc, toSlash bool) error {
+	abs, descend, err := prepareCallback(root, fn, toSlash)
+	if err != nil || !descend {
+		return err
+	}
+	if workers <= 0 {
+		workers = runtime.GOMAXPROCS(0)
+		if workers > 8 {
+			workers = 8
+		}
+	}
+	if workers < 1 {
+		workers = 1
+	}
+	work := &callbackWork{root: abs, fn: fn, toSlash: toSlash, queue: newDirQueue()}
+	work.queue.push(dirJob{path: abs, depth: 0})
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		go func() { defer wg.Done(); work.run() }()
+	}
+	wg.Wait()
+	return work.err
+}
+
+func prepareCallback(root string, fn fs.WalkDirFunc, toSlash bool) (string, bool, error) {
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return "", false, fn(root, nil, err)
+	}
+	info, err := os.Lstat(abs)
+	if err != nil {
+		return "", false, fn(showPath(abs, toSlash), nil, err)
+	}
+	entry := acquireFast(info.Name(), abs, info.Mode().Type(), 0, info)
+	cbErr := invokeFast(fn, entry, toSlash)
+	typ := entry.typ
+	releaseFast(entry)
+	if cbErr != nil {
+		if errors.Is(cbErr, fs.SkipAll) || errors.Is(cbErr, fs.SkipDir) {
+			return "", false, nil
+		}
+		return "", false, cbErr
+	}
+	if typ.IsDir() {
+		return abs, true, nil
+	}
+	if typ&os.ModeSymlink == 0 {
+		return abs, false, nil
+	}
+	target, statErr := os.Stat(abs)
+	return abs, statErr == nil && target.IsDir(), nil
+}
+
+func (w *callbackWork) run() {
+	for {
+		job, ok := w.queue.pop()
+		if !ok {
+			return
+		}
+		w.visitDir(job)
+		w.queue.done()
+	}
+}
+
+func (w *callbackWork) visitDir(job dirJob) {
+	if w.quit.Load() {
+		return
+	}
+	recs, err := dirread.Read(job.path, nil)
+	if err != nil {
+		w.reportRead(job.path, err)
+		return
+	}
+	skipFiles := false
+	for i := range recs {
+		if w.quit.Load() {
+			return
+		}
+		if skipFiles && recs[i].Type.IsRegular() {
+			continue
+		}
+		entry := acquireFast(recs[i].Name, childPath(job.path, recs[i].Name), recs[i].Type, job.depth+1, recs[i].Info)
+		cbErr := invokeFast(w.fn, entry, w.toSlash)
+		stop := w.control(cbErr, entry, job, &skipFiles)
+		releaseFast(entry)
+		if stop {
+			return
+		}
+	}
+}
+
+func (w *callbackWork) control(err error, entry *fastEntry, job dirJob, skipFiles *bool) bool {
+	switch {
+	case err == nil:
+		if entry.typ.IsDir() {
+			w.queue.push(dirJob{path: entry.path, depth: entry.depth})
+		}
+		return false
+	case errors.Is(err, fs.SkipDir):
+		return !entry.typ.IsDir()
+	case errors.Is(err, fs.SkipAll):
+		w.stop(nil)
+		return true
+	case errors.Is(err, ErrSkipFiles):
+		*skipFiles = true
+		return false
+	case errors.Is(err, ErrTraverseLink) && entry.typ&os.ModeSymlink != 0:
+		return w.follow(entry, job)
+	default:
+		w.stop(err)
+		return true
+	}
+}
+
+func (w *callbackWork) reportRead(path string, err error) {
+	cbErr := w.fn(showPath(path, w.toSlash), nil, err)
+	if cbErr == nil || errors.Is(cbErr, fs.SkipDir) {
+		return
+	}
+	if errors.Is(cbErr, fs.SkipAll) {
+		w.stop(nil)
+		return
+	}
+	w.stop(cbErr)
+}
+
+func (w *callbackWork) stop(err error) {
+	w.mu.Lock()
+	if w.err == nil {
+		w.err = err
+	}
+	w.mu.Unlock()
+	w.quit.Store(true)
+	w.queue.close()
 }

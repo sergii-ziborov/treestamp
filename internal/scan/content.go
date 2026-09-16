@@ -7,8 +7,10 @@ import (
 	"hash"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 
+	"github.com/sergii-ziborov/treestamp/internal/fileread"
 	"github.com/sergii-ziborov/treestamp/internal/hashx"
 	"github.com/sergii-ziborov/treestamp/internal/selection"
 )
@@ -94,6 +96,45 @@ func VisitContent(ctx context.Context, root string, opts Options, mode ContentVi
 	if err != nil {
 		return nil, err
 	}
+	opts.Root = discovered.root
+	return runVisit(ctx, opts, mode, factory, discovered)
+}
+
+func VisitChanged(ctx context.Context, root string, opts Options, plan WatchPlan, factory func(worker int) ContentVisitor) (*ContentVisitReport, error) {
+	discovered, err := discoverChanged(ctx, root, opts, plan)
+	if err != nil {
+		return nil, err
+	}
+	opts.Root = discovered.root
+	return runVisit(ctx, opts, VisitRevision, factory, discovered)
+}
+
+func discoverChanged(ctx context.Context, root string, opts Options, plan WatchPlan) (*discovery, error) {
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return nil, err
+	}
+	matcher, err := selection.NewMatcher(abs, selectionConfig(opts, opts.Walk, true))
+	if err != nil {
+		return nil, err
+	}
+	rejected := rejectedRels(plan.Changed)
+	plan = sanitizePlan(plan)
+	scope := watchScope{ctx: ctx, root: root, abs: abs, opts: opts, matcher: matcher, plan: plan}
+	set, err := collectChanges(scope, false)
+	if err != nil {
+		return nil, err
+	}
+	for _, rel := range rejected {
+		set.skipped = append(set.skipped, Skipped{Relative: rel, Kind: selection.SkipPathEscape})
+	}
+	return &discovery{
+		root: abs, candidates: set.candidates, skipped: set.skipped,
+		sources: toIgnoreSources(matcher.Sources()), complete: true, portable: portablePolicy(opts),
+	}, nil
+}
+
+func runVisit(ctx context.Context, opts Options, mode ContentVisitMode, factory func(worker int) ContentVisitor, discovered *discovery) (*ContentVisitReport, error) {
 	visitor := factory(0)
 	report := newVisitReport(discovered, mode)
 	var files []ScannedFile
@@ -104,7 +145,12 @@ func VisitContent(ctx context.Context, root string, opts Options, mode ContentVi
 			break
 		}
 		file := ContentFile{Sequence: uint64(i + 1), Root: discovered.root, Absolute: c.abs, Relative: c.rel, Bytes: c.size}
-		if visitor(ContentVisitEvent{Kind: ContentFileStart, File: file}) == ContentQuit {
+		start := visitor(ContentVisitEvent{Kind: ContentFileStart, File: file})
+		if start == ContentSkipFile {
+			report.ConsumerSkipped++
+			continue
+		}
+		if start == ContentQuit {
 			report.Stopped = true
 			break
 		}
@@ -128,8 +174,10 @@ func newVisitReport(discovered *discovery, mode ContentVisitMode) *ContentVisitR
 }
 
 func accumulateVisit(report *ContentVisitReport, files *[]ScannedFile, c candidate, file ContentFile, opts Options, visitor ContentVisitor) bool {
-	scanned, skip, stat, ev, status, consumerSkip, quit := readVisited(c, file, opts, visitor)
-	report.Opened++
+	scanned, skip, stat, ev, status, consumerSkip, quit, opened, committed := readVisited(c, file, opts, visitor)
+	if opened {
+		report.Opened++
+	}
 	report.Chunks += ev.chunks
 	report.BytesRead += ev.bytesRead
 	report.BytesEmitted += ev.bytesEmitted
@@ -140,7 +188,7 @@ func accumulateVisit(report *ContentVisitReport, files *[]ScannedFile, c candida
 	}
 	if skip != nil {
 		report.Skipped = append(report.Skipped, *skip)
-	} else if status == ContentSelected {
+	} else if committed && status == ContentSelected {
 		report.Completed++
 		*files = append(*files, scanned)
 	}
@@ -173,17 +221,26 @@ type visitCounters struct {
 	chunks, bytesRead, bytesEmitted uint64
 }
 
-func readVisited(c candidate, file ContentFile, opts Options, visitor ContentVisitor) (ScannedFile, *Skipped, CacheStats, visitCounters, ContentFileStatus, bool, bool) {
+func readVisited(c candidate, file ContentFile, opts Options, visitor ContentVisitor) (ScannedFile, *Skipped, CacheStats, visitCounters, ContentFileStatus, bool, bool, bool, bool) {
 	scanned := ScannedFile{Absolute: c.abs, Relative: c.rel, Bytes: c.size, Version: c.version}
-	f, err := os.Open(c.abs)
+	path := c.abs
+	if opts.Root != "" {
+		if confined, err := fileread.Confine(opts.Root, c.abs); err == nil {
+			path = confined
+		} else if err != nil {
+			return scanned, &Skipped{Relative: c.rel, Kind: selection.SkipPathEscape, Detail: err.Error()}, CacheStats{}, visitCounters{}, ContentChanged, false, false, false, false
+		}
+	}
+	f, err := os.Open(path)
 	if err != nil {
-		return scanned, &Skipped{Relative: c.rel, Kind: selection.SkipIOError, Detail: err.Error()}, CacheStats{}, visitCounters{}, ContentChanged, false, false
+		return scanned, &Skipped{Relative: c.rel, Kind: selection.SkipIOError, Detail: err.Error()}, CacheStats{}, visitCounters{}, ContentChanged, false, false, false, false
 	}
 	defer f.Close()
-	return finishVisited(f, scanned, file, opts, visitor)
+	scanned, skip, stat, ev, status, consumer, quit, committed := finishVisited(f, scanned, file, opts, visitor)
+	return scanned, skip, stat, ev, status, consumer, quit, true, committed
 }
 
-func finishVisited(f *os.File, scanned ScannedFile, file ContentFile, opts Options, visitor ContentVisitor) (ScannedFile, *Skipped, CacheStats, visitCounters, ContentFileStatus, bool, bool) {
+func finishVisited(f *os.File, scanned ScannedFile, file ContentFile, opts Options, visitor ContentVisitor) (ScannedFile, *Skipped, CacheStats, visitCounters, ContentFileStatus, bool, bool, bool) {
 	h := sha256.New()
 	fp := hashx.NewContentFingerprint()
 	buf := make([]byte, 64*1024)
@@ -198,21 +255,24 @@ func finishVisited(f *os.File, scanned ScannedFile, file ContentFile, opts Optio
 				h: h, fp: &fp, offset: &offset, counters: &counters, skipRest: &skipRest, consumerSkip: &consumerSkip,
 			})
 			if binary {
-				return scanned, skip, CacheStats{ContentReads: 1}, counters, ContentBinary, consumerSkip, false
+				return scanned, skip, CacheStats{ContentReads: 1}, counters, ContentBinary, consumerSkip, false, false
 			}
 			if quit {
-				return scanned, nil, CacheStats{ContentReads: 1}, counters, ContentSelected, consumerSkip, true
+				return scanned, nil, CacheStats{ContentReads: 1}, counters, ContentChanged, consumerSkip, true, false
 			}
 			if skip != nil {
-				return scanned, skip, CacheStats{ContentReads: 1}, counters, ContentChanged, consumerSkip, false
+				return scanned, skip, CacheStats{ContentReads: 1}, counters, ContentChanged, consumerSkip, false, false
 			}
 		}
 		if readErr == io.EOF {
 			break
 		}
 		if readErr != nil {
-			return scanned, &Skipped{Relative: scanned.Relative, Kind: selection.SkipIOError, Detail: readErr.Error()}, CacheStats{ContentReads: 1}, counters, ContentChanged, consumerSkip, false
+			return scanned, &Skipped{Relative: scanned.Relative, Kind: selection.SkipIOError, Detail: readErr.Error()}, CacheStats{ContentReads: 1}, counters, ContentChanged, consumerSkip, false, false
 		}
+	}
+	if skip := checkContentSize(f, candidate{rel: scanned.Relative, size: scanned.Bytes, version: scanned.Version}, opts); skip != nil {
+		return scanned, skip, CacheStats{ContentReads: 1}, counters, ContentChanged, consumerSkip, false, false
 	}
 	if opts.HashFileContents {
 		scanned.ContentHash = hashx.Finish(h)
@@ -220,7 +280,7 @@ func finishVisited(f *os.File, scanned ScannedFile, file ContentFile, opts Optio
 	scanned.ContentFingerprint = fp.Finish()
 	scanned.BinaryChecked = opts.DetectBinary
 	end := ContentVisitEvent{Kind: ContentFileEnd, File: file, Status: ContentSelected, BytesRead: counters.bytesRead, ContentHash: scanned.ContentHash, ConsumerSkipped: consumerSkip}
-	return scanned, nil, CacheStats{ContentReads: 1}, counters, ContentSelected, consumerSkip, visitor(end) == ContentQuit
+	return scanned, nil, CacheStats{ContentReads: 1}, counters, ContentSelected, consumerSkip, visitor(end) == ContentQuit, true
 }
 
 type chunkEmit struct {
@@ -286,6 +346,7 @@ func Into(ctx context.Context, root string, opts Options, sink func(*ScannedFile
 	if err != nil {
 		return nil, err
 	}
+	opts.Root = discovered.root
 	sort.Slice(discovered.candidates, func(i, j int) bool { return discovered.candidates[i].rel < discovered.candidates[j].rel })
 	index := cacheIndex(opts)
 	out := &StreamReport{

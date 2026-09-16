@@ -25,7 +25,8 @@ type dirEntries interface {
 	drain()
 }
 
-func (w *Walker) visitPlain(path string, depth int, mode os.FileMode) *WalkEntry {
+func (w *Walker) visitPlain(path string, depth int, dent os.DirEntry, info os.FileInfo) *WalkEntry {
+	mode := fileModeOf(dent, info)
 	symlink := mode&os.ModeSymlink != 0
 	isFile := !symlink && mode.IsRegular()
 	isDir := !symlink && mode.IsDir()
@@ -33,9 +34,83 @@ func (w *Walker) visitPlain(path string, depth int, mode os.FileMode) *WalkEntry
 		w.pending = &pendingDir{path: path, depth: depth}
 	}
 	return &WalkEntry{
-		root: w.root, path: path, depth: depth, isFile: isFile, isDir: isDir,
-		symlink: symlink, stat: newFileInfoCache(),
+		root: w.root, path: path, name: entryName(dent, info), depth: depth,
+		isFile: isFile, isDir: isDir, symlink: symlink, dent: dent, info: info,
 	}
+}
+
+func fileModeOf(dent os.DirEntry, info os.FileInfo) os.FileMode {
+	if dent != nil {
+		if typ := dent.Type(); typ != 0 {
+			return typ
+		}
+	}
+	if info != nil {
+		return info.Mode()
+	}
+	return 0
+}
+
+func entryMode(entry os.DirEntry) (os.FileMode, error) {
+	mode := entry.Type()
+	if mode != 0 {
+		return mode, nil
+	}
+	info, err := entry.Info()
+	if err != nil {
+		return 0, err
+	}
+	return info.Mode(), nil
+}
+
+func (s *concurrentState) needsEntryInfo() bool {
+	opts := s.opts.options
+	return opts.FollowLinks || opts.SameFileSystem || opts.CollectMetadata
+}
+
+func (s *concurrentState) entryFromDent(job dirJob, dent os.DirEntry, path string) (*WalkEntry, *WalkError) {
+	if !s.needsEntryInfo() {
+		mode, modeErr := entryMode(dent)
+		if modeErr != nil {
+			return nil, walkErr(path, job.depth+1, OpReadMetadata, modeErr)
+		}
+		return plainWalkEntry(s.abs, path, job.depth+1, dent, mode), nil
+	}
+	info, infoErr := dent.Info()
+	if infoErr != nil {
+		return nil, walkErr(path, job.depth+1, OpReadMetadata, infoErr)
+	}
+	if info.Mode()&os.ModeSymlink != 0 && s.opts.options.FollowLinks {
+		target, err := os.Stat(path)
+		if err != nil {
+			return nil, walkErr(path, job.depth+1, OpReadMetadata, err)
+		}
+		entry := makeEntry(s.abs, path, job.depth+1, info, s.opts.options, target)
+		entry.dent = dent
+		return entry, nil
+	}
+	entry := makeEntry(s.abs, path, job.depth+1, info, s.opts.options, nil)
+	entry.dent = dent
+	return entry, nil
+}
+
+func plainWalkEntry(root, path string, depth int, dent os.DirEntry, mode os.FileMode) *WalkEntry {
+	symlink := mode&os.ModeSymlink != 0
+	return &WalkEntry{
+		root: root, path: path, name: dent.Name(), depth: depth,
+		isFile: !symlink && mode.IsRegular(), isDir: !symlink && mode.IsDir(),
+		symlink: symlink, dent: dent,
+	}
+}
+
+func entryName(dent os.DirEntry, info os.FileInfo) string {
+	if dent != nil {
+		return dent.Name()
+	}
+	if info != nil {
+		return info.Name()
+	}
+	return ""
 }
 
 func (w *Walker) visit(path string, depth int, mode os.FileMode, bytes *uint64, version *FileVersion, hidden *bool) (*WalkEntry, *WalkError) {
@@ -345,7 +420,8 @@ func makeEntry(root, path string, depth int, info os.FileInfo, options WalkOptio
 		stat.load(source, nil)
 	}
 	entry := &WalkEntry{
-		root: root, path: path, depth: depth, isFile: isFile, isDir: isDir, symlink: symlink, stat: stat,
+		root: root, path: path, name: source.Name(), depth: depth,
+		isFile: isFile, isDir: isDir, symlink: symlink, info: source, stat: stat,
 	}
 	if options.CollectMetadata && isFile {
 		size := uint64(info.Size())
@@ -492,4 +568,30 @@ func sortDirEntries(entries []os.DirEntry, cmp func(a, b os.DirEntry) int) {
 	}
 }
 
-func childPath(dir, name string) string { return filepath.Join(dir, name) }
+func childPath(dir, name string) string {
+	if dir == "" {
+		return name
+	}
+	return dir + string(os.PathSeparator) + name
+}
+
+func chainHasID(root, dir string, id platform.Identity, depth int) (bool, *WalkError) {
+	for dir != "" {
+		info, err := platform.DirectoryInfo(dir)
+		if err != nil {
+			return false, walkErr(dir, depth, OpReadMetadata, err)
+		}
+		if info.Identity == id {
+			return true, nil
+		}
+		if filepath.Clean(dir) == filepath.Clean(root) {
+			return false, nil
+		}
+		next := filepath.Dir(dir)
+		if next == dir {
+			return false, nil
+		}
+		dir = next
+	}
+	return false, nil
+}

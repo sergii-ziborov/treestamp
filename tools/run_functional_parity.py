@@ -10,10 +10,14 @@ import json
 import os
 import platform
 import subprocess
+import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from parity_sequence import run_cache_watch_sequence
 
 ROOT = Path(__file__).resolve().parents[1]
 RUST_MANIFEST = ROOT / "reference" / "rust-driver" / "Cargo.toml"
@@ -126,10 +130,16 @@ def driver_payload(
     operation: str,
     root: Path,
     options: dict[str, Any] | None = None,
+    session: Path | None = None,
+    plan: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     request_data: dict[str, Any] = {"op": operation, "root": str(root)}
     if options:
         request_data["options"] = options
+    if session is not None:
+        request_data["session"] = str(session)
+    if plan is not None:
+        request_data["plan"] = plan
     request = json.dumps(request_data, ensure_ascii=False)
     output = run([str(binary)], input_text=request)
     payload = json.loads(output)
@@ -199,6 +209,16 @@ def compare_drivers(
     compact_paths = [item["relative"] for item in normalized["go"]["scan_compact"]["files"]]
     if full_paths != compact_paths:
         raise AssertionError("scan and scan_compact selected different files")
+    results.update(
+        run_cache_watch_sequence(
+            go_binary,
+            rust_binary,
+            corpus,
+            driver_payload,
+            normalize,
+            canonical,
+        )
+    )
     return results
 
 

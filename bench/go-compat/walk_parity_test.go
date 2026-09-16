@@ -258,3 +258,80 @@ func requireWalkErrors(t *testing.T, tree, fast, godir error) {
 		}
 	}
 }
+
+func TestFilesFirstWalkOrder(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "a.txt"), "a")
+	write(t, filepath.Join(root, "sub", "b.txt"), "b")
+	var filesBeforeDir bool
+	var sawFile, sawDir bool
+	err := treestamp.WalkDirs(root, treestamp.DirWalkOptions{
+		ContentsFirst: true,
+		Callback: func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d == nil {
+				return err
+			}
+			rel := relative(root, path)
+			if rel == "a.txt" {
+				sawFile = true
+				if !sawDir {
+					filesBeforeDir = true
+				}
+			}
+			if rel == "sub" {
+				sawDir = true
+			}
+			return nil
+		},
+	})
+	if err != nil || !sawFile || !sawDir || !filesBeforeDir {
+		t.Fatalf("order file=%v dir=%v first=%v err=%v", sawFile, sawDir, filesBeforeDir, err)
+	}
+}
+
+func BenchmarkRawWalkTreestampSerial(b *testing.B) {
+	root := makeWideDir(b, 400)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := treestamp.Walk(root, func(string, fs.DirEntry, error) error { return nil }); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkRawWalkTreestampParallel(b *testing.B) {
+	root := makeWideDir(b, 400)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := treestamp.WalkUnsorted(root, func(string, fs.DirEntry, error) error { return nil }); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkRawWalkFastwalk(b *testing.B) {
+	root := makeWideDir(b, 400)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := fastwalk.Walk(nil, root, func(string, fs.DirEntry, error) error { return nil }); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkRawWalkGodirwalk(b *testing.B) {
+	root := makeWideDir(b, 400)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := godirwalk.Walk(root, &godirwalk.Options{
+			Unsorted: runtime.GOOS != "windows",
+			Callback: func(string, *godirwalk.Dirent) error { return nil },
+		}); err != nil && !errors.Is(err, io.EOF) {
+			b.Fatal(err)
+		}
+	}
+}

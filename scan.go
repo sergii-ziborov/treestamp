@@ -41,10 +41,14 @@ type CompactScanReport struct {
 }
 
 type ScannedFile struct {
-	Absolute, Relative, ContentHash, ContentFingerprint string
-	Bytes                                               uint64
-	Version                                             FileVersion
-	BinaryChecked, Binary                               bool
+	Absolute           string      `json:"absolute"`
+	Relative           string      `json:"relative"`
+	ContentHash        string      `json:"content_hash,omitempty"`
+	ContentFingerprint string      `json:"content_fingerprint,omitempty"`
+	Bytes              uint64      `json:"bytes"`
+	Version            FileVersion `json:"version"`
+	BinaryChecked      bool        `json:"binary_checked"`
+	Binary             bool        `json:"binary,omitempty"`
 }
 
 type CompactScannedFile struct {
@@ -55,9 +59,10 @@ type CompactScannedFile struct {
 }
 
 type CompactContentEvidence struct {
-	ContentHash, ContentFingerprint string
-	Version                         FileVersion
-	BinaryChecked                   bool
+	ContentHash        string      `json:"content_hash,omitempty"`
+	ContentFingerprint string      `json:"content_fingerprint,omitempty"`
+	Version            FileVersion `json:"version"`
+	BinaryChecked      bool        `json:"binary_checked"`
 }
 
 type IgnoreSourceEvidence struct {
@@ -67,7 +72,9 @@ type IgnoreSourceEvidence struct {
 }
 
 type ScanCacheStats struct {
-	ReusedHashes, ContentReads, FingerprintReads uint64
+	ReusedHashes     uint64 `json:"reused_hashes"`
+	ContentReads     uint64 `json:"content_reads"`
+	FingerprintReads uint64 `json:"fingerprint_reads"`
 }
 
 type SkippedEntry struct {
@@ -406,16 +413,18 @@ func (f ScannedFile) AbsolutePath() string                { return f.Absolute }
 func (r *ScanReport) Delta(current *ScanReport) ScanDelta { return DeltaBetween(r, current) }
 
 type ScanCacheEntry struct {
-	Relative, ContentHash, ContentFingerprint string
-	Bytes                                     uint64
-	Version                                   FileVersion
-	BinaryChecked                             bool
+	Relative           string      `json:"relative"`
+	ContentHash        string      `json:"content_hash,omitempty"`
+	ContentFingerprint string      `json:"content_fingerprint,omitempty"`
+	Bytes              uint64      `json:"bytes"`
+	Version            FileVersion `json:"version"`
+	BinaryChecked      bool        `json:"binary_checked"`
 }
 
 type ScanCache struct {
-	FormatVersion uint32
-	Root          string
-	Entries       []ScanCacheEntry
+	FormatVersion uint32           `json:"format_version"`
+	Root          string           `json:"root"`
+	Entries       []ScanCacheEntry `json:"entries"`
 }
 
 func (r *ScanReport) ToCache() ScanCache {
@@ -565,6 +574,7 @@ type RepositoryMatcher struct {
 
 func NewRepositoryMatcher(root string, opts Options) (*RepositoryMatcher, error) {
 	eng := ignore.NewEngine(opts.IgnoreFiles, opts.IgnoreCase, opts.OverrideRules)
+	eng.SetGitModules(opts.GitModules)
 	if opts.IgnorePolicy.inner.Specified() {
 		eng.ApplyPolicy(root, opts.IgnorePolicy.inner)
 	} else {

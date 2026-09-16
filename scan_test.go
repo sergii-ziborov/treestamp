@@ -3,6 +3,7 @@ package treestamp
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -567,6 +568,15 @@ func TestFacadeEdges(t *testing.T) {
 		_ = NameSort(ents[1], ents[0])
 		_ = NameSort(ents[0], ents[0])
 	}
+	if names, err := ReadDirnames(root, NewScratchBuffer()); err == nil {
+		_ = names
+	}
+	if ds, err := NewDirScanner(root); err == nil {
+		for ds.Scan() {
+			_, _ = ds.Dirent()
+		}
+		_ = ds.Err()
+	}
 	_ = GlobalRuntime()
 	_ = DedicatedRuntime(1)
 	_ = OwnedRuntime(nil)
@@ -578,7 +588,7 @@ func TestFacadeEdges(t *testing.T) {
 	_ = (&File{Filename: "x"}).Path()
 	_ = (&File{Location: root, Filename: "a.go"}).Path()
 	ch := make(chan *File, 8)
-	fw := NewParallelFileWalker(root, ch, 1).AddRoot(root).SetConcurrency(1).IgnoreGitignore()
+	fw := NewParallelFileWalker(root, ch, 1).AddRoot(root).SetConcurrency(1).IgnoreGitignore().RespectGitModules()
 	fw.Terminate()
 	_ = fw.Start()
 	multi, err := NewMultiScanner(root).Options(DefaultOptions()).WithRootParallelism(1).Scan(context.Background())
@@ -596,5 +606,114 @@ func TestFacadeEdges(t *testing.T) {
 	}
 	if _, err := missing.Scan(context.Background()); err == nil {
 		t.Fatal("wrap")
+	}
+}
+
+func TestVisitContentManifestSamePass(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "a.txt")
+	mustWriteFile(t, path, "one")
+	scanner, err := NewScanner(root, WithOptions(DefaultOptions()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	compact, err := scanner.VisitContentManifest(context.Background(), func(int) ContentVisitor {
+		return func(ev ContentVisitEvent) ContentVisitControl {
+			if ev.FileEnd {
+				_ = os.WriteFile(path, []byte("two"), 0o644)
+			}
+			return ContentVisitContinue
+		}
+	})
+	if err != nil || compact == nil || len(compact.Files) != 1 {
+		t.Fatalf("%+v %v", compact, err)
+	}
+	if compact.Files[0].ContentHash != "sha256:" {
+		if compact.Revision == "" {
+			t.Fatal("empty revision")
+		}
+	}
+	fresh, err := scanner.ScanCompact(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if compact.Revision == fresh.Revision && compact.Files[0].ContentHash != fresh.Files[0].ContentHash {
+		t.Fatal("manifest reused a later scan revision")
+	}
+}
+
+func TestCacheAdmissionFollowsPolicy(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "nul.bin"), "a\x00b")
+	hashed, err := NewScanner(root, WithOptions(DefaultOptions().MetadataOnly().WithMaxFileBytes(0)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstOpts := DefaultOptions()
+	firstOpts.DetectBinaryFiles = false
+	first, err := NewScanner(root, WithOptions(firstOpts))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := first.Scan(context.Background())
+	if err != nil || len(report.Files) != 1 {
+		t.Fatalf("%+v %v", report, err)
+	}
+	cache := report.ToCache()
+	detect := DefaultOptions()
+	detect.DetectBinaryFiles = true
+	second, err := NewScanner(root, WithOptions(detect))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cached, err := second.ScanCached(context.Background(), &cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cached.Cache.ReusedHashes != 0 {
+		t.Fatalf("binary policy reused unverified cache: %+v", cached)
+	}
+	meta, err := hashed.ScanCached(context.Background(), &cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(meta.Files) == 1 && meta.Files[0].ContentHash != "" {
+		t.Fatal("metadata-only reused hash")
+	}
+}
+
+func TestPublicJSONGoldens(t *testing.T) {
+	ns := uint64(1700000000000000000)
+	file := ScannedFile{
+		Absolute: "/repo/a.go", Relative: "a.go",
+		ContentHash: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		ContentFingerprint: "fp128:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		Bytes: 12, Version: FileVersion{ModifiedNS: &ns}, BinaryChecked: true,
+	}
+	cache := ScanCache{
+		FormatVersion: 2, Root: "/repo",
+		Entries: []ScanCacheEntry{{
+			Relative: "a.go",
+			ContentHash: file.ContentHash, ContentFingerprint: file.ContentFingerprint,
+			Bytes: 12, Version: FileVersion{ModifiedNS: &ns}, BinaryChecked: true,
+		}},
+	}
+	assertJSONGolden(t, file, "testdata/json/scanned_file.json")
+	assertJSONGolden(t, cache, "testdata/json/scan_cache.json")
+}
+
+func assertJSONGolden(t *testing.T, value any, path string) {
+	t.Helper()
+	got, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = bytes.TrimSpace(want)
+	if !bytes.Equal(got, want) {
+		t.Fatalf("%s\ngot  %s\nwant %s", path, got, want)
 	}
 }

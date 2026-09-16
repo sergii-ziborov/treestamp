@@ -47,16 +47,19 @@ Following live `main` as the oracle destroys reproducibility.
 
 P2–P6 method surfaces are implemented: ignore, scan, parallel/pull,
 content visit, cache v2, incremental watch apply. Go-market extensions include
-selective links, arbitrary `fs.FS`, and cached callback target `Stat`. P7
-fsnotify module and P8 official benches remain open. Ledger: `compat/ledger.json`.
+selective links, arbitrary `fs.FS`, cached callback target `Stat`, and a
+lazy single-directory `DirScanner` with reusable scratch buffer, optional
+`.gitmodules` skipping, changed-only content visit, confined watch-plan apply,
+and executor-owned parallel admission. P7
+fsnotify module and P8 official benches remain open. Functional parity,
+including cache/watch sequences, is in the Windows/Linux/macOS CI matrix.
+Ledger: `compat/ledger.json`.
 
 ## Next implementation work
 
-1. Put the functional parity campaign in the Windows/Linux/macOS CI matrix
-   and extend it to cache/watch sequences.
-2. Optional `watch` module with fsnotify (never a main-module require).
-3. Admission timeout and tighter multi-root worker accounting.
-4. Honest B01–B14 campaign against fastwalk, gocodewalker, and the rust oracle.
+1. Optional `watch` module with fsnotify (never a main-module require).
+2. Official B01–B14 campaign against fastwalk, gocodewalker, and the rust oracle.
+   Informal go-compat benches are not that campaign.
 
 ## Local checks
 

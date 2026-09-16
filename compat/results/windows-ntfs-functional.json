@@ -2,7 +2,7 @@
   "schema": 1,
   "campaign": "functional-parity",
   "status": "PASS",
-  "recorded_at": "2026-09-15T11:00:55.581930+00:00",
+  "recorded_at": "2026-09-16T06:49:38.906685+00:00",
   "platform": {
     "os": "Windows-11-10.0.26200-SP0",
     "filesystem": "NTFS",
@@ -10,7 +10,7 @@
     "container": false
   },
   "toolchain": {
-    "go": "go version go1.25.0 windows/amd64",
+    "go": "go version go1.26.5 windows/amd64",
     "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
     "cargo": "cargo 1.97.1 (c980f4866 2026-06-30)"
   },
@@ -20,7 +20,7 @@
     "gocodewalker": "v1.5.1",
     "godirwalk": "v1.17.0"
   },
-  "fixture": "sha256:744170b3ddbb649bb4ea39c11ebf80764d77d1bd67fd347b06cb6649e576133a",
+  "fixture": "sha256:05ec0df0ebbfc03dcaa554b5252757f76ca3aa8bb770ae6a2f9ade63d8247016",
   "capabilities": {
     "symlinks": false,
     "symlink_error": "error 1314: A required privilege is not held by the client"
@@ -45,30 +45,81 @@
     "scan_compact": {
       "status": "PASS",
       "items": 8
+    },
+    "scan_session": {
+      "status": "PASS",
+      "items": 8
+    },
+    "scan_cached_reuse": {
+      "status": "PASS",
+      "items": 8
+    },
+    "scan_watch_edit": {
+      "status": "PASS",
+      "items": 8
+    },
+    "scan_watch_create": {
+      "status": "PASS",
+      "items": 9
+    },
+    "scan_watch_full": {
+      "status": "PASS",
+      "items": 9
+    },
+    "scan_incremental": {
+      "status": "PASS",
+      "items": 9
     }
   },
   "go_competitors": {
     "status": "PASS",
     "passed": [
+      "TestArbitraryFSControlParity",
+      "TestArbitraryFSPullWalker",
+      "TestArbitraryFSWalkParity",
       "TestBinarySelectionParity",
+      "TestCachedCallbackStatRegularParity",
+      "TestCachedCallbackStatRegularParity/fastwalk",
+      "TestCachedCallbackStatRegularParity/treestamp_parallel",
+      "TestCachedCallbackStatRegularParity/treestamp_serial",
+      "TestCachedCallbackTargetErrorParity",
+      "TestCachedCallbackTargetStatParity",
       "TestCallbackStopParity",
       "TestExtensionSelectionParity",
       "TestGodirwalkUnsortedStatus",
       "TestHiddenSelectionSemantics",
       "TestRawWalkNodeSetParity",
       "TestRepositoryIgnoreSelectionParity",
+      "TestSelectiveFollowRejectsInvalidTargets",
       "TestSkipDirectoryParity",
       "TestSortedDepthFirstParity",
-      "TestStandardDirectorySelectionParity"
+      "TestStandardDirectorySelectionParity",
+      "TestStatDirEntryFallbacks"
     ],
     "skipped": [
+      "TestArbitraryFSDirFSSymlinkParity",
+      "TestCachedCallbackTargetErrorParity/fastwalk",
+      "TestCachedCallbackTargetErrorParity/treestamp_parallel",
+      "TestCachedCallbackTargetErrorParity/treestamp_serial",
+      "TestCachedCallbackTargetStatParity/fastwalk",
+      "TestCachedCallbackTargetStatParity/treestamp_parallel",
+      "TestCachedCallbackTargetStatParity/treestamp_serial",
       "TestDanglingFollowErrorDifference",
       "TestDirectorySymlinkFollowParity",
       "TestFollowRejectsRootEscape",
       "TestFollowStopsAncestorLoop",
       "TestMaxDepthPrecedesLoop",
+      "TestParallelVisitSelectiveFollow",
+      "TestPullWalkerSelectiveFollowEvidence",
       "TestRootSymlinkPolicies",
-      "TestSymlinksNotFollowedParity"
+      "TestSelectiveDirectorySymlinkFollowParity",
+      "TestSelectiveFollowKeepsSafetyGuards",
+      "TestSelectiveFollowRejectsInvalidTargets/file",
+      "TestSelectiveFollowRejectsInvalidTargets/missing",
+      "TestSelectiveMaxDepthPrecedesLoop",
+      "TestSymlinksNotFollowedParity",
+      "TestWalkEntryTargetStatCache",
+      "TestWalkParallelSelectiveFollow"
     ],
     "documented_differences": [
       "gocodewalker v1.5.1 uses the Windows hidden attribute; Treestamp also treats dot names as hidden",

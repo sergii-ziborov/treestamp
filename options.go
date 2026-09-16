@@ -12,6 +12,7 @@ import (
 	"github.com/sergii-ziborov/treestamp/internal/report"
 	"github.com/sergii-ziborov/treestamp/internal/runtime"
 	"github.com/sergii-ziborov/treestamp/internal/scan"
+	"github.com/sergii-ziborov/treestamp/internal/selection"
 	"github.com/sergii-ziborov/treestamp/internal/walk"
 )
 
@@ -25,6 +26,8 @@ type Options struct {
 	IgnoreCase        bool
 	SkipHidden        bool
 	StandardSkips     bool
+	GitModules        bool
+	Filters           selection.Filters
 	HashFileContents  bool
 	DetectBinaryFiles bool
 	EvidenceComplete  bool
@@ -69,6 +72,8 @@ func toScanOptions(opts Options) scan.Options {
 		MaxFileBytes: opts.MaxFileBytes, IgnoreFiles: opts.IgnoreFiles, OverrideRules: opts.OverrideRules,
 		Extensions: opts.Extensions, FileTypes: opts.FileTypes, IgnorePolicy: opts.IgnorePolicy.inner,
 		IgnoreCase: opts.IgnoreCase, SkipHidden: opts.SkipHidden, StandardSkips: opts.StandardSkips,
+		GitModules:       opts.GitModules,
+		Filters:          opts.Filters,
 		HashFileContents: opts.HashFileContents, DetectBinary: opts.DetectBinaryFiles, RecordSkipped: record,
 		Walk: w, TraversalWorkers: opts.TraversalWorkers, ContentWorkers: opts.ContentWorkers,
 		Limits:          scan.Limits{MaxEntries: opts.Limits.MaxEntries, MaxTotalBytes: opts.Limits.MaxTotalBytes, Timeout: opts.Limits.Timeout},
@@ -122,6 +127,35 @@ func (o Options) WithIgnoreCase(enabled bool) Options          { o.IgnoreCase = 
 func (o Options) WithIgnorePolicy(policy IgnorePolicy) Options { o.IgnorePolicy = policy; return o }
 func (o Options) WithSkipHidden(enabled bool) Options          { o.SkipHidden = enabled; return o }
 func (o Options) WithStandardSkips(enabled bool) Options       { o.StandardSkips = enabled; return o }
+func (o Options) WithGitModules(enabled bool) Options { o.GitModules = enabled; return o }
+func (o Options) WithFilters(filters selection.Filters) Options {
+	o.Filters = filters
+	return o
+}
+func (o Options) WithExcludeDirectories(dirs ...string) Options {
+	o.Filters.ExcludeDirs = append([]string(nil), dirs...)
+	return o
+}
+func (o Options) WithIncludeFilenames(names ...string) Options {
+	o.Filters.IncludeNames = append([]string(nil), names...)
+	return o
+}
+func (o Options) WithExcludeFilenames(names ...string) Options {
+	o.Filters.ExcludeNames = append([]string(nil), names...)
+	return o
+}
+func (o Options) WithIncludeFilenameRegex(patterns ...string) Options {
+	o.Filters.IncludeNameRegex = compileRegexes(patterns)
+	return o
+}
+func (o Options) WithExcludeFilenameRegex(patterns ...string) Options {
+	o.Filters.ExcludeNameRegex = compileRegexes(patterns)
+	return o
+}
+func (o Options) WithExcludeDirectoryRegex(patterns ...string) Options {
+	o.Filters.ExcludeDirRegex = compileRegexes(patterns)
+	return o
+}
 func (o Options) MetadataOnly() Options {
 	o.HashFileContents, o.DetectBinaryFiles = false, false
 	return o
@@ -243,6 +277,7 @@ const (
 	IgnoreCustom     = ignore.SourceCustom
 	IgnoreExplicit   = ignore.SourceExplicit
 	IgnoreOverride   = ignore.SourceOverride
+	IgnoreGitModules = ignore.SourceGitModules
 )
 
 type IgnoreFile struct {

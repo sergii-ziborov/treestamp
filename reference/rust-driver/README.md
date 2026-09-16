@@ -5,7 +5,8 @@ Independent oracle process for the pinned weavatrix-scan commit
 
 It does not change scanner algorithms. It reads the fixture-protocol JSON from
 stdin and writes JSON to stdout. Raw serial/sorted walk, full scan, compact
-scan, and path-only scan operations are implemented.
+scan, path-only scan, cached/incremental scan, and watch-plan apply
+operations are implemented.
 
 ```text
 cargo run --release --manifest-path reference/rust-driver/Cargo.toml

@@ -25,7 +25,7 @@ func (m Match) IsIgnored() bool {
 	return m == MatchIgnore || m == MatchOverrideIgnore || m == MatchHidden
 }
 
-const sourceCount = 6
+const sourceCount = 7
 
 const (
 	rankGitGlobal = iota
@@ -34,6 +34,7 @@ const (
 	rankDotIgnore
 	rankCustom
 	rankExplicit
+	rankGitModules
 )
 
 type layer struct {
@@ -52,6 +53,7 @@ type Engine struct {
 	hasIncludes     bool
 	policy          Policy
 	sources         []Source
+	gitModules      bool
 }
 
 // NewEngine builds a matcher. Call LoadDir as directories are entered.
@@ -80,6 +82,12 @@ func NewEngine(ignoreFiles []string, caseInsensitive bool, overrides []string) *
 	return eng
 }
 
+func (e *Engine) SetGitModules(enabled bool) {
+	if e != nil {
+		e.gitModules = enabled
+	}
+}
+
 // Clone returns a copy that can load additional nested directories.
 func (e *Engine) Clone() *Engine {
 	if e == nil {
@@ -101,6 +109,9 @@ func (e *Engine) LoadDir(directory, base string) []string {
 			location = base + "/" + name
 		}
 		warnings = append(warnings, e.loadFile(filepath.Join(directory, name), base, "", location, rankFor(name), kindFor(name))...)
+	}
+	if e.gitModules {
+		warnings = append(warnings, e.loadGitModules(directory, base)...)
 	}
 	return warnings
 }

@@ -84,6 +84,24 @@ func CollapsePathPrefixes(prefixes []string) []string {
 	return out
 }
 
+// SafeRelative accepts a repository-relative slash path. "." is the root.
+// Absolute paths, empty components, and ".." are rejected.
+func SafeRelative(rel string) (string, bool) {
+	rel = filepath.ToSlash(rel)
+	if rel == "." {
+		return ".", true
+	}
+	if rel == "" || filepath.IsAbs(rel) || strings.HasPrefix(rel, "/") {
+		return "", false
+	}
+	for _, part := range strings.Split(rel, "/") {
+		if part == "" || part == "." || part == ".." {
+			return "", false
+		}
+	}
+	return rel, true
+}
+
 func lastSlash(value string) int {
 	for i := len(value) - 1; i >= 0; i-- {
 		if value[i] == '/' {

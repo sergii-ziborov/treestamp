@@ -17,10 +17,10 @@ P0 condition for calling the inventory complete.
 | --- | --- |
 | T01–T10, T16–T29, T31–T33 | Implemented or partial with method surface present |
 | T11–T15 | Partial platform/path/symlink/reparse |
-| T24 | Default scan differential passes on Windows and Linux; Linux follow-links walk also passes; broader option/CI matrix remains open |
+| T24 | Default scan, cache/watch sequences, and competitor checks run in CI; Linux follow-links walk still needs symlink privilege |
 | T30 | Executors present; admission timeout not wired |
 | T34 | Optional fsnotify module not started |
-| T35 | Native tests exist; official benches/fuzz/rust diffs remain open |
+| T35 | Native tests, CI functional parity, and cache/watch sequences exist; official benches/fuzz remain open |
 
 `python3 tools/audit.py --require-full` must fail while any contract is open.
 
@@ -74,8 +74,10 @@ filepath, and gocodewalker behavior through the isolated `bench/go-compat`
 module. Results are `compat/results/windows-ntfs-functional.json` and
 `compat/results/linux-overlayfs-functional.json`.
 
-These are local two-platform results, not the required CI matrix. They close
-neither cache/watch-sequence, mutation-race, fuzz/leak, nor performance work.
+The same campaign now also compares cache reuse and watch-plan apply
+sequences, and `.github/workflows/ci.yml` runs it on Ubuntu, Windows, and
+macOS. Local NTFS/overlayfs JSON records remain developer evidence. This
+does not close mutation-race, fuzz/leak, or official B01–B14 work.
 B01–B14 remain `NOT_RUN`.
 
 Controlled clocks and fake filesystems belong to deterministic cancel and
