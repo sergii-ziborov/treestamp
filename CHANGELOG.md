@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased — 0.1.0-alpha.1 (2026-09-16)
+## CLI 0.1.0 (2026-09-16)
+
+First non-alpha CLI tag: `cmd/treestamp/v0.1.0`. The library it requires
+is still `v0.1.0-alpha.1`. Install with `@v0.1.0`, not `@cmd/treestamp/v0.1.0`.
+
+## Unreleased — library 0.1.0-alpha.1 (2026-09-16)
 
 Method-complete native scanner surfaces plus a nested CLI module.
 Still not a full port.

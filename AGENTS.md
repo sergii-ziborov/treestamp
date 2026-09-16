@@ -68,8 +68,8 @@ Windows/Linux/macOS CI matrix. Ledger: `compat/ledger.json`.
 2. Optional `watch` module with fsnotify (never a main-module require).
 3. Official B01–B14 campaign against fastwalk, gocodewalker, and the rust oracle.
    Informal go-compat benches are not that campaign.
-4. Keep library tag `v0.1.0-alpha.1` and CLI tag `cmd/treestamp/v0.1.0-alpha.1`
-   in lockstep until a later help-only CLI bump.
+4. Library tag stays `v0.1.0-alpha.1`. CLI tag is `cmd/treestamp/v0.1.0`
+   and may move without a library bump.
 
 ## Local checks
 

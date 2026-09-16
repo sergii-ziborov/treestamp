@@ -6,7 +6,7 @@ The CLI is a thin process on the public library. It does not import
 Install after the published tag:
 
 ```text
-go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.0-alpha.1
+go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.0
 ```
 
 ## First three commands
@@ -69,4 +69,4 @@ No `watch`, `--exec`, TUI, server, MCP, hidden cache, or plugin loader.
 
 `treestamp version --json` prints CLI, core, and manifest schema. Nested
 module tags use the `cmd/treestamp/v…` Git prefix. `go install` still
-takes `@v0.1.0-alpha.1`.
+takes `@v0.1.0`.
