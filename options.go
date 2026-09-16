@@ -41,6 +41,7 @@ type Options struct {
 	CacheValidation   CacheValidationPolicy
 	ContentValidation ContentValidationPolicy
 	ContentDiscovery  ContentDiscoveryMode
+	zeroByteLimit     bool
 }
 
 type NamedFileTypes = filetypes.NamedFileTypes
@@ -62,8 +63,7 @@ func DefaultOptions() Options {
 func toScanOptions(opts Options) scan.Options {
 	w := opts.Walk
 	if w.MaxOpen == 0 {
-		w = walk.DefaultOptions()
-		w.CollectMetadata = true
+		w.MaxOpen = walk.DefaultMaxOpen
 	}
 	record := opts.EvidenceComplete
 	if opts.Evidence == EvidenceSelectedFiles {
@@ -77,8 +77,9 @@ func toScanOptions(opts Options) scan.Options {
 		Filters:          opts.Filters,
 		HashFileContents: opts.HashFileContents, DetectBinary: opts.DetectBinaryFiles, RecordSkipped: record,
 		Walk: w, TraversalWorkers: opts.TraversalWorkers, ContentWorkers: opts.ContentWorkers,
-		Limits:          scan.Limits{MaxEntries: opts.Limits.MaxEntries, MaxTotalBytes: opts.Limits.MaxTotalBytes, Timeout: opts.Limits.Timeout},
-		CacheValidation: scan.CacheValidation(opts.CacheValidation), ContentValidation: scan.ContentValidation(opts.ContentValidation),
+		MaxFileBytesZero: opts.zeroByteLimit,
+		Limits:           scan.Limits{MaxEntries: opts.Limits.MaxEntries, MaxTotalBytes: opts.Limits.MaxTotalBytes, Timeout: opts.Limits.Timeout},
+		CacheValidation:  scan.CacheValidation(opts.CacheValidation), ContentValidation: scan.ContentValidation(opts.ContentValidation),
 		ContentDiscovery: scan.ContentDiscovery(opts.ContentDiscovery),
 	}
 	if !out.IgnorePolicy.Specified() {
@@ -128,7 +129,7 @@ func (o Options) WithIgnoreCase(enabled bool) Options          { o.IgnoreCase = 
 func (o Options) WithIgnorePolicy(policy IgnorePolicy) Options { o.IgnorePolicy = policy; return o }
 func (o Options) WithSkipHidden(enabled bool) Options          { o.SkipHidden = enabled; return o }
 func (o Options) WithStandardSkips(enabled bool) Options       { o.StandardSkips = enabled; return o }
-func (o Options) WithGitModules(enabled bool) Options { o.GitModules = enabled; return o }
+func (o Options) WithGitModules(enabled bool) Options          { o.GitModules = enabled; return o }
 func (o Options) WithFilters(filters selection.Filters) Options {
 	o.Filters = filters
 	return o
@@ -329,6 +330,15 @@ const (
 	CodeCancelled      ErrorCode = "cancelled"
 	CodeTimeout        ErrorCode = "timeout"
 	CodeStale          ErrorCode = "stale_snapshot"
+	CodePartial        ErrorCode = "partial"
+	CodePermission     ErrorCode = "permission"
+	CodeUnavailable    ErrorCode = "unavailable"
+	CodeChanged        ErrorCode = "changed"
+	CodeLimit          ErrorCode = "limit"
+	CodeAdmission      ErrorCode = "admission"
+	CodeUnsupported    ErrorCode = "unsupported"
+	CodeCallback       ErrorCode = "callback"
+	CodeCache          ErrorCode = "cache_corrupt"
 )
 
 type Error struct {
@@ -414,6 +424,7 @@ func toReportFiles(files []ScannedFile) []report.File {
 type SnapshotContentProvider struct {
 	root  string
 	files []ScannedFile
+	index []report.File
 }
 
 func (r *ScanReport) ContentProvider() (*SnapshotContentProvider, error) {
@@ -423,9 +434,11 @@ func (r *ScanReport) ContentProvider() (*SnapshotContentProvider, error) {
 	if err := validateSnapshotReport(r); err != nil {
 		return nil, err
 	}
-	return &SnapshotContentProvider{root: r.Root, files: r.Files}, nil
+	files := append([]ScannedFile(nil), r.Files...)
+	return &SnapshotContentProvider{root: r.Root, files: files, index: toReportFiles(files)}, nil
 }
 
+// Open loads verified bytes for relative. It does not return an io.Reader.
 func (p *SnapshotContentProvider) Open(relative string) (*SnapshotContent, error) {
 	return p.Read(relative)
 }
@@ -436,7 +449,11 @@ func (p *SnapshotContentProvider) ReadBounded(relative string, maxBytes uint64) 
 	if p == nil {
 		return nil, &SnapshotReadError{Relative: relative, Reason: "invalid", Err: errors.New("empty snapshot")}
 	}
-	data, evidence, err := report.ReadBounded(p.root, toReportFiles(p.files), relative, maxBytes)
+	index := p.index
+	if index == nil {
+		index = toReportFiles(p.files)
+	}
+	data, evidence, err := report.ReadBounded(p.root, index, relative, maxBytes)
 	if err != nil {
 		return nil, mapSnapErr(err)
 	}
@@ -451,6 +468,7 @@ type ScanSession struct {
 	path       string
 	options    Options
 	report     *ScanReport
+	tree       *TreeSnapshot
 	generation uint64
 	lastReason WatchUpdateReason
 	hasReason  bool
@@ -470,11 +488,12 @@ func OpenScanSession(ctx context.Context, root string, opts Options) (*ScanSessi
 		return nil, err
 	}
 	opts.Cancellation = nil
-	return &ScanSession{path: root, options: opts, report: report, generation: 1}, nil
+	return &ScanSession{path: root, options: opts, report: report, tree: SnapshotFromFiles(report.Files), generation: 1}, nil
 }
 
 func (s *ScanSession) Root() string            { return s.path }
 func (s *ScanSession) Report() *ScanReport     { return s.report }
+func (s *ScanSession) TreeRevision() string    { return s.tree.TreeRevision() }
 func (s *ScanSession) Generation() uint64      { return s.generation }
 func (s *ScanSession) IntoReport() *ScanReport { return s.report }
 func (s *ScanSession) LastUpdateReason() (WatchUpdateReason, bool) {
@@ -512,13 +531,27 @@ func (s *ScanSession) ApplyWatchPlanWithCancellation(ctx context.Context, plan W
 	return s.report, nil
 }
 func (s *ScanSession) install(report *ScanReport, reason WatchUpdateReason) {
+	s.tree = s.nextTree(report)
 	s.report, s.lastReason, s.hasReason = report, reason, true
 	s.generation++
 }
 
+func (s *ScanSession) nextTree(cur *ScanReport) *TreeSnapshot {
+	if cur == nil {
+		return s.tree
+	}
+	if s.tree == nil || s.report == nil {
+		return SnapshotFromFiles(cur.Files)
+	}
+	up, del := merkle.Diff(recordsOf(s.report.Files), recordsOf(cur.Files))
+	next := *s.tree
+	next.tree = s.tree.tree.Apply(up, del)
+	return &next
+}
+
 // TreeSnapshot is a persistent keyed Merkle index. It is not LegacyRevision.
 type TreeSnapshot struct {
-	tree *merkle.Tree
+	tree  *merkle.Tree
 	Cover merkle.Coverage
 }
 

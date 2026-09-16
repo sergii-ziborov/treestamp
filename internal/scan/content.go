@@ -11,6 +11,7 @@ import (
 	"sort"
 
 	"github.com/sergii-ziborov/treestamp/internal/hashx"
+	"github.com/sergii-ziborov/treestamp/internal/runtime"
 	"github.com/sergii-ziborov/treestamp/internal/selection"
 )
 
@@ -393,4 +394,108 @@ func Into(ctx context.Context, root string, opts Options, sink func(*ScannedFile
 	}
 	out.Revision = rev.finish(out.Portable, out.Termination)
 	return out, nil
+}
+
+func VisitOwned(ctx context.Context, root string, opts Options, consume func(ScannedFile, []byte) error) (*ContentVisitReport, error) {
+	discovered, err := discover(ctx, root, opts, true)
+	if err != nil {
+		return nil, err
+	}
+	opts.Root = discovered.root
+	report := newVisitReport(discovered, VisitRevision)
+	index := cacheIndex(opts)
+	memo := newContentMemo()
+	var files []ScannedFile
+	for _, c := range discovered.candidates {
+		if err := ctx.Err(); err != nil {
+			report.Termination, report.Complete = TermCancelled, false
+			break
+		}
+		file, skip, stat, err := ownedOne(ctx, c, opts, index, memo, consume)
+		report.Cache.ContentReads += stat.ContentReads
+		report.Cache.ReusedHashes += stat.ReusedHashes
+		if err != nil {
+			return report, err
+		}
+		if skip != nil {
+			report.Skipped = append(report.Skipped, *skip)
+			continue
+		}
+		report.Completed++
+		files = append(files, file)
+	}
+	attachVisitManifest(report, discovered, files, opts)
+	return report, nil
+}
+
+func ownedOne(ctx context.Context, c candidate, opts Options, index map[string]CacheEntry, memo *contentMemo, consume func(ScannedFile, []byte) error) (ScannedFile, *Skipped, CacheStats, error) {
+	file, data, skip, stat, err := readOwned(ctx, c, opts, index, memo)
+	if err == nil && skip != nil && skip.Kind == selection.SkipConcurrentModification && ctx.Err() == nil {
+		file, data, skip, stat, err = readOwned(ctx, c, opts, index, memo)
+	}
+	if err != nil || skip != nil || consume == nil {
+		return file, skip, stat, err
+	}
+	return file, skip, stat, consume(file, data)
+}
+
+func readOwned(ctx context.Context, c candidate, opts Options, index map[string]CacheEntry, memo *contentMemo) (ScannedFile, []byte, *Skipped, CacheStats, error) {
+	file, skip, stat, err := inspectOne(ctx, c, opts, index, memo)
+	if err != nil || skip != nil {
+		return file, nil, skip, stat, err
+	}
+	data, readErr := os.ReadFile(file.Absolute)
+	if readErr != nil {
+		return file, nil, &Skipped{Relative: c.rel, Kind: selection.SkipIOError, Detail: readErr.Error()}, stat, nil
+	}
+	return file, data, nil, stat, nil
+}
+
+func inspectBudgeted(ctx context.Context, files []candidate, workers int, runOne func(candidate) inspectResult) ([]ScannedFile, []Skipped, CacheStats, error) {
+	rt := runtime.Dedicated(workers)
+	budget := runtime.NewBudget(runtime.DefaultLimits(workers))
+	defer budget.Close()
+	ch := make(chan candidate)
+	res := make(chan inspectResult, workers)
+	grp := rt.Group()
+	for i := 0; i < workers; i++ {
+		grp.Go(func() error {
+			for c := range ch {
+				if err := budget.HoldReady(ctx, int64(c.size)); err != nil {
+					return err
+				}
+				res <- runOne(c)
+			}
+			return nil
+		})
+	}
+	go func() {
+		defer close(ch)
+		for _, c := range files {
+			select {
+			case <-ctx.Done():
+				return
+			case ch <- c:
+			}
+		}
+	}()
+	go func() { _ = grp.Wait(); close(res) }()
+	return collectInspect(ctx, budget, res)
+}
+
+func collectInspect(ctx context.Context, budget *runtime.Budget, res <-chan inspectResult) ([]ScannedFile, []Skipped, CacheStats, error) {
+	var out []ScannedFile
+	var skipped []Skipped
+	var stats CacheStats
+	for item := range res {
+		budget.DropReady(int64(item.file.Bytes))
+		if item.err != nil {
+			return nil, nil, stats, item.err
+		}
+		applyInspectResult(inspectOut{files: &out, skipped: &skipped, stats: &stats}, item, false)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, nil, stats, err
+	}
+	return out, skipped, stats, nil
 }

@@ -39,6 +39,47 @@ jobs:
         working-directory: bench/go-compat
         run: go test ./...
 
+  docs:
+    runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.2"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Docs structure
+        run: python tools/docs_check.py
+      - name: Docs tool tests
+        run: python -m unittest discover -s tools -p "test_*.py"
+      - name: Executable examples
+        run: |
+          go test -json -count=1 -run '^Example' ./dx | tee /tmp/example-events.jsonl
+          python tools/docs_check.py --events /tmp/example-events.jsonl
+      - name: Quickstart build
+        run: go build -o /tmp/docquickstart ./examples/docquickstart
+      - name: Source consumer
+        env:
+          GOWORK: "off"
+        run: python tools/consumer_check.py --mode source
+
+  consumer:
+    runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: "0"
+      GOWORK: "off"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.2"
+      - name: Nested consumer module
+        working-directory: consumer
+        run: go test .
+
   parity:
     strategy:
       fail-fast: false

@@ -1,0 +1,17 @@
+{
+  "examples": [
+    {"name": "ExampleScanPaths", "recipe": "docs/recipes/scan-paths.md", "region": "example-scan-paths"},
+    {"name": "ExampleNewScanner_withExtensions", "recipe": "docs/recipes/filtered-manifest.md", "region": "example-scan-with-extensions"},
+    {"name": "ExampleScanner_Explain", "recipe": "docs/recipes/explain.md", "region": "example-explain"},
+    {"name": "ExampleScanReport_ToCache", "recipe": "docs/recipes/cache.md", "region": "example-cache"},
+    {"name": "ExampleSnapshotContentProvider_ReadBounded", "recipe": "docs/recipes/snapshot-read.md", "region": "example-read-bounded"},
+    {"name": "ExampleWalkFS", "recipe": "docs/recipes/walk-fs.md", "region": "example-walk-fs"},
+    {"name": "ExampleTreeSnapshot_Apply", "recipe": "docs/recipes/tree-snapshot.md", "region": "example-tree-snapshot"},
+    {"name": "ExampleScanReport_ToPortable", "recipe": "docs/recipes/portable.md", "region": "example-portable"},
+    {"name": "ExampleNewScanner_invalidRegex", "recipe": "docs/recipes/invalid-regex.md", "region": "example-invalid-regex"},
+    {"name": "ExampleScanner_ScanInto_stop", "recipe": "docs/recipes/scan-into-stop.md", "region": "example-scan-into-stop"},
+    {"name": "ExampleScanWith", "recipe": "docs/recipes/scan-with.md", "region": "example-scan-with"},
+    {"name": "ExampleEachFile", "recipe": "docs/recipes/each-file.md", "region": "example-each-file"},
+    {"name": "ExampleCompile", "recipe": "docs/recipes/scan-with.md", "region": "example-compile-plan"}
+  ]
+}

@@ -91,6 +91,28 @@ func (t *Tree) Delete(path string) *Tree {
 	return &next
 }
 
+// Diff returns upserts and deletes that turn prev into cur. Unchanged keys are omitted.
+func Diff(prev, cur []Record) (upserts, deletes []Record) {
+	byPrev := make(map[string]Record, len(prev))
+	for _, rec := range prev {
+		byPrev[rec.Path] = rec
+	}
+	seen := make(map[string]struct{}, len(cur))
+	for _, rec := range cur {
+		seen[rec.Path] = struct{}{}
+		was, ok := byPrev[rec.Path]
+		if !ok || was.Hash != rec.Hash || was.Size != rec.Size {
+			upserts = append(upserts, rec)
+		}
+	}
+	for _, rec := range prev {
+		if _, ok := seen[rec.Path]; !ok {
+			deletes = append(deletes, rec)
+		}
+	}
+	return upserts, deletes
+}
+
 func (t *Tree) Apply(upserts, deletes []Record) *Tree {
 	cur := t
 	if cur == nil {

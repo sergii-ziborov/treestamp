@@ -1,24 +1,29 @@
-// Package treestamp is a native Go port of Weavatrix Scan.
+// Package treestamp is a native Go library for deterministic repository scanning.
+//
+// Select files, verify content, and produce manifests with explainable
+// decisions. Start with [ScanPathsWith], [ScanWith], [EachFile], or [Compile].
+// [Explain] reports the winning selection rule; it does not re-verify content.
+// Official B01–B14 benches are NOT_RUN. This is not a full port of the pinned
+// Weavatrix Scan oracle.
 //
 // The repository is the personal public project of Sergii Ziborov
 // (github.com/sergii-ziborov/treestamp). It is not published from the
 // Weavatrix or EdgeHawk organizations.
-//
-// Walk, select, hash, cache, and incremental surfaces are implemented. This
-// is still not a claim that every rust differential and official bench is
-// closed.
 package treestamp
 
 import (
 	"context"
 	"errors"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/sergii-ziborov/treestamp/internal/dirread"
-	"github.com/sergii-ziborov/treestamp/internal/scan"
+	"github.com/sergii-ziborov/treestamp/internal/dx"
+	"github.com/sergii-ziborov/treestamp/internal/runtime"
 	"github.com/sergii-ziborov/treestamp/internal/selection"
 	"github.com/sergii-ziborov/treestamp/internal/walk"
 	"github.com/sergii-ziborov/treestamp/internal/walkfs"
@@ -196,149 +201,6 @@ func WalkDirs(root string, opts DirWalkOptions) error {
 	return WalkWithConfig(root, cfg, fn)
 }
 
-func runFileWalker(w *FileWalker) error {
-	w.walking.Store(true)
-	defer w.walking.Store(false)
-	defer w.closeOnce.Do(func() {
-		if w.queue != nil {
-			close(w.queue)
-		}
-	})
-	if w.queue == nil {
-		return &Error{Code: CodeInvalid, Op: "FileWalker.Start", Err: errString("file queue is nil")}
-	}
-	opts := fileWalkerOptions(w)
-	for _, root := range w.roots {
-		if w.terminate.Load() {
-			return ErrTerminateWalk
-		}
-		if err := emitFileWalkerRoot(w, root, opts); err != nil {
-			if w.errorHandler != nil && w.errorHandler(err) {
-				continue
-			}
-			return err
-		}
-	}
-	return nil
-}
-
-func fileWalkerOptions(w *FileWalker) Options {
-	opts := DefaultOptions().MetadataOnly()
-	opts.StandardSkips = false
-	if w.ignoreGitignore || w.ignoreIgnoreFile {
-		opts.IgnoreFiles = dropIgnoreNames(opts.IgnoreFiles, w.ignoreGitignore, w.ignoreIgnoreFile)
-	}
-	if len(w.CustomIgnore) > 0 {
-		opts.IgnoreFiles = append(opts.IgnoreFiles, w.CustomIgnore...)
-	}
-	opts.OverrideRules = append(opts.OverrideRules, w.CustomIgnorePatterns...)
-	if len(w.exts) > 0 {
-		opts.Extensions = append([]string(nil), w.exts...)
-	}
-	if w.workers > 0 {
-		opts.TraversalWorkers = w.workers
-	}
-	if w.gitModules {
-		opts.GitModules = true
-	}
-	if w.includeHidden != nil {
-		opts.SkipHidden = !*w.includeHidden
-	}
-	if w.maxDepth > 0 {
-		d := w.maxDepth
-		opts.Walk.MaxDepth = &d
-	}
-	if w.ignoreBinary {
-		opts.DetectBinaryFiles = true
-	}
-	opts.Filters = fileWalkerFilters(w)
-	return opts
-}
-
-func fileWalkerFilters(w *FileWalker) Filters {
-	return Filters{
-		IncludeNames: w.IncludeFilename, ExcludeNames: w.ExcludeFilename,
-		IncludeDirs: w.IncludeDirectory, ExcludeDirs: w.ExcludeDirectory,
-		IncludeNameRegex: w.IncludeFilenameRegex, ExcludeNameRegex: w.ExcludeFilenameRegex,
-		IncludeDirRegex: w.IncludeDirectoryRegex, ExcludeDirRegex: w.ExcludeDirectoryRegex,
-		ExcludeExtensions: w.ExcludeListExtensions, LocationExclude: w.LocationExcludePattern,
-	}
-}
-
-func dropIgnoreNames(names []string, dropGit, dropIgnore bool) []string {
-	kept := names[:0]
-	for _, name := range names {
-		if (dropGit && name == ".gitignore") || (dropIgnore && name == ".ignore") {
-			continue
-		}
-		kept = append(kept, name)
-	}
-	return kept
-}
-
-func emitFileWalkerRoot(w *FileWalker, root string, opts Options) error {
-	scanner, err := NewScanner(root, WithOptions(opts))
-	if err != nil {
-		return err
-	}
-	if opts.DetectBinaryFiles {
-		return emitScannedFiles(w, root, scanner)
-	}
-	return streamWalkerPaths(w, root, opts)
-}
-
-func streamWalkerPaths(w *FileWalker, root string, opts Options) error {
-	return scan.StreamPaths(walkerContext(w), root, toScanOptions(opts), func(rel string) error {
-		return pushWalkerPath(w, root, rel)
-	})
-}
-
-func emitScannedFiles(w *FileWalker, root string, scanner *Scanner) error {
-	report, err := scanner.Scan(walkerContext(w))
-	if err != nil {
-		return err
-	}
-	var paths []string
-	for _, file := range report.Files {
-		paths = append(paths, file.Relative)
-	}
-	return pushWalkerPaths(w, root, paths)
-}
-
-func walkerContext(w *FileWalker) context.Context {
-	if w != nil && w.ctx != nil {
-		return w.ctx
-	}
-	return context.Background()
-}
-
-func pushWalkerPaths(w *FileWalker, root string, paths []string) error {
-	for _, rel := range paths {
-		if err := pushWalkerPath(w, root, rel); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func pushWalkerPath(w *FileWalker, root, rel string) error {
-	if w.terminate.Load() {
-		return ErrTerminateWalk
-	}
-	native := filepath.FromSlash(rel)
-	file := &File{Location: filepath.Join(root, filepath.Dir(native)), Filename: filepath.Base(native)}
-	if w.stop == nil {
-		w.queue <- file
-		return nil
-	}
-	select {
-	case <-w.stop:
-		return ErrTerminateWalk
-	case w.queue <- file:
-		return nil
-	}
-}
-
 func CompileFilters(includeNames, excludeNames, includeDirs, excludeDirs []string, includeNameRE, excludeNameRE, includeDirRE, excludeDirRE []string) (Filters, error) {
 	includeNameRegex, err := compileRegexes(includeNameRE)
 	if err != nil {
@@ -377,4 +239,230 @@ func compileRegexes(patterns []string) ([]*regexp.Regexp, error) {
 		out = append(out, expr)
 	}
 	return out, nil
+}
+
+func (m *RepositoryMatcher) Match(relative string, isDir bool) RepositoryMatch {
+	return m.engine.Match(relative, isDir)
+}
+func (m *RepositoryMatcher) EnterDir(abs, rel string) []string { return m.engine.LoadDir(abs, rel) }
+func (m *RepositoryMatcher) Sources() []IgnoreSourceEvidence {
+	var out []IgnoreSourceEvidence
+	for _, src := range m.engine.Sources() {
+		out = append(out, IgnoreSourceEvidence{Kind: src.Kind, Location: src.Location, ContentHash: src.ContentHash})
+	}
+	return out
+}
+
+func classifyCode(err error) ErrorCode {
+	if errors.Is(err, runtime.ErrBusy) || errors.Is(err, runtime.ErrAdmitTimeout) {
+		return CodeAdmission
+	}
+	return ErrorCode(dx.Classify(err))
+}
+
+type (
+	Progress  = dx.Progress
+	ByteLimit = dx.ByteLimit
+)
+
+func LimitBytes(n uint64) ByteLimit { return dx.LimitBytes(n) }
+func ZeroBytes() ByteLimit          { return dx.ZeroBytes() }
+func UnlimitedBytes() ByteLimit     { return dx.UnlimitedBytes() }
+func SafeCause(err error) string    { return dx.SafeCause(err) }
+
+// ErrPartial means selected work was incomplete. ErrStop is a deliberate EachFile halt.
+var (
+	ErrPartial = dx.ErrPartial
+	ErrStop    = dx.ErrStop
+)
+
+// Option configures a compiled Plan. Scan and ScanPaths keep two-argument signatures.
+type Option func(*planBuilder) error
+
+type planBuilder struct {
+	opts                                 Options
+	log                                  *slog.Logger
+	progress                             func(Progress)
+	hashSet, binarySet, maxSet, failFast bool
+	requireCache                         bool
+}
+
+// Plan is an immutable compiled scan configuration. It does not hold Context.
+type Plan struct {
+	opts                                 Options
+	log                                  *slog.Logger
+	progress                             func(Progress)
+	hashSet, binarySet, maxSet, failFast bool
+	requireCache                         bool
+}
+
+func Compile(opts ...Option) (*Plan, error) {
+	b := planBuilder{opts: DefaultOptions()}
+	for _, opt := range opts {
+		if opt == nil {
+			continue
+		}
+		if err := opt(&b); err != nil {
+			return nil, &Error{Code: CodeInvalid, Op: "Compile", Err: err}
+		}
+	}
+	if b.opts.TraversalWorkers < 0 || b.opts.ContentWorkers < 0 {
+		return nil, &Error{Code: CodeInvalid, Op: "Compile", Err: errString("negative worker count")}
+	}
+	if err := b.opts.Filters.Err(); err != nil {
+		return nil, &Error{Code: CodeInvalid, Op: "Compile", Err: err}
+	}
+	b.opts = cloneOptions(b.opts)
+	return &Plan{opts: b.opts, log: b.log, progress: b.progress, hashSet: b.hashSet, binarySet: b.binarySet, maxSet: b.maxSet, failFast: b.failFast, requireCache: b.requireCache}, nil
+}
+
+func ScanWith(ctx context.Context, root string, opts ...Option) (*ScanReport, error) {
+	p, err := Compile(opts...)
+	if err != nil {
+		return nil, err
+	}
+	return p.Scan(ctx, root)
+}
+
+func ScanPathsWith(ctx context.Context, root string, opts ...Option) ([]string, error) {
+	p, err := Compile(opts...)
+	if err != nil {
+		return nil, err
+	}
+	return p.ScanPaths(ctx, root)
+}
+
+func EachFile(ctx context.Context, root string, consume func(ScannedFile, []byte) error, opts ...Option) (*ScanSummary, error) {
+	p, err := Compile(opts...)
+	if err != nil {
+		return nil, err
+	}
+	return p.EachFile(ctx, root, consume)
+}
+
+func Explain(root, relative string, opts ...Option) (PathExplanation, error) {
+	p, err := Compile(opts...)
+	if err != nil {
+		return PathExplanation{}, err
+	}
+	return p.Explain(root, relative)
+}
+
+func Using(opts Options) Option {
+	return func(b *planBuilder) error { b.opts = cloneOptions(opts); return nil }
+}
+
+func WithExtensions(exts ...string) Option {
+	return func(b *planBuilder) error {
+		for _, ext := range exts {
+			ext = strings.TrimPrefix(strings.ToLower(ext), ".")
+			if ext != "" {
+				b.opts.Extensions = append(b.opts.Extensions, ext)
+			}
+		}
+		return nil
+	}
+}
+
+func WithExcludeGlobs(globs ...string) Option {
+	return func(b *planBuilder) error {
+		for _, glob := range globs {
+			if glob == "" {
+				continue
+			}
+			if !strings.HasPrefix(glob, "!") {
+				glob = "!" + glob
+			}
+			b.opts.OverrideRules = append(b.opts.OverrideRules, glob)
+		}
+		return nil
+	}
+}
+
+func WithLogger(logger *slog.Logger) Option {
+	return func(b *planBuilder) error { b.log = logger; return nil }
+}
+
+func WithFailFast() Option {
+	return func(b *planBuilder) error {
+		b.failFast = true
+		b.opts.Walk.ErrorPolicy = ErrorAbort
+		return nil
+	}
+}
+
+func WithMaxFileBytes(n uint64) Option {
+	return func(b *planBuilder) error {
+		b.maxSet = true
+		b.opts.MaxFileBytes = n
+		return nil
+	}
+}
+
+func WithHashContents(on bool) Option {
+	return func(b *planBuilder) error {
+		b.hashSet = true
+		b.opts.HashFileContents = on
+		return nil
+	}
+}
+
+func WithDetectBinary(on bool) Option {
+	return func(b *planBuilder) error {
+		b.binarySet = true
+		b.opts.DetectBinaryFiles = on
+		return nil
+	}
+}
+
+func WithFilenameRegex(patterns ...string) Option {
+	return func(b *planBuilder) error {
+		exprs, err := compileRegexes(patterns)
+		if err != nil {
+			return err
+		}
+		b.opts.Filters.IncludeNameRegex = append(b.opts.Filters.IncludeNameRegex, exprs...)
+		return nil
+	}
+}
+
+func WithProgress(fn func(Progress)) Option {
+	return func(b *planBuilder) error { b.progress = fn; return nil }
+}
+
+func WithRequireCache() Option {
+	return func(b *planBuilder) error { b.requireCache = true; return nil }
+}
+
+func WithReadLimit(lim ByteLimit) Option {
+	return func(b *planBuilder) error {
+		switch lim.Mode {
+		case dx.LimitZero:
+			b.opts.zeroByteLimit, b.opts.MaxFileBytes, b.maxSet = true, 0, true
+		case dx.LimitUnlimited:
+			b.opts.zeroByteLimit, b.opts.MaxFileBytes, b.maxSet = false, 0, true
+		case dx.LimitValue:
+			b.opts.zeroByteLimit, b.opts.MaxFileBytes, b.maxSet = false, lim.N, true
+		}
+		return nil
+	}
+}
+
+func (p *Plan) Describe() string {
+	o := p.opts
+	return dx.Describe(o.IgnoreFiles, o.SkipHidden, o.StandardSkips, o.HashFileContents, o.DetectBinaryFiles, p.failFast, o.MaxFileBytes)
+}
+
+func (p *Plan) scanner(root string) (*Scanner, error) {
+	if p == nil {
+		return nil, &Error{Code: CodeInvalid, Op: "Plan", Err: errEmptyRoot}
+	}
+	return NewScanner(root, WithOptions(p.opts))
+}
+
+func (p *Plan) logFinish(ctx context.Context, event string, attrs ...slog.Attr) {
+	if p == nil || p.log == nil || !p.log.Enabled(ctx, slog.LevelInfo) {
+		return
+	}
+	p.log.LogAttrs(ctx, slog.LevelInfo, event, attrs...)
 }

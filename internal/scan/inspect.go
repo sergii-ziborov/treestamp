@@ -15,11 +15,10 @@ import (
 	"sync"
 
 	"github.com/sergii-ziborov/treestamp/internal/fileread"
-	"github.com/sergii-ziborov/treestamp/internal/platform"
 	"github.com/sergii-ziborov/treestamp/internal/filetypes"
 	"github.com/sergii-ziborov/treestamp/internal/hashx"
 	"github.com/sergii-ziborov/treestamp/internal/ignore"
-	"github.com/sergii-ziborov/treestamp/internal/runtime"
+	"github.com/sergii-ziborov/treestamp/internal/platform"
 	"github.com/sergii-ziborov/treestamp/internal/selection"
 	"github.com/sergii-ziborov/treestamp/internal/walk"
 )
@@ -43,6 +42,9 @@ func inspect(ctx context.Context, files []candidate, opts Options) ([]ScannedFil
 	memo := newContentMemo()
 	runOne := func(c candidate) inspectResult {
 		file, skip, stat, err := inspectOne(ctx, c, opts, index, memo)
+		if err == nil && skip != nil && skip.Kind == selection.SkipConcurrentModification && ctx.Err() == nil {
+			file, skip, stat, err = inspectOne(ctx, c, opts, index, memo)
+		}
 		return inspectResult{file: file, skip: skip, stat: stat, err: err}
 	}
 	if workers == 1 {
@@ -69,42 +71,7 @@ func inspectSerial(ctx context.Context, files []candidate, runOne func(candidate
 }
 
 func inspectParallel(ctx context.Context, files []candidate, workers int, runOne func(candidate) inspectResult) ([]ScannedFile, []Skipped, CacheStats, error) {
-	rt := runtime.Dedicated(workers)
-	ch := make(chan candidate)
-	res := make(chan inspectResult, workers)
-	grp := rt.Group()
-	for i := 0; i < workers; i++ {
-		grp.Go(func() error {
-			for c := range ch {
-				res <- runOne(c)
-			}
-			return nil
-		})
-	}
-	go func() {
-		defer close(ch)
-		for _, c := range files {
-			select {
-			case <-ctx.Done():
-				return
-			case ch <- c:
-			}
-		}
-	}()
-	go func() { _ = grp.Wait(); close(res) }()
-	var out []ScannedFile
-	var skipped []Skipped
-	var stats CacheStats
-	for item := range res {
-		if item.err != nil {
-			return nil, nil, stats, item.err
-		}
-		applyInspectResult(inspectOut{files: &out, skipped: &skipped, stats: &stats}, item, false)
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, nil, stats, err
-	}
-	return out, skipped, stats, nil
+	return inspectBudgeted(ctx, files, workers, runOne)
 }
 
 func inspectCompact(ctx context.Context, files []candidate, opts Options) ([]CompactFile, []Skipped, CacheStats, error) {
@@ -446,6 +413,9 @@ func writeDescriptorFlags(h hash.Hash, opts Options) {
 	var max [8]byte
 	binary.LittleEndian.PutUint64(max[:], opts.MaxFileBytes)
 	_, _ = h.Write(max[:])
+	if opts.MaxFileBytesZero {
+		writeBool(h, true)
+	}
 	writeOptionalU64(h, opts.Limits.MaxEntries)
 	writeOptionalU64(h, opts.Limits.MaxTotalBytes)
 	writeWalkPolicy(h, opts.Walk)

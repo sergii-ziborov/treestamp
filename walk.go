@@ -2,14 +2,11 @@ package treestamp
 
 import (
 	"context"
-	"errors"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
 	goruntime "runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -19,39 +16,41 @@ import (
 	pathx "github.com/sergii-ziborov/treestamp/internal/path"
 	"github.com/sergii-ziborov/treestamp/internal/platform"
 	"github.com/sergii-ziborov/treestamp/internal/runtime"
+	"github.com/sergii-ziborov/treestamp/internal/scan"
 	"github.com/sergii-ziborov/treestamp/internal/selection"
 	"github.com/sergii-ziborov/treestamp/internal/walk"
+	"github.com/sergii-ziborov/treestamp/internal/walkcfg"
 )
 
 type (
-	ErrorPolicy                   = walk.ErrorPolicy
-	RootSymlinkPolicy             = walk.RootSymlinkPolicy
-	WalkOptions                   = walk.WalkOptions
-	WalkOperation                 = walk.WalkOperation
-	WalkSkipReason                = walk.WalkSkipReason
-	WalkEntry                     = walk.WalkEntry
-	WalkError                     = walk.WalkError
-	FileVersion                   = walk.FileVersion
-	Walker                        = walk.Walker
-	WalkBuilder                   = walk.Builder
-	MultiWalker                   = walk.MultiWalker
-	FileIdentity                  = platform.Identity
-	WalkControl                   = walk.WalkControl
-	WalkEvent                     = walk.WalkEvent
-	ParallelWalkReport            = walk.ParallelWalkReport
-	ParallelVisitReport           = walk.ParallelVisitReport
-	ParallelWalker                = walk.ParallelWalker
-	ParallelWalkIter              = walk.ParallelWalkIter
-	ParallelExecutor              = runtime.Executor
-	ParallelJob                   = runtime.Job
-	ParallelRuntime               = runtime.Runtime
-	ParallelMultiWalker           = walk.MultiWalker
-	WalkFunc                      = walk.WalkFunc
-	PathQuery                     = selection.PathQuery
-	SelectionMatcher              = selection.Matcher
-	SelectionDecision             = selection.Decision
-	SelectionDisposition          = selection.Disposition
-	RepositoryMatch = ignore.Match
+	ErrorPolicy          = walk.ErrorPolicy
+	RootSymlinkPolicy    = walk.RootSymlinkPolicy
+	WalkOptions          = walk.WalkOptions
+	WalkOperation        = walk.WalkOperation
+	WalkSkipReason       = walk.WalkSkipReason
+	WalkEntry            = walk.WalkEntry
+	WalkError            = walk.WalkError
+	FileVersion          = walk.FileVersion
+	Walker               = walk.Walker
+	WalkBuilder          = walk.Builder
+	MultiWalker          = walk.MultiWalker
+	FileIdentity         = platform.Identity
+	WalkControl          = walk.WalkControl
+	WalkEvent            = walk.WalkEvent
+	ParallelWalkReport   = walk.ParallelWalkReport
+	ParallelVisitReport  = walk.ParallelVisitReport
+	ParallelWalker       = walk.ParallelWalker
+	ParallelWalkIter     = walk.ParallelWalkIter
+	ParallelExecutor     = runtime.Executor
+	ParallelJob          = runtime.Job
+	ParallelRuntime      = runtime.Runtime
+	ParallelMultiWalker  = walk.MultiWalker
+	WalkFunc             = walk.WalkFunc
+	PathQuery            = selection.PathQuery
+	SelectionMatcher     = selection.Matcher
+	SelectionDecision    = selection.Decision
+	SelectionDisposition = selection.Disposition
+	RepositoryMatch      = ignore.Match
 )
 
 const (
@@ -73,16 +72,16 @@ const (
 	WalkContinue               = walk.WalkContinue
 	WalkSkip                   = walk.WalkSkip
 	WalkQuit                   = walk.WalkQuit
-	WalkTraverseLink    = walk.WalkTraverseLink
-	SelectedFile        = selection.SelectedFile
-	TraverseDirectory   = selection.TraverseDirectory
-	Unselected          = selection.Unselected
-	RepoMatchNone       = ignore.MatchNone
-	RepoMatchIgnore     = ignore.MatchIgnore
-	RepoMatchInclude    = ignore.MatchInclude
-	RepoOverrideIgnore  = ignore.MatchOverrideIgnore
-	RepoOverrideInclude = ignore.MatchOverrideInclude
-	RepoMatchHidden     = ignore.MatchHidden
+	WalkTraverseLink           = walk.WalkTraverseLink
+	SelectedFile               = selection.SelectedFile
+	TraverseDirectory          = selection.TraverseDirectory
+	Unselected                 = selection.Unselected
+	RepoMatchNone              = ignore.MatchNone
+	RepoMatchIgnore            = ignore.MatchIgnore
+	RepoMatchInclude           = ignore.MatchInclude
+	RepoOverrideIgnore         = ignore.MatchOverrideIgnore
+	RepoOverrideInclude        = ignore.MatchOverrideInclude
+	RepoMatchHidden            = ignore.MatchHidden
 )
 
 func DefaultWalkOptions() WalkOptions        { return walk.DefaultOptions() }
@@ -191,7 +190,7 @@ func NewSelectionMatcher(root string, opts Options) (*SelectionMatcher, error) {
 		IgnoreFiles: opts.IgnoreFiles, IgnoreCase: opts.IgnoreCase, IgnorePolicy: opts.IgnorePolicy.inner,
 		OverrideRules: opts.OverrideRules, Extensions: opts.Extensions, FileTypes: opts.FileTypes,
 		SkipHidden: opts.SkipHidden, StandardSkips: opts.StandardSkips, GitModules: opts.GitModules,
-		Filters: opts.Filters,
+		Filters:       opts.Filters,
 		MaxFileBytes:  opts.MaxFileBytes,
 		ApplyMaxBytes: true, MinDepth: opts.Walk.MinDepth, MaxDepth: opts.Walk.MaxDepth, FollowLinks: opts.Walk.FollowLinks,
 	})
@@ -227,189 +226,19 @@ type Config struct {
 // WalkWithConfig uses serial traversal when deterministic sorting is requested.
 // A callback may return ErrTraverseLink to select one directory symlink.
 func WalkWithConfig(root string, cfg Config, fn WalkDirFunc) error {
+	inner := walkcfg.Config{
+		Follow: cfg.Follow, Sort: cfg.Sort, ToSlash: cfg.ToSlash,
+		ContentsFirst: cfg.ContentsFirst, DirsFirst: cfg.DirsFirst,
+		NumWorkers: cfg.NumWorkers, MaxDepth: cfg.MaxDepth,
+	}
 	if cfg.NumWorkers == 0 || cfg.Sort {
-		return walkSerialConfig(root, cfg, fn)
+		return walkcfg.Serial(root, inner, fn)
 	}
-	return walkParallelConfig(root, cfg, fn)
+	return walkcfg.Parallel(root, inner, fn)
 }
 
-func walkSerialConfig(root string, cfg Config, fn WalkDirFunc) error {
-	if !cfg.Follow && cfg.MaxDepth == 0 && !cfg.Sort {
-		return walk.WalkCallbackHooks(root, fn, nil, cfg.ToSlash, cfg.ContentsFirst)
-	}
-	opts := DefaultWalkOptions()
-	opts.FollowLinks = cfg.Follow
-	opts.ContentsFirst, opts.DirsFirst = cfg.ContentsFirst, cfg.DirsFirst
-	if cfg.MaxDepth > 0 {
-		d := cfg.MaxDepth
-		opts.MaxDepth = &d
-	}
-	builder := NewWalkBuilder(root).Options(opts)
-	if cfg.ContentsFirst {
-		builder = builder.ContentsFirst(true)
-	}
-	if cfg.Sort {
-		builder = builder.SortByFileName()
-	}
-	walker := builder.Build()
-	defer walker.Close()
-	return drainWalk(walker, fn, cfg.ToSlash)
-}
-
-func walkParallelConfig(root string, cfg Config, fn WalkDirFunc) error {
-	workers := cfg.NumWorkers
-	if workers < 0 {
-		workers = 0
-	}
-	if !cfg.Follow && cfg.MaxDepth == 0 && !cfg.ContentsFirst && !cfg.DirsFirst {
-		return walk.WalkCallbackParallel(root, workers, fn, cfg.ToSlash)
-	}
-	opts := DefaultWalkOptions()
-	opts.FollowLinks = cfg.Follow
-	opts.ContentsFirst, opts.DirsFirst = cfg.ContentsFirst, cfg.DirsFirst
-	if cfg.MaxDepth > 0 {
-		d := cfg.MaxDepth
-		opts.MaxDepth = &d
-	}
-	var mu sync.Mutex
-	var callbackErr error
-	skipFiles := map[string]struct{}{}
-	_, err := NewParallelWalker(root).Options(opts).WithParallelism(workers).Visit(func(ev WalkEvent) WalkControl {
-		return applyWalkCallback(ev, cfg, fn, &mu, skipFiles, &callbackErr)
-	})
-	if callbackErr != nil {
-		return callbackErr
-	}
-	return err
-}
-
-func applyWalkCallback(ev WalkEvent, cfg Config, fn WalkDirFunc, mu *sync.Mutex, skipFiles map[string]struct{}, callbackErr *error) WalkControl {
-	if ev.Err != nil {
-		return walkCallbackControl(fn(ev.Err.Path, nil, ev.Err), mu, skipFiles, filepath.Dir(ev.Err.Path), callbackErr)
-	}
-	path := ev.Entry.Path()
-	if cfg.ToSlash {
-		path = filepath.ToSlash(path)
-	}
-	if len(skipFiles) > 0 && ev.Entry.IsFile() {
-		parent := filepath.Dir(ev.Entry.Path())
-		mu.Lock()
-		_, skip := skipFiles[parent]
-		mu.Unlock()
-		if skip {
-			return WalkContinue
-		}
-	}
-	cbErr := fn(path, walk.NewDirEntry(ev.Entry), nil)
-	if errors.Is(cbErr, ErrTraverseLink) && ev.Entry.IsSymlink() {
-		return walk.WalkTraverseLink
-	}
-	parent := ""
-	if errors.Is(cbErr, ErrSkipFiles) {
-		parent = filepath.Dir(ev.Entry.Path())
-	}
-	return walkCallbackControl(cbErr, mu, skipFiles, parent, callbackErr)
-}
-
-func walkCallbackControl(cbErr error, mu *sync.Mutex, skipFiles map[string]struct{}, parent string, callbackErr *error) WalkControl {
-	switch {
-	case errors.Is(cbErr, SkipDir):
-		return WalkSkip
-	case errors.Is(cbErr, SkipAll):
-		return WalkQuit
-	case errors.Is(cbErr, ErrSkipFiles):
-		mu.Lock()
-		skipFiles[parent] = struct{}{}
-		mu.Unlock()
-		return WalkContinue
-	case cbErr == nil:
-		return WalkContinue
-	default:
-		mu.Lock()
-		if *callbackErr == nil {
-			*callbackErr = cbErr
-		}
-		mu.Unlock()
-		return WalkQuit
-	}
-}
-
-func drainWalk(w interface {
-	Next() (*WalkEntry, error)
-	Close() error
-}, fn WalkDirFunc, toSlash bool) error {
-	var skipFiles bool
-	var skipDir string
-	for {
-		entry, err := w.Next()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
-			return fn("", nil, err)
-		}
-		path := entry.Path()
-		if toSlash {
-			path = filepath.ToSlash(path)
-		}
-		if skipFiles && entry.IsFile() && filepath.Dir(entry.Path()) == skipDir {
-			continue
-		}
-		switch cbErr := fn(path, walk.NewDirEntry(entry), nil); {
-		case errors.Is(cbErr, SkipDir):
-			if skipper, ok := w.(interface{ SkipCurrentDir() }); ok {
-				skipper.SkipCurrentDir()
-			}
-		case errors.Is(cbErr, SkipAll):
-			return nil
-		case errors.Is(cbErr, ErrSkipFiles):
-			skipFiles, skipDir = true, filepath.Dir(entry.Path())
-		case errors.Is(cbErr, ErrTraverseLink) && entry.IsSymlink():
-			follower, ok := w.(interface{ TraverseCurrentSymlink() error })
-			if !ok {
-				return cbErr
-			}
-			if err := follower.TraverseCurrentSymlink(); err != nil {
-				return err
-			}
-		case cbErr == nil:
-		default:
-			return cbErr
-		}
-	}
-}
-
-func IgnoreDuplicateFiles(fn WalkDirFunc) WalkDirFunc { return ignoreDuplicate(fn, false) }
-func IgnoreDuplicateDirs(fn WalkDirFunc) WalkDirFunc  { return ignoreDuplicate(fn, true) }
-
-func ignoreDuplicate(fn WalkDirFunc, dirsOnly bool) WalkDirFunc {
-	seen := map[string]struct{}{}
-	var mu sync.Mutex
-	return func(path string, d os.DirEntry, err error) error {
-		if err != nil || d == nil || (dirsOnly && !d.IsDir()) {
-			return fn(path, d, err)
-		}
-		key := filepath.Clean(path)
-		if !dirsOnly {
-			if info, infoErr := d.Info(); infoErr == nil {
-				key = key + "\x00" + info.ModTime().String() + "\x00" + strconv.FormatUint(uint64(info.Size()), 10)
-			}
-		}
-		mu.Lock()
-		_, dup := seen[key]
-		if !dup {
-			seen[key] = struct{}{}
-		}
-		mu.Unlock()
-		if dup {
-			if d.IsDir() {
-				return SkipDir
-			}
-			return nil
-		}
-		return fn(path, d, err)
-	}
-}
+func IgnoreDuplicateFiles(fn WalkDirFunc) WalkDirFunc { return walkcfg.IgnoreDuplicate(fn, false) }
+func IgnoreDuplicateDirs(fn WalkDirFunc) WalkDirFunc  { return walkcfg.IgnoreDuplicate(fn, true) }
 
 type File struct {
 	Location string
@@ -427,37 +256,37 @@ func (f *File) Path() string {
 }
 
 type FileWalker struct {
-	roots                    []string
-	queue                    chan *File
-	exts                     []string
-	ignoreGitignore          bool
-	ignoreIgnoreFile         bool
-	gitModules               bool
-	workers                  int
-	maxDepth                 int
-	includeHidden            *bool
-	ignoreBinary             bool
-	binaryBytes              int
-	errorHandler             func(error) bool
-	walking                  atomic.Bool
-	terminate                atomic.Bool
-	closeOnce                sync.Once
-	stopOnce                 sync.Once
-	stop                     chan struct{}
-	ctx                      context.Context
-	cancel                   context.CancelFunc
-	LocationExcludePattern   []string
-	IncludeDirectory         []string
-	ExcludeDirectory         []string
-	IncludeFilename          []string
-	ExcludeFilename          []string
-	IncludeDirectoryRegex    []*regexp.Regexp
-	ExcludeDirectoryRegex    []*regexp.Regexp
-	IncludeFilenameRegex     []*regexp.Regexp
-	ExcludeFilenameRegex     []*regexp.Regexp
-	ExcludeListExtensions    []string
-	CustomIgnore             []string
-	CustomIgnorePatterns     []string
+	roots                  []string
+	queue                  chan *File
+	exts                   []string
+	ignoreGitignore        bool
+	ignoreIgnoreFile       bool
+	gitModules             bool
+	workers                int
+	maxDepth               int
+	includeHidden          *bool
+	ignoreBinary           bool
+	binaryBytes            int
+	errorHandler           func(error) bool
+	walking                atomic.Bool
+	terminate              atomic.Bool
+	closeOnce              sync.Once
+	stopOnce               sync.Once
+	stop                   chan struct{}
+	ctx                    context.Context
+	cancel                 context.CancelFunc
+	LocationExcludePattern []string
+	IncludeDirectory       []string
+	ExcludeDirectory       []string
+	IncludeFilename        []string
+	ExcludeFilename        []string
+	IncludeDirectoryRegex  []*regexp.Regexp
+	ExcludeDirectoryRegex  []*regexp.Regexp
+	IncludeFilenameRegex   []*regexp.Regexp
+	ExcludeFilenameRegex   []*regexp.Regexp
+	ExcludeListExtensions  []string
+	CustomIgnore           []string
+	CustomIgnorePatterns   []string
 }
 
 func NewFileWalker(directory string, queue chan *File) *FileWalker {
@@ -478,13 +307,13 @@ func (w *FileWalker) AllowListExtensions(exts ...string) *FileWalker {
 	w.exts = append(w.exts[:0], exts...)
 	return w
 }
-func (w *FileWalker) SetConcurrency(n int) *FileWalker { w.workers = n; return w }
-func (w *FileWalker) IgnoreGitignore() *FileWalker   { w.ignoreGitignore = true; return w }
-func (w *FileWalker) IgnoreIgnoreFile() *FileWalker  { w.ignoreIgnoreFile = true; return w }
-func (w *FileWalker) RespectGitModules() *FileWalker { w.gitModules = true; return w }
+func (w *FileWalker) SetConcurrency(n int) *FileWalker       { w.workers = n; return w }
+func (w *FileWalker) IgnoreGitignore() *FileWalker           { w.ignoreGitignore = true; return w }
+func (w *FileWalker) IgnoreIgnoreFile() *FileWalker          { w.ignoreIgnoreFile = true; return w }
+func (w *FileWalker) RespectGitModules() *FileWalker         { w.gitModules = true; return w }
 func (w *FileWalker) IncludeHidden(enabled bool) *FileWalker { w.includeHidden = &enabled; return w }
-func (w *FileWalker) IgnoreBinaryFiles() *FileWalker { w.ignoreBinary = true; return w }
-func (w *FileWalker) SetMaxDepth(n int) *FileWalker  { w.maxDepth = n; return w }
+func (w *FileWalker) IgnoreBinaryFiles() *FileWalker         { w.ignoreBinary = true; return w }
+func (w *FileWalker) SetMaxDepth(n int) *FileWalker          { w.maxDepth = n; return w }
 func (w *FileWalker) Terminate() {
 	w.terminate.Store(true)
 	if w.cancel != nil {
@@ -492,9 +321,9 @@ func (w *FileWalker) Terminate() {
 	}
 	w.stopOnce.Do(func() { close(w.stop) })
 }
-func (w *FileWalker) Walking() bool                  { return w.walking.Load() }
+func (w *FileWalker) Walking() bool                                   { return w.walking.Load() }
 func (w *FileWalker) SetErrorHandler(fn func(error) bool) *FileWalker { w.errorHandler = fn; return w }
-func (w *FileWalker) Start() error { return runFileWalker(w) }
+func (w *FileWalker) Start() error                                    { return runFileWalker(w) }
 
 type MultiScanReport struct{ Reports []*ScanReport }
 
@@ -594,4 +423,135 @@ func (m *MultiScanner) VisitContent(ctx context.Context, factory func(root, work
 		out.Reports = append(out.Reports, *report)
 	}
 	return out, nil
+}
+
+func runFileWalker(w *FileWalker) error {
+	w.walking.Store(true)
+	defer w.walking.Store(false)
+	defer w.closeOnce.Do(func() {
+		if w.queue != nil {
+			close(w.queue)
+		}
+	})
+	if w.queue == nil {
+		return &Error{Code: CodeInvalid, Op: "FileWalker.Start", Err: errString("file queue is nil")}
+	}
+	opts := fileWalkerOptions(w)
+	for _, root := range w.roots {
+		if w.terminate.Load() {
+			return ErrTerminateWalk
+		}
+		if err := emitFileWalkerRoot(w, root, opts); err != nil {
+			if w.errorHandler != nil && w.errorHandler(err) {
+				continue
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+func fileWalkerOptions(w *FileWalker) Options {
+	opts := DefaultOptions().MetadataOnly()
+	opts.StandardSkips = false
+	if w.ignoreGitignore || w.ignoreIgnoreFile {
+		opts.IgnoreFiles = dropIgnoreNames(opts.IgnoreFiles, w.ignoreGitignore, w.ignoreIgnoreFile)
+	}
+	if len(w.CustomIgnore) > 0 {
+		opts.IgnoreFiles = append(opts.IgnoreFiles, w.CustomIgnore...)
+	}
+	opts.OverrideRules = append(opts.OverrideRules, w.CustomIgnorePatterns...)
+	if len(w.exts) > 0 {
+		opts.Extensions = append([]string(nil), w.exts...)
+	}
+	if w.workers > 0 {
+		opts.TraversalWorkers = w.workers
+	}
+	if w.gitModules {
+		opts.GitModules = true
+	}
+	if w.includeHidden != nil {
+		opts.SkipHidden = !*w.includeHidden
+	}
+	if w.maxDepth > 0 {
+		d := w.maxDepth
+		opts.Walk.MaxDepth = &d
+	}
+	if w.ignoreBinary {
+		opts.DetectBinaryFiles = true
+	}
+	opts.Filters = fileWalkerFilters(w)
+	return opts
+}
+
+func fileWalkerFilters(w *FileWalker) Filters {
+	return Filters{
+		IncludeNames: w.IncludeFilename, ExcludeNames: w.ExcludeFilename,
+		IncludeDirs: w.IncludeDirectory, ExcludeDirs: w.ExcludeDirectory,
+		IncludeNameRegex: w.IncludeFilenameRegex, ExcludeNameRegex: w.ExcludeFilenameRegex,
+		IncludeDirRegex: w.IncludeDirectoryRegex, ExcludeDirRegex: w.ExcludeDirectoryRegex,
+		ExcludeExtensions: w.ExcludeListExtensions, LocationExclude: w.LocationExcludePattern,
+	}
+}
+
+func dropIgnoreNames(names []string, dropGit, dropIgnore bool) []string {
+	kept := names[:0]
+	for _, name := range names {
+		if (dropGit && name == ".gitignore") || (dropIgnore && name == ".ignore") {
+			continue
+		}
+		kept = append(kept, name)
+	}
+	return kept
+}
+
+func emitFileWalkerRoot(w *FileWalker, root string, opts Options) error {
+	scanner, err := NewScanner(root, WithOptions(opts))
+	if err != nil {
+		return err
+	}
+	if opts.DetectBinaryFiles {
+		return emitScannedFiles(w, root, scanner)
+	}
+	return scan.StreamPaths(walkerContext(w), root, toScanOptions(opts), func(rel string) error {
+		return pushWalkerPath(w, root, rel)
+	})
+}
+
+func emitScannedFiles(w *FileWalker, root string, scanner *Scanner) error {
+	report, err := scanner.Scan(walkerContext(w))
+	if err != nil {
+		return err
+	}
+	for _, file := range report.Files {
+		if err := pushWalkerPath(w, root, file.Relative); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func walkerContext(w *FileWalker) context.Context {
+	if w != nil && w.ctx != nil {
+		return w.ctx
+	}
+	return context.Background()
+}
+
+func pushWalkerPath(w *FileWalker, root, rel string) error {
+	if w.terminate.Load() {
+		return ErrTerminateWalk
+	}
+	native := filepath.FromSlash(rel)
+	file := &File{Location: filepath.Join(root, filepath.Dir(native)), Filename: filepath.Base(native)}
+	if w.stop == nil {
+		w.queue <- file
+		return nil
+	}
+	select {
+	case <-w.stop:
+		return ErrTerminateWalk
+	case w.queue <- file:
+		return nil
+	}
 }

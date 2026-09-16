@@ -1,0 +1,8 @@
+{
+  "commit": "this-checkout",
+  "docs_base": "dx-facade-and-task-docs",
+  "go_minimum": "1.23.0",
+  "official_benches": "NOT_RUN",
+  "published_tag": null,
+  "notes": "Document the checkout, not an invented latest stable tag."
+}

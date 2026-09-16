@@ -1,4 +1,4 @@
-package treestamp
+package treestamp_test
 
 import (
 	"bytes"
@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	. "github.com/sergii-ziborov/treestamp"
 	"github.com/sergii-ziborov/treestamp/internal/walk"
 )
 
@@ -705,20 +706,20 @@ func TestPublicJSONGoldens(t *testing.T) {
 	ns := uint64(1700000000000000000)
 	file := ScannedFile{
 		Absolute: "/repo/a.go", Relative: "a.go",
-		ContentHash: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		ContentHash:        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		ContentFingerprint: "fp128:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-		Bytes: 12, Version: FileVersion{ModifiedNS: &ns}, BinaryChecked: true,
+		Bytes:              12, Version: FileVersion{ModifiedNS: &ns}, BinaryChecked: true,
 	}
 	cache := ScanCache{
 		FormatVersion: 2, Root: "/repo",
 		Entries: []ScanCacheEntry{{
-			Relative: "a.go",
+			Relative:    "a.go",
 			ContentHash: file.ContentHash, ContentFingerprint: file.ContentFingerprint,
 			Bytes: 12, Version: FileVersion{ModifiedNS: &ns}, BinaryChecked: true,
 		}},
 	}
-	assertJSONGolden(t, file, "testdata/json/scanned_file.json")
-	assertJSONGolden(t, cache, "testdata/json/scan_cache.json")
+	assertJSONGolden(t, file, "../testdata/json/scanned_file.json")
+	assertJSONGolden(t, cache, "../testdata/json/scan_cache.json")
 }
 
 func assertJSONGolden(t *testing.T, value any, path string) {
@@ -832,4 +833,21 @@ func TestTreeSnapshotApplyMatchesRebuild(t *testing.T) {
 	if next.TreeRevision() == snap.TreeRevision() {
 		t.Fatal("legacy-style full rewrite was not required, but revision must change")
 	}
+}
+
+func TestToScanOptionsKeepsWalkFollowWhenMaxOpenZero(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "a.txt"), "abc")
+	opts := DefaultOptions()
+	opts.Walk.FollowLinks = true
+	opts.Walk.CollectMetadata = true
+	opts.Walk.MaxOpen = 0
+	report, err := ScanWith(context.Background(), root, Using(opts))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Files) != 1 {
+		t.Fatalf("%+v", report.Files)
+	}
+	_ = walk.DefaultMaxOpen
 }

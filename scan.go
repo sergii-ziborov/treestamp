@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"sort"
 
 	"github.com/sergii-ziborov/treestamp/internal/ignore"
 	pathx "github.com/sergii-ziborov/treestamp/internal/path"
@@ -75,6 +74,7 @@ type ScanCacheStats struct {
 	ReusedHashes     uint64 `json:"reused_hashes"`
 	ContentReads     uint64 `json:"content_reads"`
 	FingerprintReads uint64 `json:"fingerprint_reads"`
+	Rebuilt          bool   `json:"rebuilt,omitempty"`
 }
 
 type SkippedEntry struct {
@@ -237,7 +237,7 @@ func wrap(err error, op, path string) error {
 	if typed, ok := err.(*Error); ok {
 		return typed
 	}
-	return &Error{Code: CodeWalk, Op: op, Path: path, Err: err}
+	return &Error{Code: classifyCode(err), Op: op, Path: path, Err: err}
 }
 
 func copySkipped(in []scan.Skipped) []SkippedEntry {
@@ -504,7 +504,7 @@ type ScanSummary struct {
 	SelectedFiles, HashedFiles, BinaryCheckedFiles, RecordedSkips, Warnings, IgnoreSources int
 	SelectedBytes                                                                          uint64
 	SkippedByKind                                                                          map[SkipKind]int
-	Complete                                                                               bool
+	Complete, Stopped                                                                      bool
 	Termination                                                                            ScanTermination
 	Portable                                                                               bool
 	Cache                                                                                  ScanCacheStats
@@ -566,13 +566,6 @@ func (s ScanSummary) String() string {
 	if s.Cache != (ScanCacheStats{}) {
 		out += fmt.Sprintf(" cache_reused_hashes=%d cache_content_reads=%d cache_fingerprint_reads=%d", s.Cache.ReusedHashes, s.Cache.ContentReads, s.Cache.FingerprintReads)
 	}
-	if len(s.SkippedByKind) > 0 {
-		keys := make([]int, 0, len(s.SkippedByKind))
-		for k := range s.SkippedByKind {
-			keys = append(keys, int(k))
-		}
-		sort.Ints(keys)
-	}
 	return out
 }
 
@@ -591,18 +584,6 @@ func NewRepositoryMatcher(root string, opts Options) (*RepositoryMatcher, error)
 	}
 	eng.LoadDir(root, "")
 	return &RepositoryMatcher{engine: eng, root: root}, nil
-}
-
-func (m *RepositoryMatcher) Match(relative string, isDir bool) RepositoryMatch {
-	return m.engine.Match(relative, isDir)
-}
-func (m *RepositoryMatcher) EnterDir(abs, rel string) []string { return m.engine.LoadDir(abs, rel) }
-func (m *RepositoryMatcher) Sources() []IgnoreSourceEvidence {
-	var out []IgnoreSourceEvidence
-	for _, src := range m.engine.Sources() {
-		out = append(out, IgnoreSourceEvidence{Kind: src.Kind, Location: src.Location, ContentHash: src.ContentHash})
-	}
-	return out
 }
 
 var errEmptyRoot = errString("root is empty")

@@ -45,6 +45,15 @@ func TestTreeRevisionCanonicalAndLocalUpdate(t *testing.T) {
 	}
 }
 
+func TestDiffOmitsUnchanged(t *testing.T) {
+	prev := []Record{{Path: "a", Hash: "ha", Size: 1}, {Path: "b", Hash: "hb", Size: 2}}
+	cur := []Record{{Path: "b", Hash: "hb2", Size: 3}, {Path: "c", Hash: "hc", Size: 4}}
+	up, del := Diff(prev, cur)
+	if len(up) != 2 || len(del) != 1 || del[0].Path != "a" {
+		t.Fatalf("%v %v", up, del)
+	}
+}
+
 func TestCoverageRecheck(t *testing.T) {
 	if !(Coverage{Complete: false}).RequiresRecheck() {
 		t.Fatal("incomplete")

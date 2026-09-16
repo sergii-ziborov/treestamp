@@ -2,6 +2,7 @@ package scan
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -552,6 +553,52 @@ func TestWatchPolicyChangeForcesRescan(t *testing.T) {
 	update, err := Watch(context.Background(), root, next, first, WatchPlan{Changed: []string{"keep.go"}})
 	if err != nil || update.Reason != WatchFullPolicy {
 		t.Fatalf("policy %v %v", update, err)
+	}
+}
+
+func TestZeroByteCapAndIncompatibleCache(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "a.txt"), "hello")
+	opts := DefaultOptions()
+	opts.MaxFileBytesZero = true
+	opts.MaxFileBytes = 0
+	report, err := Full(context.Background(), root, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var over bool
+	for _, skipped := range report.Skipped {
+		if skipped.Kind == selection.SkipOversized {
+			over = true
+		}
+	}
+	if !over {
+		t.Fatalf("zero cap %+v files=%v", report.Skipped, report.Files)
+	}
+	open := DefaultOptions()
+	open.MaxFileBytes = 0
+	unlimited, err := Full(context.Background(), root, open)
+	if err != nil || len(unlimited.Files) == 0 {
+		t.Fatalf("unlimited %v %v", unlimited, err)
+	}
+	bad := &Cache{FormatVersion: 1, Root: root}
+	cached, err := Cached(context.Background(), root, DefaultOptions(), bad)
+	if err != nil || cached == nil || !cached.Cache.Rebuilt {
+		t.Fatalf("rebuilt %+v %v", cached, err)
+	}
+}
+
+func TestVisitOwnedStopsWithoutReplay(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "a.txt"), "a")
+	mustWrite(t, filepath.Join(root, "b.txt"), "b")
+	var n int
+	_, err := VisitOwned(context.Background(), root, DefaultOptions(), func(ScannedFile, []byte) error {
+		n++
+		return errors.New("once")
+	})
+	if err == nil || n != 1 {
+		t.Fatalf("replay n=%d err=%v", n, err)
 	}
 }
 

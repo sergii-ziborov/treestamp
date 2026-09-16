@@ -1,223 +1,100 @@
 # Treestamp
 
-Public personal repository of [Sergii Ziborov](https://github.com/sergii-ziborov).
-Module path: [`github.com/sergii-ziborov/treestamp`](https://github.com/sergii-ziborov/treestamp).
+Deterministic repository scanning for Go.
+Select files, verify content, and produce manifests with explainable decisions.
 
-This is **not** a Weavatrix organization repository and **not** an EdgeHawk
-repository. Weavatrix Scan is the pinned Rust oracle being ported.
-
-Treestamp is a native Go library for verifiable repository scanning: walk,
-select, read, and produce a deterministic manifest. It is not a parser, search
-engine, graph, embedder, secret scanner, MCP server, web service, or daemon.
-
-**Status on 16 September 2026:** native walk, ignore selection, Scan family,
-content visit, cache v2, incremental watch apply, Go-market walk APIs,
-query-scope pruning, `Explain`, identity-keyed content reuse, a shared
-admission budget, ordered-parallel directory pull, and a persistent Merkle
-snapshot (`tree2:`) that is not the legacy flat revision. A Windows/NTFS
-fixture and a symlink-capable Linux/overlayfs Docker fixture pass the pinned
-Rust driver and equivalent Go-competitor checks, with documented platform
-differences. Informal go-compat medians live in
-[`bench/go-compat/BENEFITS.md`](bench/go-compat/BENEFITS.md); they are not
-official B01–B14 rows. Official benches stay `NOT_RUN`.
-This is not a full port.
-
-## What exists now
-
-| Surface | Status |
-| --- | --- |
-| Iterative serial `Walker`, `WalkBuilder` | Implemented |
-| `WalkParallel`, `ParallelWalker` visit/collect/pull | Implemented; ordered pull lists directories in parallel and emits DFS order |
-| `Walk` / `WalkDirs` / `WalkUnsorted` / `ReadDirents` / `DirScanner` / `FileWalker` | Implemented; `FileWalker` streams paths during discovery |
-| Nested `.gitignore` / `.ignore` / `.weavatrixignore`, overrides | Implemented; override includes compile to `MayContainMatch` prefixes |
-| `Scanner.Explain` (winning source, pattern, line) | Implemented |
-| Optional `.gitmodules` path skip (`WithGitModules`, off by default) | Implemented |
-| `FindRepositoryRoot`, `Filters`, FileWalker terminate/error helpers | Implemented |
-| Standard skips, hidden policy, 265 named types, `WithGlobs` | Implemented |
-| `Scan`, `ScanCompact`, `ScanPaths` (no hash / no `max_file_bytes`) | Implemented |
-| SHA-256 (`sha256:`), legacy revision, descriptor v2 byte feed | Implemented |
-| `TreeSnapshot` / `TreeRevision` (`tree2:`), not a substitute for legacy revision | Implemented |
-| Identity-keyed hash reuse; shared roots/dir/metadata/content budget | Implemented |
-| Cache v2, `ScanCached`, `ScanIncremental`, sessions | Implemented; session still walks retained records |
-| Watch plans, typed rescan reasons, portable report, delta | Implemented; `..` confined, prefix skip/warning replace |
-| `VisitChangedContent` | Implemented; visits only `WatchPlan.Changed` |
-| `VisitContent` / `ScanInto` (no retained manifest) / snapshot verify | Implemented |
-| Optional fsnotify module | Not implemented |
-| Rust/Go-competitor functional differential | Windows/Linux/macOS CI plus local NTFS/overlayfs records; cache/watch sequences included |
-| Official B01–B14 campaign | `NOT_RUN` |
-
-Do not treat `filepath.WalkDir` usage elsewhere as this library. The serial
-walker is iterative, bounds open directory handles, and is not a WalkDir
-wrapper renamed as a port.
-
-## Requirements
-
-- Go 1.23.0 or newer
-- `CGO_ENABLED=0` for the intended runtime
-- Rust is optional and only for developers who run the pinned oracle and
-  differential drivers
+Alpha native port of pinned Weavatrix Scan 0.5.2. This is **not a full port**.
+Official B01–B14 benches stay **`NOT_RUN`**. Informal listing medians below
+are a small Windows temp-tree campaign, not a 10k/100k/1M ranking.
 
 ```text
-go get github.com/sergii-ziborov/treestamp@latest
+git clone https://github.com/sergii-ziborov/treestamp.git
+cd treestamp
+go test .
 ```
 
-```go
-package main
-
-import (
-    "fmt"
-    "io"
-    "log"
-
-    "github.com/sergii-ziborov/treestamp"
-)
-
-func main() {
-    walker, err := treestamp.NewWalker(".")
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer walker.Close()
-    for {
-        entry, err := walker.Next()
-        if err == io.EOF {
-            break
-        }
-        if err != nil {
-            log.Println(err)
-            continue
-        }
-        fmt.Println(entry.Path())
-    }
-}
-```
-
-Runnable samples: [`examples/walk`](examples/walk) and
-[`examples/scan`](examples/scan).
-
-```text
-go run ./examples/walk [root]
-go run ./examples/scan [root]
-```
-
-Scan, path-only listing, and compact reports are live. `ScanPaths` does not
-hash and does not apply `max_file_bytes`. Positive override includes prune
-unrelated subtrees when skip evidence is not required.
+There is no certified published tag yet. Pin the commit you clone, not an
+invented latest-stable version. Go 1.23.0+, `CGO_ENABLED=0`.
 
 ```go
 ctx := context.Background()
-paths, err := treestamp.ScanPaths(ctx, root)
-report, err := treestamp.Scan(ctx, root)
-compact, err := treestamp.ScanCompact(ctx, root)
-
-opts := treestamp.DefaultOptions()
-opts.OverrideRules = []string{"services/payments/**", "libs/contracts/**"}
-scanner, err := treestamp.NewScanner(root, treestamp.WithOptions(opts))
-narrow, err := scanner.ScanPaths(ctx)
-why, err := scanner.Explain("src/generated/model.go")
-fmt.Println(why.Outcome, why.Source, why.Line, why.Pattern)
-
-snap := treestamp.SnapshotFromFiles(report.Files)
-fmt.Println(report.Revision)      // legacy sha256: of the flat manifest
-fmt.Println(snap.TreeRevision())  // tree2: Merkle root; different format
-_ = paths
-_ = compact
-_ = narrow
-```
-
-`FileWalker` sends paths on the queue while discovery still runs. Close the
-queue by calling `Start`; `Terminate` cancels the walk.
-
-```go
-files := make(chan *treestamp.File, 8)
-walker := treestamp.NewFileWalker(root, files)
-go func() {
-    if err := walker.Start(); err != nil {
-        log.Println(err)
-    }
-}()
-for file := range files {
-    fmt.Println(file.Path())
+report, err := treestamp.ScanWith(ctx, root, treestamp.WithExtensions("go"))
+if err != nil {
+    return err
 }
+fmt.Println(report.Summary())
+why, err := treestamp.Explain(root, "generated/model.go")
+if err != nil {
+    return err
+}
+fmt.Println(why.Outcome, why.Source, why.Line, why.Pattern)
 ```
 
-`Walk` / `WalkUnsorted` / `WalkParallel` are the fastwalk/godirwalk-class
-walks. Return `ErrTraverseLink`, `WalkTraverseLink` from a parallel visitor,
-or call `Walker.TraverseCurrentSymlink` to select one directory symlink;
-path-escape, loop, depth, and filesystem guards remain active. `ScanPaths` is
-the gocodewalker-class ignore-aware listing. Cache, incremental watch apply,
-and verified streaming are live.
+Check `err` before using `report`. A nil error means selected work finished
+under the chosen policy. Full program:
+[`examples/docquickstart`](examples/docquickstart).
 
-Informal developer benches (small Windows temp trees, 16 September 2026)
-are in [`bench/go-compat/BENEFITS.md`](bench/go-compat/BENEFITS.md). They
-compare method-matched listing against fastwalk v1.0.14, gocodewalker v1.5.1,
-and godirwalk v1.17.0. Do not treat those medians as official Treestamp
-results or as a 10k/100k/1M ranking. Official B01–B14 stay `NOT_RUN`.
+| Task | Start here |
+| --- | --- |
+| Choose an API | [docs/choose-an-api.md](docs/choose-an-api.md) |
+| List paths | [docs/recipes/scan-paths.md](docs/recipes/scan-paths.md) |
+| Manifest / EachFile / Explain | [docs/index.md](docs/index.md) |
+| Why a file was skipped | [docs/recipes/explain.md](docs/recipes/explain.md) |
+| Cache, snapshot, tree2 | [docs/guides/snapshots.md](docs/guides/snapshots.md) |
+| Symptom → check | [docs/troubleshooting.md](docs/troubleshooting.md) |
+| Walker migration | [MIGRATING.md](MIGRATING.md) |
 
-Every OS-walk callback entry implements `treestamp.DirEntry`: `Stat()` returns
-cached target metadata and `Depth()` reports walk depth. `StatDirEntry` and
-`DirEntryDepth` provide fallback helpers matching fastwalk's call pattern.
+`Scan(ctx, root)` and `ScanPaths(ctx, root)` keep two-argument signatures.
+`Options{}` is not `DefaultOptions()`. `Explain` is selection only.
+`TreeSnapshot` is an in-memory persistent structure, not a disk index.
+`ContentProvider.Open` returns loaded bytes, not an `io.Reader`.
 
-`WalkFS` and `NewFSWalker` traverse any `fs.FS` with slash paths,
-deterministic lexical DFS, and standard `SkipDir` / `SkipAll` control.
-Child symlinks are not followed, matching `fs.WalkDir`; this is a walk API,
-not a claim that repository scanning works over virtual filesystems.
+## Informal benches (reproducible, not official)
 
-`DirScanner` yields one child at a time from a single directory. Loop
-`ReadDirentsScratch` / `ReadDirnames` with `NewScratchBuffer` to reuse the
-getdents scratch on Linux. This is not the repository `Scanner`.
+Windows/amd64, Intel Core Ultra 7 255U, 16 September 2026, Go 1.26.5,
+`CGO_ENABLED=0`. Medians of three runs. Official B01–B14 stay **`NOT_RUN`**.
 
-## What “full” means later
+| Case | Treestamp | Comparator |
+| --- | --- | --- |
+| Raw serial walk | 386 µs, 172 KiB, 1241 allocs | fastwalk 502 µs / 150 KiB; godirwalk 365 µs / 227 KiB |
+| Raw parallel walk | 288 µs, 174 KiB, 1252 allocs | fastwalk 502 µs / 150 KiB |
+| Regex `ScanPaths` | 2.63 ms, 101 KiB, 1339 allocs | gocodewalker 3.24 ms / 137 KiB |
+| Cached `Stat` | 266 µs, 174 KiB, 1245 allocs | fastwalk 265 µs / 146 KiB; `os.Stat` 20.3 ms / 496 KiB |
+| `DirScanner` | 1.55 ms, 648 KiB, 8152 allocs | godirwalk 2.06 ms / 564 KiB / 12008 allocs |
 
-A full port repeats the Weavatrix Scan contract in Go: serial and parallel
-walkers, ignore selection, full and compact reports, path-only scan without
-full-scan I/O, verified content, cache v2, incremental rescan reasons, and
-honest benches. It does not wrap the Rust crate, Node, a Git executable, or
-another process at runtime.
-
-Default scan options in the oracle are not “every resource limited”:
-`max_file_bytes=1_500_000`, hashing and binary detection on, complete
-evidence, standard skips on, hidden skipping off, repository-local ignores
-`.gitignore` / `.ignore` / `.weavatrixignore`, cache Fast, content Strict,
-streaming discovery. Whole-scan limits are off. The first compatible ignore
-preset keeps those three file names. `.treestampignore` is added only by an
-explicit or versioned preset.
-
-Descriptor v2 is a canonical byte feed, not a JSON hash. Cache format is 2.
-
-Pinned oracle: weavatrix-scan **0.5.2**, commit
-`29c003a6ad541c9a10faf30505235375fa78b9d8`, tree
-`108c59e66c90c3b649b3ff867360a6c0e9ff7f6e`.
-
-## Documents
-
-- [AGENTS.md](AGENTS.md) — how to continue the port
-- [ARCHITECTURE.md](ARCHITECTURE.md)
-- [CONFORMANCE.md](CONFORMANCE.md)
-- [COMPETITORS.md](COMPETITORS.md)
-- [BENCHMARKS.md](BENCHMARKS.md)
-- [THREAT_MODEL.md](THREAT_MODEL.md)
-- [RELEASE.md](RELEASE.md)
-- Machine-readable plan: [compat/](compat/) and [bench/](bench/)
-
-## Check the bootstrap
+Compiled test-binary peak working set **54.7 MiB**, process CPU **80.3 s**
+on a one-pass `-test.count=1` of the same suite. Per-op memory is `B/op`,
+not that RSS. `ScanWith` added about 4 allocs / 1.5 KiB versus `Scan` on a
+one-file tree.
 
 ```text
-python3 tools/audit.py
-python3 -m unittest discover -s tools -p "test_*.py"
-python3 tools/run_functional_parity.py
-python3 tools/audit.py --require-full
+set CGO_ENABLED=0
+set GOTOOLCHAIN=local
+python tools/run_informal_benches.py
+cd bench/go-compat
+go test -c -o compat.test.exe .
+.\compat.test.exe -test.bench=. -test.benchmem -test.count=1
 ```
 
-`--require-full` must fail until every T01–T35 contract is closed with
-evidence. That failure is correct.
+Receipt: [`bench/go-compat/INFORMAL_RUN.json`](bench/go-compat/INFORMAL_RUN.json).
+Method notes: [`bench/go-compat/BENEFITS.md`](bench/go-compat/BENEFITS.md).
+Policy: [BENCHMARKS.md](BENCHMARKS.md).
 
-```text
-go test ./...
-cd bench/go-compat && go test ./...
-```
+## What this is not
 
-## License
+Not a parser, search engine, graph, embedder, secret scanner, MCP server,
+web service, or daemon. No CGO, WASM, or Rust in the runtime library.
+`.treestampignore` is not a default ignore file.
 
-MIT. Copyright (c) 2026 Sergii Ziborov. The upstream weavatrix-scan notice of
-Sergii Ziborov is preserved.
+## Authorship and license
+
+Personal public repository of [Sergii Ziborov](https://github.com/sergii-ziborov).
+Module: `github.com/sergii-ziborov/treestamp`. Not a Weavatrix or EdgeHawk
+organization repository. Oracle pin: weavatrix-scan **0.5.2**, commit
+`29c003a6ad541c9a10faf30505235375fa78b9d8`.
+
+MIT. Copyright (c) 2026 Sergii Ziborov.
+
+Also: [AGENTS.md](AGENTS.md), [ARCHITECTURE.md](ARCHITECTURE.md),
+[CONFORMANCE.md](CONFORMANCE.md), [THREAT_MODEL.md](THREAT_MODEL.md),
+[RELEASE.md](RELEASE.md).

@@ -132,7 +132,7 @@ func selectionConfig(opts Options, walkOpts walk.WalkOptions, needMeta bool) sel
 		IgnoreFiles: opts.IgnoreFiles, IgnoreCase: opts.IgnoreCase, IgnorePolicy: opts.IgnorePolicy,
 		OverrideRules: opts.OverrideRules, Extensions: opts.Extensions, FileTypes: opts.FileTypes,
 		SkipHidden: opts.SkipHidden, StandardSkips: opts.StandardSkips, GitModules: opts.GitModules,
-		Filters: opts.Filters,
+		Filters:       opts.Filters,
 		MaxFileBytes:  opts.MaxFileBytes,
 		ApplyMaxBytes: needMeta, MinDepth: walkOpts.MinDepth, MaxDepth: walkOpts.MaxDepth,
 	}
@@ -204,7 +204,7 @@ func recordSelected(a considerArgs, rel string, selected, totalBytes *uint64) {
 	if a.entry.Version() != nil {
 		version = *a.entry.Version()
 	}
-	if a.opts.MaxFileBytes > 0 && size > a.opts.MaxFileBytes {
+	if oversized(a.opts, size) {
 		if a.opts.RecordSkipped {
 			a.out.skipped = append(a.out.skipped, Skipped{Relative: rel, Kind: selection.SkipOversized})
 		}
@@ -213,6 +213,13 @@ func recordSelected(a considerArgs, rel string, selected, totalBytes *uint64) {
 	a.out.candidates = append(a.out.candidates, candidate{abs: a.entry.Path(), rel: rel, size: size, version: version})
 	*selected++
 	*totalBytes += size
+}
+
+func oversized(opts Options, size uint64) bool {
+	if opts.MaxFileBytesZero {
+		return size > 0
+	}
+	return opts.MaxFileBytes > 0 && size > opts.MaxFileBytes
 }
 
 func emitSelected(out *discovery, rel string) bool {
@@ -332,7 +339,7 @@ func (w *listWalker) visitFiles(rel string, dents []os.DirEntry) {
 		if !w.keepFile(fileRel, name, isFile, symlink) {
 			continue
 		}
-			if !emitSelected(w.out, fileRel) {
+		if !emitSelected(w.out, fileRel) {
 			return
 		}
 		w.picked++

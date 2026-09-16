@@ -1,8 +1,20 @@
 # Changelog
 
-## Unreleased — 0.1.0-alpha.2 (2026-09-14)
+## Unreleased — 0.1.0-alpha.2 (2026-09-16)
 
 Method-complete native scanner surfaces. Still not a full port.
+
+- Task-first docs, executable `Example` recipes, `examples/docquickstart`,
+  and a docs/consumer CI job. Official B01–B14 stay `NOT_RUN`.
+- High-level facade: `ScanWith`, `ScanPathsWith`, `EachFile`, `Compile` /
+  `Plan`, `Describe`, `Explain`, `WithLogger`, `WithExtensions`,
+  `WithExcludeGlobs`. Existing `Scan(ctx, root)` / `ScanPaths(ctx, root)`
+  signatures are unchanged. `Options{}` is not reinterpreted as
+  `DefaultOptions()`.
+- New facade `err == nil` means selected work finished; unread selected
+  files return `ErrPartial`. `EachFile` returns callback errors and `ErrStop`.
+- `toScanOptions` defaults `Walk.MaxOpen` only; it no longer replaces the
+  rest of `Walk`. Snapshot content provider freezes a file index once.
 
 - Ignore parser with nested sources, overrides, standard skips, 265 named types.
 - `Scan`, `ScanCompact`, `ScanPaths`, `ScanCached`, `ScanIncremental`, `ScanInto`.

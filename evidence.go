@@ -574,6 +574,8 @@ type PathExplanation struct {
 	Line                                       int
 }
 
+// Explain reports the winning selection rule for rel.
+// It does not hash the file or apply binary / max-file-bytes checks.
 func (s *Scanner) Explain(rel string) (PathExplanation, error) {
 	if s == nil {
 		return PathExplanation{}, &Error{Code: CodeInvalid, Op: "Explain", Err: errEmptyRoot}

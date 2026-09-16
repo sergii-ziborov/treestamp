@@ -15,17 +15,13 @@ func main() {
 		root = os.Args[1]
 	}
 	ctx := context.Background()
-	paths, err := treestamp.ScanPaths(ctx, root)
+	paths, err := treestamp.ScanPathsWith(ctx, root)
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Printf("paths %d\n", len(paths))
 
-	scanner, err := treestamp.NewScanner(root)
-	if err != nil {
-		log.Fatal(err)
-	}
-	report, err := scanner.Scan(ctx)
+	report, err := treestamp.ScanWith(ctx, root)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -33,7 +29,7 @@ func main() {
 	fmt.Printf("legacy %s\n", report.Revision)
 	fmt.Printf("tree   %s\n", treestamp.SnapshotFromFiles(report.Files).TreeRevision())
 	if len(report.Files) > 0 {
-		why, err := scanner.Explain(report.Files[0].Relative)
+		why, err := treestamp.Explain(root, report.Files[0].Relative)
 		if err != nil {
 			log.Fatal(err)
 		}

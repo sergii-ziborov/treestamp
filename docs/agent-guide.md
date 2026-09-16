@@ -1,0 +1,23 @@
+# Agent consumer guide
+
+Version: development checkout at the commit that last updated
+`docs/evidence.lock.json`. This is not a published module tag unless that
+file says so.
+
+Use only the public module `github.com/sergii-ziborov/treestamp`.
+
+Working entry points: `ScanPathsWith`, `ScanWith`, `EachFile`, `Compile`,
+`Explain`, `NewScanner`, `Walk`, `WalkFS`.
+
+Recipes: [index.md](index.md). Examples: `dx/example_docs_test.go`.
+
+Do not:
+
+- import `internal/` from an application
+- treat `internal/selection.Compile` as `treestamp.Compile`
+- promise official B01–B14 numbers (`NOT_RUN`)
+- log file contents or absolute paths
+- invent `.treestampignore` as a default
+- call `ScanPaths` a hashed scan
+- say `Explain` verifies content
+- say `TreeSnapshot` is an on-disk index

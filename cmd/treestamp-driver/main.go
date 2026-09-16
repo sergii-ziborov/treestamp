@@ -179,7 +179,9 @@ func scanMeta(revision string, descriptor treestamp.ScanDescriptor, complete boo
 	}
 	return scanDataJSON{
 		Revision: revision, Descriptor: descriptorJSON(descriptor), Complete: complete,
-		Termination: stopped, Portable: portable, Cache: scanCacheJSON(cache),
+		Termination: stopped, Portable: portable, Cache: scanCacheJSON{
+			ReusedHashes: cache.ReusedHashes, ContentReads: cache.ContentReads, FingerprintReads: cache.FingerprintReads,
+		},
 		Files: []scanFileJSON{}, Skipped: []skipJSON{}, Warnings: []warningJSON{}, IgnoreSources: []sourceJSON{},
 	}
 }

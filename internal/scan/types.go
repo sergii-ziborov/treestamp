@@ -43,6 +43,7 @@ type Options struct {
 	Started           time.Time
 	Root              string
 	emitPath          func(string) error
+	MaxFileBytesZero  bool
 }
 
 type Limits struct {
@@ -133,6 +134,7 @@ type Descriptor struct {
 
 type CacheStats struct {
 	ReusedHashes, ContentReads, FingerprintReads uint64
+	Rebuilt                                      bool
 }
 
 type Termination int
@@ -326,13 +328,12 @@ func Full(ctx context.Context, root string, opts Options) (*Report, error) {
 		return nil, err
 	}
 	opts.Root = discovered.root
-	if opts.Cache != nil && !opts.Cache.Compatible(opts.Root) {
-		opts.Cache = nil
-	}
+	rebuilt := dropBadCache(&opts)
 	files, extraSkip, stats, err := inspect(ctx, discovered.candidates, opts)
 	if err != nil {
 		return nil, err
 	}
+	stats.Rebuilt = rebuilt
 	report := &Report{
 		Root: discovered.root, Files: files, Skipped: append(discovered.skipped, extraSkip...),
 		Warnings: discovered.warnings, IgnoreSources: discovered.sources, Complete: discovered.complete,
@@ -348,13 +349,12 @@ func Compact(ctx context.Context, root string, opts Options) (*CompactReport, er
 		return nil, err
 	}
 	opts.Root = discovered.root
-	if opts.Cache != nil && !opts.Cache.Compatible(opts.Root) {
-		opts.Cache = nil
-	}
+	rebuilt := dropBadCache(&opts)
 	files, extraSkip, stats, err := inspectCompact(ctx, discovered.candidates, opts)
 	if err != nil {
 		return nil, err
 	}
+	stats.Rebuilt = rebuilt
 	report := &CompactReport{
 		Root: discovered.root, Files: files, Skipped: append(discovered.skipped, extraSkip...),
 		Warnings: discovered.warnings, IgnoreSources: discovered.sources, Complete: discovered.complete,
@@ -397,10 +397,23 @@ func Incremental(ctx context.Context, root string, opts Options, previous *Repor
 }
 
 func Cached(ctx context.Context, root string, opts Options, cache *Cache) (*Report, error) {
+	rebuilt := cache != nil && !cache.Compatible(root)
 	if cache != nil && cache.Compatible(root) {
 		opts.Cache = cache
 	} else {
 		opts.Cache = nil
 	}
-	return Full(ctx, root, opts)
+	report, err := Full(ctx, root, opts)
+	if report != nil && rebuilt {
+		report.Cache.Rebuilt = true
+	}
+	return report, err
+}
+
+func dropBadCache(opts *Options) bool {
+	if opts.Cache != nil && !opts.Cache.Compatible(opts.Root) {
+		opts.Cache = nil
+		return true
+	}
+	return false
 }

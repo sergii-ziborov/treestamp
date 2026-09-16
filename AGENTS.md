@@ -53,19 +53,20 @@ lazy single-directory `DirScanner` with reusable scratch buffer, optional
 executor-owned parallel admission, compiled override-scope pruning,
 `Explain`, identity-keyed content reuse, a shared admission budget,
 ordered-parallel directory pull, and a persistent Merkle `TreeSnapshot`.
-`ScanSession` still walks retained records for apply. P7
-fsnotify module and P8 official benches remain open. Functional parity,
-including cache/watch sequences, is in the Windows/Linux/macOS CI matrix.
-Ledger: `compat/ledger.json`.
+`ScanSession` applies Merkle deltas when a `TreeSnapshot` is present.
+The recommended facade is `ScanWith` / `EachFile` / `Compile` without
+changing the two-argument `Scan` / `ScanPaths` signatures. Task docs live
+in `docs/`. P7 fsnotify module and P8 official benches remain open.
+Functional parity, including cache/watch sequences, is in the
+Windows/Linux/macOS CI matrix. Ledger: `compat/ledger.json`.
 
 ## Next implementation work
 
-1. Keep a `TreeSnapshot` on `ScanSession` and apply deltas without rebuilding
-   the Merkle tree from all N records. Do not replace `LegacyRevision`.
-2. Drive inspect/content through the same ready count+byte budget.
-3. Optional `watch` module with fsnotify (never a main-module require).
-4. Official B01–B14 campaign against fastwalk, gocodewalker, and the rust oracle.
+1. Drive remaining inspect/content paths through the ready count+byte budget.
+2. Optional `watch` module with fsnotify (never a main-module require).
+3. Official B01–B14 campaign against fastwalk, gocodewalker, and the rust oracle.
    Informal go-compat benches are not that campaign.
+4. Publish a real module tag before claiming a release consumer.
 
 ## Local checks
 
