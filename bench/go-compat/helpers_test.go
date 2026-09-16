@@ -112,14 +112,25 @@ func benchRepeat(b *testing.B, run func() (int, error)) {
 }
 
 func makeNode(root, path string, entry fs.DirEntry) node {
-	relative, err := filepath.Rel(root, path)
+	return node{Relative: relPath(root, path), Kind: entryKind(entry)}
+}
+
+func canon(path string) string {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved
+	}
+	return path
+}
+
+func relPath(root, path string) string {
+	value, err := filepath.Rel(canon(root), canon(path))
 	if err != nil {
-		relative = path
+		return filepath.ToSlash(path)
 	}
-	if relative == "." {
-		relative = ""
+	if value == "." {
+		return ""
 	}
-	return node{Relative: filepath.ToSlash(relative), Kind: entryKind(entry)}
+	return filepath.ToSlash(value)
 }
 
 func entryKind(entry fs.DirEntry) string {

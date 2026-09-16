@@ -37,6 +37,8 @@ jobs:
         run: go test ./...
       - name: Go-compat functional tests
         working-directory: bench/go-compat
+        env:
+          GOWORK: "off"
         run: go test ./...
 
   docs:

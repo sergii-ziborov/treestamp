@@ -222,16 +222,7 @@ func sortedGodirwalk(root string) ([]string, error) {
 	return out, err
 }
 
-func relative(root, path string) string {
-	value, err := filepath.Rel(root, path)
-	if err != nil {
-		return filepath.ToSlash(path)
-	}
-	if value == "." {
-		return ""
-	}
-	return filepath.ToSlash(value)
-}
+func relative(root, path string) string { return relPath(root, path) }
 
 func godirKind(entry *godirwalk.Dirent) string {
 	switch {

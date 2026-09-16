@@ -11,8 +11,8 @@ Still not a full port.
   of the library `go.mod`. Manifest schema `treestamp.manifest/v1`.
 - `--scope` is `Filters.LocationInclude`. It does not reuse override
   include rules. `--output` refuses a path inside the scan root.
-- `WalkWithConfig` Follow keeps the caller-supplied root path instead of
-  replacing it with `EvalSymlinks` (`/var` vs `/private/var` on macOS).
+- Follow still canonicalizes the walk root for confinement. Competitor
+  walk comparisons canonicalize both sides before `Rel`.
 - Unsorted directory listing (`File.ReadDir`, no `os.ReadDir` sort), lazy
   callback `Info`, and `WalkFS` = `fs.WalkDir`. Informal Windows medians
   now beat godirwalk `ReadDirents` and use less `B/op` than fastwalk

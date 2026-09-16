@@ -93,7 +93,11 @@ func resolveWalkRoot(root string, options WalkOptions) (string, error) {
 		if absErr != nil {
 			return "", walkErr(root, 0, OpCanonicalize, absErr)
 		}
-		return abs, nil
+		resolved, resErr := filepath.EvalSymlinks(abs)
+		if resErr != nil {
+			return "", walkErr(root, 0, OpCanonicalize, resErr)
+		}
+		return resolved, nil
 	}
 	if !filepath.IsAbs(root) {
 		cwd, cwdErr := os.Getwd()

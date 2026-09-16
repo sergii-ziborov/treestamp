@@ -183,9 +183,11 @@ func concurrentRoot(root string, options WalkOptions) (string, os.FileInfo, erro
 		return "", nil, walkErr(abs, 0, OpReadMetadata, errRootSymlink)
 	}
 	if options.FollowLinks || options.SameFileSystem {
-		if _, resolveErr := filepath.EvalSymlinks(abs); resolveErr != nil {
+		resolved, resolveErr := filepath.EvalSymlinks(abs)
+		if resolveErr != nil {
 			return "", nil, walkErr(abs, 0, OpCanonicalize, resolveErr)
 		}
+		abs = resolved
 	}
 	info, err := os.Stat(abs)
 	if err != nil {

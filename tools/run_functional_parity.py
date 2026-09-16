@@ -229,7 +229,15 @@ def item_count(value: Any, operation: str) -> int:
 
 
 def go_competitor_results() -> dict[str, Any]:
-    output = run(["go", "test", "-json", "-count=1", "./..."], cwd=GO_COMPAT)
+    previous = os.environ.get("GOWORK")
+    os.environ["GOWORK"] = "off"
+    try:
+        output = run(["go", "test", "-json", "-count=1", "./..."], cwd=GO_COMPAT)
+    finally:
+        if previous is None:
+            os.environ.pop("GOWORK", None)
+        else:
+            os.environ["GOWORK"] = previous
     passed: list[str] = []
     skipped: list[str] = []
     differences: list[str] = []
