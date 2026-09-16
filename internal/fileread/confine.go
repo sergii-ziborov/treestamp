@@ -18,6 +18,10 @@ var (
 )
 
 func Confine(root, path string) (string, error) {
+	return ConfineAt(root, path, false)
+}
+
+func ConfineAt(root, path string, follow bool) (string, error) {
 	rootAbs, err := filepath.Abs(root)
 	if err != nil {
 		return "", err
@@ -26,30 +30,56 @@ func Confine(root, path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	rootInfo, err := os.Lstat(rootAbs)
+	if err != nil {
+		return "", err
+	}
+	if rootInfo.Mode()&os.ModeSymlink != 0 {
+		return "", ErrEscape
+	}
 	if !pathx.UnderRoot(rootAbs, abs) {
 		return "", ErrEscape
 	}
+	if follow {
+		return confineFollowed(rootAbs, abs)
+	}
+	return confineLiteral(rootAbs, abs)
+}
+
+func confineFollowed(rootAbs, abs string) (string, error) {
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return "", err
+	}
+	if !pathx.UnderRoot(rootAbs, resolved) {
+		return "", ErrEscape
+	}
+	return resolved, nil
+}
+
+func confineLiteral(rootAbs, abs string) (string, error) {
 	rel, err := filepath.Rel(rootAbs, abs)
 	if err != nil {
 		return "", err
 	}
 	cur := rootAbs
-	if rel != "." {
-		for _, part := range strings.Split(filepath.ToSlash(rel), "/") {
-			if part == "" || part == "." {
-				continue
+	if rel == "." {
+		return abs, nil
+	}
+	for _, part := range strings.Split(filepath.ToSlash(rel), "/") {
+		if part == "" || part == "." {
+			continue
+		}
+		cur = filepath.Join(cur, part)
+		info, err := os.Lstat(cur)
+		if err != nil {
+			return "", err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			if cur == abs {
+				return "", ErrSymlink
 			}
-			cur = filepath.Join(cur, part)
-			info, err := os.Lstat(cur)
-			if err != nil {
-				return "", err
-			}
-			if info.Mode()&os.ModeSymlink != 0 {
-				if cur == abs {
-					return "", ErrSymlink
-				}
-				return "", ErrEscape
-			}
+			return "", ErrEscape
 		}
 	}
 	return abs, nil

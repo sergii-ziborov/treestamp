@@ -2,10 +2,21 @@
 
 package dirread
 
-import "os"
+import (
+	"os"
+	"syscall"
+)
 
 // MinimumScratch is os.Getpagesize(), matching godirwalk on Unix.
 func MinimumScratch() int { return os.Getpagesize() }
+
+func openDir(path string) (*os.File, error) {
+	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_CLOEXEC|syscall.O_DIRECTORY, 0)
+	if err != nil {
+		return nil, &os.PathError{Op: "open", Path: path, Err: err}
+	}
+	return os.NewFile(uintptr(fd), path), nil
+}
 
 func (s *Scanner) Scan() bool {
 	if s.file == nil {
@@ -21,6 +32,10 @@ func (s *Scanner) Scan() bool {
 		}
 		adv, name, typ := parseLinux(s.work)
 		if adv == 0 {
+			if len(s.work) > 0 {
+				s.finish(ErrTruncatedRecord)
+				return false
+			}
 			s.work = nil
 			continue
 		}

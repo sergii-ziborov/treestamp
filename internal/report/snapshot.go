@@ -10,6 +10,7 @@ import (
 	"github.com/sergii-ziborov/treestamp/internal/fileread"
 	"github.com/sergii-ziborov/treestamp/internal/hashx"
 	pathx "github.com/sergii-ziborov/treestamp/internal/path"
+	"github.com/sergii-ziborov/treestamp/internal/platform"
 )
 
 const (
@@ -21,6 +22,7 @@ type File struct {
 	Absolute, Relative, ContentHash string
 	Bytes                           uint64
 	ModifiedNS                      *uint64
+	Identity                        *platform.Identity
 }
 
 type Error struct {
@@ -160,6 +162,9 @@ func openAndHash(snapshot File, path string) ([]byte, int, error) {
 		return nil, 0, stale(relative)
 	}
 	if snapshot.ModifiedNS != nil && (beforeVer.ModifiedNS == nil || *beforeVer.ModifiedNS != *snapshot.ModifiedNS) {
+		return nil, 0, stale(relative)
+	}
+	if snapshot.Identity != nil && (beforeVer.Identity == nil || !beforeVer.Identity.Equal(*snapshot.Identity)) {
 		return nil, 0, stale(relative)
 	}
 	data, err := io.ReadAll(io.LimitReader(f, int64(snapshot.Bytes)+1))

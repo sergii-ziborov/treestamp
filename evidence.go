@@ -568,3 +568,23 @@ func (r *ScanReport) PortableFilesPage(offset, limit int) []PortableScannedFile 
 	}
 	return out
 }
+
+type PathExplanation struct {
+	Relative, Outcome, Reason, Source, Pattern string
+	Line                                       int
+}
+
+func (s *Scanner) Explain(rel string) (PathExplanation, error) {
+	if s == nil {
+		return PathExplanation{}, &Error{Code: CodeInvalid, Op: "Explain", Err: errEmptyRoot}
+	}
+	m, err := NewSelectionMatcher(s.root, s.options)
+	if err != nil {
+		return PathExplanation{}, wrap(err, "Explain", s.root)
+	}
+	rel = pathx.Slash(rel)
+	_ = m.LoadPathScope(rel)
+	info, statErr := os.Lstat(filepath.Join(m.Root(), filepath.FromSlash(rel)))
+	x := m.Explain(rel, statErr == nil && info.IsDir())
+	return PathExplanation{x.Relative, x.Outcome, x.Reason, x.Source, x.Pattern, x.Line}, nil
+}

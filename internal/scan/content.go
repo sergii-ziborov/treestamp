@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/sergii-ziborov/treestamp/internal/fileread"
 	"github.com/sergii-ziborov/treestamp/internal/hashx"
 	"github.com/sergii-ziborov/treestamp/internal/selection"
 )
@@ -154,7 +153,7 @@ func runVisit(ctx context.Context, opts Options, mode ContentVisitMode, factory 
 			report.Stopped = true
 			break
 		}
-		if quit := accumulateVisit(report, &files, c, file, opts, visitor); quit {
+		if quit := accumulateVisit(report, &files, visitWork{ctx: ctx, c: c, file: file, opts: opts, visitor: visitor}); quit {
 			report.Stopped = true
 			break
 		}
@@ -173,8 +172,16 @@ func newVisitReport(discovered *discovery, mode ContentVisitMode) *ContentVisitR
 	}
 }
 
-func accumulateVisit(report *ContentVisitReport, files *[]ScannedFile, c candidate, file ContentFile, opts Options, visitor ContentVisitor) bool {
-	scanned, skip, stat, ev, status, consumerSkip, quit, opened, committed := readVisited(c, file, opts, visitor)
+type visitWork struct {
+	ctx     context.Context
+	c       candidate
+	file    ContentFile
+	opts    Options
+	visitor ContentVisitor
+}
+
+func accumulateVisit(report *ContentVisitReport, files *[]ScannedFile, work visitWork) bool {
+	scanned, skip, stat, ev, status, consumerSkip, quit, opened, committed := readVisited(work)
 	if opened {
 		report.Opened++
 	}
@@ -221,26 +228,24 @@ type visitCounters struct {
 	chunks, bytesRead, bytesEmitted uint64
 }
 
-func readVisited(c candidate, file ContentFile, opts Options, visitor ContentVisitor) (ScannedFile, *Skipped, CacheStats, visitCounters, ContentFileStatus, bool, bool, bool, bool) {
+func readVisited(work visitWork) (ScannedFile, *Skipped, CacheStats, visitCounters, ContentFileStatus, bool, bool, bool, bool) {
+	c := work.c
 	scanned := ScannedFile{Absolute: c.abs, Relative: c.rel, Bytes: c.size, Version: c.version}
-	path := c.abs
-	if opts.Root != "" {
-		if confined, err := fileread.Confine(opts.Root, c.abs); err == nil {
-			path = confined
-		} else if err != nil {
-			return scanned, &Skipped{Relative: c.rel, Kind: selection.SkipPathEscape, Detail: err.Error()}, CacheStats{}, visitCounters{}, ContentChanged, false, false, false, false
-		}
+	path, skip := confineCandidate(c, work.opts)
+	if skip != nil {
+		return scanned, skip, CacheStats{}, visitCounters{}, ContentChanged, false, false, false, false
 	}
 	f, err := os.Open(path)
 	if err != nil {
 		return scanned, &Skipped{Relative: c.rel, Kind: selection.SkipIOError, Detail: err.Error()}, CacheStats{}, visitCounters{}, ContentChanged, false, false, false, false
 	}
 	defer f.Close()
-	scanned, skip, stat, ev, status, consumer, quit, committed := finishVisited(f, scanned, file, opts, visitor)
+	scanned, skip, stat, ev, status, consumer, quit, committed := finishVisited(f, scanned, work)
 	return scanned, skip, stat, ev, status, consumer, quit, true, committed
 }
 
-func finishVisited(f *os.File, scanned ScannedFile, file ContentFile, opts Options, visitor ContentVisitor) (ScannedFile, *Skipped, CacheStats, visitCounters, ContentFileStatus, bool, bool, bool) {
+func finishVisited(f *os.File, scanned ScannedFile, work visitWork) (ScannedFile, *Skipped, CacheStats, visitCounters, ContentFileStatus, bool, bool, bool) {
+	ctx, file, opts, visitor := work.ctx, work.file, work.opts, work.visitor
 	h := sha256.New()
 	fp := hashx.NewContentFingerprint()
 	buf := make([]byte, 64*1024)
@@ -248,6 +253,11 @@ func finishVisited(f *os.File, scanned ScannedFile, file ContentFile, opts Optio
 	var counters visitCounters
 	skipRest, consumerSkip := false, false
 	for {
+		if ctx != nil {
+			if err := ctx.Err(); err != nil {
+				return scanned, &Skipped{Relative: scanned.Relative, Kind: selection.SkipIOError, Detail: err.Error()}, CacheStats{ContentReads: 1}, counters, ContentChanged, consumerSkip, true, false
+			}
+		}
 		n, readErr := f.Read(buf)
 		if n > 0 {
 			skip, quit, binary := emitVisitedChunk(chunkEmit{
@@ -361,7 +371,7 @@ func Into(ctx context.Context, root string, opts Options, sink func(*ScannedFile
 			out.Complete = false
 			break
 		}
-		file, skip, stat, inspectErr := inspectOne(c, opts, index)
+		file, skip, stat, inspectErr := inspectOne(ctx, c, opts, index, newContentMemo())
 		if inspectErr != nil {
 			return nil, inspectErr
 		}

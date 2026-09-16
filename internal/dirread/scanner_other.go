@@ -16,22 +16,27 @@ func MinimumScratch() int {
 	return os.Getpagesize()
 }
 
+func openDir(path string) (*os.File, error) { return os.Open(path) }
+
 func (s *Scanner) Scan() bool {
 	if s.file == nil {
 		return false
 	}
 	s.name, s.typ, s.info = "", 0, nil
-	entries, err := s.file.ReadDir(1)
-	if err != nil || len(entries) == 0 {
-		if err == io.EOF {
-			err = nil
+	if len(s.pending) == 0 {
+		entries, err := s.file.ReadDir(256)
+		if err != nil || len(entries) == 0 {
+			if err == io.EOF {
+				err = nil
+			}
+			s.finish(err)
+			return false
 		}
-		s.finish(err)
-		return false
+		s.pending = entries
 	}
-	dent := entries[0]
+	dent := s.pending[0]
+	s.pending = s.pending[1:]
 	s.name = dent.Name()
 	s.typ = dent.Type()
-	s.info, _ = dent.Info()
 	return true
 }

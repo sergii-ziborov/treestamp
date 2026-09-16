@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/sergii-ziborov/treestamp/internal/fileread"
 	"github.com/sergii-ziborov/treestamp/internal/ignore"
@@ -89,7 +90,7 @@ func Watch(ctx context.Context, root string, opts Options, previous *Report, pla
 	if set.structural != nil {
 		return set.structural, nil
 	}
-	if ignoreChanged(previous, matcher.Sources()) {
+	if ignoreChanged(previous, matcher.Sources(), plan) {
 		return rescanUpdate(ctx, root, opts, previous, WatchFullIgnore)
 	}
 	return finishWatch(scope, kept, set)
@@ -180,7 +181,7 @@ func changeOne(s watchScope, rel string, dirMeansStructural bool) (changeItem, *
 	if statErr != nil {
 		return changeItem{skip: &Skipped{Relative: rel, Kind: selection.SkipIOError, Detail: statErr.Error()}}, nil, nil
 	}
-	if _, err := fileread.Confine(s.abs, path); err != nil {
+	if _, err := fileread.ConfineAt(s.abs, path, s.opts.Walk.FollowLinks); err != nil {
 		return changeItem{skip: &Skipped{Relative: rel, Kind: confineSkipKind(err), Detail: err.Error()}}, nil, nil
 	}
 	if info.IsDir() {
@@ -194,8 +195,9 @@ func changeOne(s watchScope, rel string, dirMeansStructural bool) (changeItem, *
 }
 
 func selectChanged(s watchScope, rel, path string, info os.FileInfo) (changeItem, *WatchUpdate, error) {
+	_ = s.matcher.LoadPathScope(rel)
 	size := uint64(info.Size())
-	dec := s.matcher.DecidePath(selection.PathQuery{
+	dec := s.matcher.DecideWithAncestors(selection.PathQuery{
 		Rel: rel, Name: filepath.Base(rel), IsFile: info.Mode().IsRegular(),
 		IsSymlink: info.Mode()&os.ModeSymlink != 0, Size: &size,
 	})
@@ -219,8 +221,9 @@ func finishWatch(s watchScope, kept []ScannedFile, set changeSet) (*WatchUpdate,
 	prefixes := append(append([]string(nil), s.plan.Changed...), s.plan.Removed...)
 	skips := append(set.skipped, extraSkip...)
 	report := &Report{
-		Root: s.abs, Files: append(kept, inspected...), Complete: true,
-		Portable: portablePolicy(s.opts), Cache: stats, IgnoreSources: toIgnoreSources(s.matcher.Sources()),
+		Root: s.abs, Files: append(kept, inspected...), Complete: watchComplete(s.ctx, skips),
+		Portable: portablePolicy(s.opts), Cache: stats,
+		IgnoreSources: mergeWatchSources(s.previous, s.matcher.Sources(), prefixes),
 	}
 	if s.previous != nil {
 		report.Skipped = append(keepUncoveredSkips(s.previous.Skipped, prefixes), skips...)
@@ -306,23 +309,89 @@ func earlyRescan(previous *Report, plan WatchPlan, opts Options) (WatchReason, b
 	return 0, false
 }
 
-func ignoreChanged(previous *Report, current []ignore.Source) bool {
+func ignoreChanged(previous *Report, current []ignore.Source, plan WatchPlan) bool {
 	if previous == nil {
 		return false
 	}
-	if len(previous.IgnoreSources) != len(current) {
-		return true
-	}
-	seen := make(map[string]string, len(previous.IgnoreSources))
+	prev := map[string]string{}
 	for _, source := range previous.IgnoreSources {
-		seen[source.Location] = source.ContentHash
+		prev[source.Location] = source.ContentHash
 	}
+	cur := map[string]string{}
 	for _, source := range current {
-		if seen[source.Location] != source.ContentHash {
+		cur[source.Location] = source.ContentHash
+		if prev[source.Location] != source.ContentHash {
+			return true
+		}
+	}
+	for loc, hash := range prev {
+		if sourceAffectsAny(loc, plan.Invalidated()) && cur[loc] != hash {
 			return true
 		}
 	}
 	return false
+}
+
+func watchComplete(ctx context.Context, skips []Skipped) bool {
+	if ctx != nil && ctx.Err() != nil {
+		return false
+	}
+	for _, item := range skips {
+		switch item.Kind {
+		case selection.SkipIOError, selection.SkipPathEscape, selection.SkipConcurrentModification:
+			return false
+		}
+	}
+	return true
+}
+
+func mergeWatchSources(previous *Report, current []ignore.Source, prefixes []string) []IgnoreSource {
+	next := map[string]IgnoreSource{}
+	if previous != nil {
+		for _, source := range previous.IgnoreSources {
+			if !sourceAffectsAny(source.Location, prefixes) {
+				next[source.Location] = source
+			}
+		}
+	}
+	for _, source := range current {
+		next[source.Location] = IgnoreSource{Kind: source.Kind, Location: source.Location, ContentHash: source.ContentHash}
+	}
+	out := make([]IgnoreSource, 0, len(next))
+	for _, source := range next {
+		out = append(out, source)
+	}
+	return out
+}
+
+func sourceAffectsAny(location string, rels []string) bool {
+	for _, rel := range rels {
+		if sourceAffects(location, rel) {
+			return true
+		}
+	}
+	return false
+}
+
+func sourceAffects(location, rel string) bool {
+	dir := sourceDir(location)
+	if dir == "" {
+		return true
+	}
+	rel = pathx.Slash(rel)
+	return rel == dir || strings.HasPrefix(rel, dir+"/")
+}
+
+func sourceDir(location string) string {
+	if location == "" || strings.HasPrefix(location, "<") {
+		return ""
+	}
+	slash := strings.ReplaceAll(location, "\\", "/")
+	i := strings.LastIndexByte(slash, '/')
+	if i < 0 {
+		return ""
+	}
+	return slash[:i]
 }
 
 func toIgnoreSources(in []ignore.Source) []IgnoreSource {

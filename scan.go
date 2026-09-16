@@ -159,6 +159,9 @@ func NewScanner(root string, opts ...ScannerOption) (*Scanner, error) {
 	if cfg.contentWorkers > 0 {
 		cfg.options.ContentWorkers = cfg.contentWorkers
 	}
+	if err := cfg.options.Filters.Err(); err != nil {
+		return nil, &Error{Code: CodeInvalid, Op: "NewScanner", Err: err}
+	}
 	return &Scanner{root: root, options: cfg.options}, nil
 }
 
@@ -167,6 +170,9 @@ func (s *Scanner) Options(options Options) *Scanner { s.options = options; retur
 func (s *Scanner) runFull(ctx context.Context, op string, fn func() (*scan.Report, error)) (*ScanReport, error) {
 	if s == nil {
 		return nil, &Error{Code: CodeInvalid, Op: op, Err: errEmptyRoot}
+	}
+	if err := s.options.Filters.Err(); err != nil {
+		return nil, &Error{Code: CodeInvalid, Op: op, Err: err}
 	}
 	report, err := fn()
 	if err != nil {
@@ -185,6 +191,9 @@ func (s *Scanner) ScanCompact(ctx context.Context) (*CompactScanReport, error) {
 	return fromCompact(report), nil
 }
 func (s *Scanner) ScanPaths(ctx context.Context) ([]string, error) {
+	if err := s.options.Filters.Err(); err != nil {
+		return nil, &Error{Code: CodeInvalid, Op: "ScanPaths", Err: err}
+	}
 	paths, err := scan.Paths(ctx, s.root, toScanOptions(s.options))
 	if err != nil {
 		return nil, wrap(err, "ScanPaths", s.root)

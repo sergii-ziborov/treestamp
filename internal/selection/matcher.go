@@ -106,13 +106,27 @@ type PathQuery struct {
 }
 
 type Matcher struct {
-	root     string
-	engine   *ignore.Engine
-	cfg      Config
-	warnings []string
+	root          string
+	engine        *ignore.Engine
+	cfg           Config
+	plan          CompiledSelection
+	warnings      []string
+	filtersEmpty  bool
+	idle          bool
+	simple        bool
+	loadedScopes  map[string]struct{}
 }
 
 func NewMatcher(root string, cfg Config) (*Matcher, error) {
+	return newMatcher(root, cfg, true)
+}
+
+// NewDeferredMatcher skips probing ignore files until LoadListed sees them.
+func NewDeferredMatcher(root string, cfg Config) (*Matcher, error) {
+	return newMatcher(root, cfg, false)
+}
+
+func newMatcher(root string, cfg Config, loadRoot bool) (*Matcher, error) {
 	abs, err := filepath.Abs(root)
 	if err != nil {
 		return nil, err
@@ -124,8 +138,19 @@ func NewMatcher(root string, cfg Config) (*Matcher, error) {
 	} else {
 		eng.ApplyPolicy(abs, ignore.RepositoryPolicy())
 	}
-	warns := eng.LoadDir(abs, "")
-	return &Matcher{root: abs, engine: eng, cfg: cfg, warnings: warns}, nil
+	var warns []string
+	if loadRoot {
+		warns = eng.LoadDir(abs, "")
+	}
+	return &Matcher{
+		root: abs, engine: eng, cfg: cfg, plan: Compile(cfg), warnings: warns,
+		filtersEmpty: cfg.Filters.Empty(), idle: eng.Idle(), simple: simpleConfig(cfg),
+	}, nil
+}
+
+func simpleConfig(cfg Config) bool {
+	return cfg.MaxDepth == nil && cfg.MinDepth == 0 && len(cfg.Extensions) == 0 &&
+		(cfg.FileTypes == nil || !cfg.FileTypes.Active()) && !cfg.ApplyMaxBytes
 }
 
 func (m *Matcher) Sources() []ignore.Source {
@@ -138,7 +163,124 @@ func (m *Matcher) Sources() []ignore.Source {
 func (m *Matcher) DecidePath(q PathQuery) Decision { return m.decide(q) }
 func (m *Matcher) Engine() *ignore.Engine          { return m.engine }
 func (m *Matcher) EnterDir(abs, rel string) []string {
-	return m.engine.LoadDir(abs, pathx.Slash(rel))
+	warns := m.engine.LoadDir(abs, pathx.Slash(rel))
+	m.idle = m.engine.Idle()
+	return warns
+}
+
+func (m *Matcher) LoadPathScope(rel string) []string {
+	rel = pathx.Slash(rel)
+	if rel == "" {
+		return nil
+	}
+	if m.loadedScopes == nil {
+		m.loadedScopes = map[string]struct{}{}
+	}
+	var warns []string
+	parts := strings.Split(rel, "/")
+	prefix := ""
+	for i := 0; i < len(parts)-1; i++ {
+		if prefix == "" {
+			prefix = parts[i]
+		} else {
+			prefix += "/" + parts[i]
+		}
+		if _, ok := m.loadedScopes[prefix]; ok {
+			continue
+		}
+		m.loadedScopes[prefix] = struct{}{}
+		warns = append(warns, m.EnterDir(filepath.Join(m.root, filepath.FromSlash(prefix)), prefix)...)
+	}
+	return warns
+}
+
+func (m *Matcher) DecideWithAncestors(q PathQuery) Decision {
+	if ancestor := m.matchAncestors(q.Rel); ancestor != nil {
+		return *ancestor
+	}
+	return m.decide(q)
+}
+
+func (m *Matcher) EnterDirListed(abs, rel string, dents []os.DirEntry) []string {
+	warns, _ := m.LoadListed(abs, rel, dents)
+	return warns
+}
+
+func (m *Matcher) LoadListed(abs, rel string, dents []os.DirEntry) ([]string, bool) {
+	warns, loaded := m.engine.LoadDirListed(abs, pathx.Slash(rel), dents)
+	if loaded {
+		m.idle = m.engine.Idle()
+	}
+	return warns, loaded
+}
+
+func (m *Matcher) WithListed(abs, rel string, dents []os.DirEntry, fn func()) []string {
+	saved, savedIdle := *m.engine, m.idle
+	warns, loaded := m.LoadListed(abs, rel, dents)
+	fn()
+	if loaded {
+		*m.engine = saved
+		m.idle = savedIdle
+	}
+	return warns
+}
+
+func (m *Matcher) KeepListedFile(name string, isFile, symlink bool) (keep, fast bool) {
+	if !m.idle || !m.simple {
+		return false, false
+	}
+	if symlink || !isFile {
+		return false, true
+	}
+	if m.cfg.SkipHidden && platform.HiddenName(name) {
+		return false, true
+	}
+	return m.filtersEmpty || !m.cfg.Filters.rejectFile(name, ""), true
+}
+
+func (m *Matcher) MayContain(rel string) Contain { return m.plan.MayContain(rel) }
+
+func (m *Matcher) Explain(rel string, isDir bool) Explanation {
+	rel = pathx.Slash(rel)
+	_ = m.LoadPathScope(rel)
+	q := PathQuery{Rel: rel, Name: filepath.Base(rel), IsDir: isDir, IsFile: !isDir}
+	dec := m.DecideWithAncestors(q)
+	out := Explanation{Relative: rel, Outcome: "selected"}
+	if dec.Disposition == TraverseDirectory {
+		out.Outcome = "traverse"
+	}
+	if dec.Disposition == Skipped || dec.Disposition == Unselected {
+		out.Outcome = "excluded"
+		out.Reason = dec.Skip.String()
+		if out.Reason == "" {
+			out.Reason = "unselected"
+		}
+	}
+	if _, hit := m.engine.Explain(rel, isDir); hit.Pattern != "" || hit.Location != "" {
+		out.Source, out.Pattern, out.Line = hit.Location, hit.Pattern, hit.Line
+		if out.Outcome == "excluded" {
+			out.Reason = "ignore_rule"
+		}
+	}
+	return out
+}
+
+func (m *Matcher) KeepListedDir(rel, name string) (descend, fast bool) {
+	if m.plan.MayContain(rel) == ContainNo {
+		return false, true
+	}
+	if !m.idle || !m.simple {
+		return false, false
+	}
+	if m.cfg.SkipHidden && platform.HiddenName(name) && rel != "" {
+		return false, true
+	}
+	if m.cfg.StandardSkips {
+		if _, ok := standardDirs[name]; ok && rel != "" {
+			return false, true
+		}
+	}
+	return m.filtersEmpty || !m.cfg.Filters.rejectDir(rel, name, ""), true
 }
 func (m *Matcher) Decide(entry *walk.WalkEntry) Decision {
 	return m.decide(PathQuery{
@@ -270,6 +412,9 @@ func (m *Matcher) decide(q PathQuery) Decision {
 	if m.rejectByFilter(q) {
 		return Decision{Disposition: Skipped, Skip: SkipIgnored, Repo: ignore.MatchNone}
 	}
+	if m.idle {
+		return m.decideSelected(q, ignore.MatchNone)
+	}
 	repo := m.engine.Match(q.Rel, q.IsDir)
 	if repo.IsIgnored() {
 		skip := SkipIgnored
@@ -284,10 +429,13 @@ func (m *Matcher) decide(q PathQuery) Decision {
 }
 
 func (m *Matcher) rejectByFilter(q PathQuery) bool {
-	if m.cfg.Filters.Empty() {
+	if m.filtersEmpty {
 		return false
 	}
-	joined := filepath.Join(m.root, filepath.FromSlash(q.Rel))
+	joined := ""
+	if m.cfg.Filters.needsLocation() {
+		joined = filepath.Join(m.root, filepath.FromSlash(q.Rel))
+	}
 	if q.IsDir {
 		return m.cfg.Filters.rejectDir(q.Rel, q.Name, joined)
 	}
@@ -298,6 +446,15 @@ func (m *Matcher) rejectByFilter(q PathQuery) bool {
 }
 
 func (m *Matcher) decideSelected(q PathQuery, repo ignore.Match) Decision {
+	if m.simple {
+		if q.IsDir {
+			return Decision{Disposition: TraverseDirectory, Repo: repo}
+		}
+		if q.IsFile {
+			return Decision{Disposition: SelectedFile, Repo: repo}
+		}
+		return Decision{Disposition: Unselected, Repo: repo}
+	}
 	depth := relativeDepth(q.Rel)
 	if m.cfg.MaxDepth != nil && depth > *m.cfg.MaxDepth {
 		return Decision{Disposition: Skipped, Skip: SkipMaxDepth, Repo: repo}

@@ -6,10 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/sergii-ziborov/treestamp/internal/walk"
 )
 
 func TestScanPathsRespectsGitignoreAndSkipsHash(t *testing.T) {
@@ -191,7 +194,7 @@ func TestMultiScannerAndStateful(t *testing.T) {
 	if err != nil || report.Len() != 2 {
 		t.Fatalf("%v %v", report, err)
 	}
-	w, err := NewStatefulWalkBuilder[int, string](a, 1).ProcessReadDir(func(depth int, dir string, state *int, batch *[]StatefulResult[string]) {
+	w, err := NewStatefulWalkBuilder[int, string](a, 1).ProcessReadDir(func(depth int, dir string, state *int, batch *[]walk.StatefulResult[string]) {
 		for i := range *batch {
 			if (*batch)[i].Entry != nil {
 				(*batch)[i].Entry.State = "ok"
@@ -394,6 +397,22 @@ func TestKillerDescriptorAndMetadataOnly(t *testing.T) {
 }
 
 func TestFacadeEdges(t *testing.T) {
+	a := DefaultOptions()
+	a.Filters.IncludeNames, a.Filters.ExcludeNames = []string{"x", "exc-namey"}, []string{"z"}
+	b := DefaultOptions()
+	b.Filters.IncludeNames, b.Filters.ExcludeNames = []string{"x"}, []string{"y", "exc-namez"}
+	if DescriptorFromOptions(a).Policy == DescriptorFromOptions(b).Policy {
+		t.Fatal("filter policy collision")
+	}
+	if _, err := NewScanner(".", WithOptions(DefaultOptions().WithIncludeFilenameRegex("["))); err == nil {
+		t.Fatal("invalid regex")
+	}
+	if _, err := CompileFilters(nil, nil, nil, nil, []string{"["}, nil, nil, nil); err == nil {
+		t.Fatal("compile filters")
+	}
+	if err := WalkDirs(t.TempDir(), DirWalkOptions{PostChildrenCallback: func(string, fs.DirEntry, error) error { return nil }, NumWorkers: 2}); err == nil {
+		t.Fatal("unsupported hooks")
+	}
 	if _, err := NewScanner(""); err == nil {
 		t.Fatal("empty")
 	}
@@ -715,5 +734,102 @@ func assertJSONGolden(t *testing.T, value any, path string) {
 	want = bytes.TrimSpace(want)
 	if !bytes.Equal(got, want) {
 		t.Fatalf("%s\ngot  %s\nwant %s", path, got, want)
+	}
+}
+
+func TestExplainWinningIgnore(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, ".gitignore"), "# keep\ngenerated/**\n")
+	mustMkdir(t, filepath.Join(root, "generated"))
+	mustWriteFile(t, filepath.Join(root, "generated", "model.go"), "package g\n")
+	mustWriteFile(t, filepath.Join(root, "keep.go"), "package keep\n")
+	s, err := NewScanner(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ex, err := s.Explain("generated/model.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ex.Outcome != "excluded" || ex.Reason != "ignore_rule" || ex.Source != ".gitignore" || ex.Pattern != "generated/**" || ex.Line != 2 {
+		t.Fatalf("%+v", ex)
+	}
+	keep, err := s.Explain("keep.go")
+	if err != nil || keep.Outcome != "selected" {
+		t.Fatalf("%+v %v", keep, err)
+	}
+}
+
+func TestScanPathsOverrideScope(t *testing.T) {
+	root := t.TempDir()
+	mustMkdir(t, filepath.Join(root, "keep"))
+	mustMkdir(t, filepath.Join(root, "vendor", "pkg"))
+	mustWriteFile(t, filepath.Join(root, "keep", "a.txt"), "a")
+	mustWriteFile(t, filepath.Join(root, "vendor", "pkg", "x.go"), "x")
+	opts := DefaultOptions()
+	opts.OverrideRules = []string{"keep/**"}
+	s, err := NewScanner(root, WithOptions(opts))
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths, err := s.ScanPaths(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsRel(paths, "keep/a.txt") || strings.Contains(strings.Join(paths, "\n"), "vendor") {
+		t.Fatalf("%v", paths)
+	}
+}
+
+func TestIdentityReusesHash(t *testing.T) {
+	root := t.TempDir()
+	a := filepath.Join(root, "a.txt")
+	mustWriteFile(t, a, "same-bytes")
+	if err := os.Link(a, filepath.Join(root, "b.txt")); err != nil {
+		t.Skip(err)
+	}
+	opts := DefaultOptions()
+	opts.ContentWorkers = 1
+	s, err := NewScanner(root, WithOptions(opts))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := s.Scan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ha, hb string
+	for _, f := range report.Files {
+		switch f.Relative {
+		case "a.txt":
+			ha = f.ContentHash
+		case "b.txt":
+			hb = f.ContentHash
+		}
+	}
+	if ha == "" || ha != hb {
+		t.Fatalf("hash %q %q files=%d", ha, hb, len(report.Files))
+	}
+	if report.Cache.ReusedHashes == 0 {
+		t.Fatalf("reused %+v", report.Cache)
+	}
+}
+
+func TestTreeSnapshotApplyMatchesRebuild(t *testing.T) {
+	files := []ScannedFile{
+		{Relative: "a.go", ContentHash: "ha", Bytes: 1},
+		{Relative: "b.go", ContentHash: "hb", Bytes: 2},
+	}
+	snap := SnapshotFromFiles(files)
+	if snap.Len() != 2 || !strings.HasPrefix(snap.TreeRevision(), "tree2:") {
+		t.Fatalf("%d %s", snap.Len(), snap.TreeRevision())
+	}
+	next := snap.Apply([]ScannedFile{{Relative: "b.go", ContentHash: "hb2", Bytes: 3}}, nil)
+	rebuilt := SnapshotFromFiles([]ScannedFile{files[0], {Relative: "b.go", ContentHash: "hb2", Bytes: 3}})
+	if next.TreeRevision() != rebuilt.TreeRevision() {
+		t.Fatalf("%s vs %s", next.TreeRevision(), rebuilt.TreeRevision())
+	}
+	if next.TreeRevision() == snap.TreeRevision() {
+		t.Fatal("legacy-style full rewrite was not required, but revision must change")
 	}
 }

@@ -30,11 +30,16 @@ type discovery struct {
 	term       Termination
 	complete   bool
 	portable   bool
+	emit       func(string) error
+	emitErr    error
 }
 
 func discover(ctx context.Context, root string, opts Options, needMeta bool) (*discovery, error) {
 	if opts.Started.IsZero() {
 		opts.Started = time.Now()
+	}
+	if !needMeta && listable(opts) {
+		return listDiscover(ctx, root, opts)
 	}
 	walker, matcher, snapshots, out, err := openDiscovery(root, opts, needMeta)
 	if err != nil {
@@ -42,8 +47,16 @@ func discover(ctx context.Context, root string, opts Options, needMeta bool) (*d
 	}
 	defer walker.Close()
 	var selected, totalBytes uint64
-	mergeIgnoreSources(&out.sources, matcher.Sources())
+	needSources := needMeta || opts.RecordSkipped
+	if needSources {
+		mergeIgnoreSources(&out.sources, matcher.Sources())
+	}
+	lastSnap := -1
 	for {
+		if out.emitErr != nil {
+			out.complete = false
+			return out, nil
+		}
 		if err := ctx.Err(); err != nil {
 			out.term = TermCancelled
 			out.complete = false
@@ -68,9 +81,14 @@ func discover(ctx context.Context, root string, opts Options, needMeta bool) (*d
 			out.complete = false
 			continue
 		}
-		considerEntry(considerArgs{walker: walker, matcher: matcher, snapshots: &snapshots, out: out, opts: opts, entry: entry, needMeta: needMeta}, &selected, &totalBytes)
+		considerEntry(considerArgs{
+			walker: walker, matcher: matcher, snapshots: &snapshots, out: out, opts: opts,
+			entry: entry, needMeta: needMeta, needSources: needSources, lastSnap: &lastSnap,
+		}, &selected, &totalBytes)
 	}
-	mergeIgnoreSources(&out.sources, matcher.Sources())
+	if needSources {
+		mergeIgnoreSources(&out.sources, matcher.Sources())
+	}
 	if opts.IgnorePolicy.GitGlobal || opts.IgnorePolicy.GitExclude {
 		out.portable = false
 	}
@@ -105,7 +123,7 @@ func openDiscovery(root string, opts Options, needMeta bool) (*walk.Walker, *sel
 		_ = walker.Close()
 		return nil, nil, nil, nil, err
 	}
-	out := &discovery{root: walker.Root(), complete: true, portable: portablePolicy(opts)}
+	out := &discovery{root: walker.Root(), complete: true, portable: portablePolicy(opts), emit: opts.emitPath}
 	return walker, matcher, []*ignore.Engine{matcher.Engine().Clone()}, out, nil
 }
 
@@ -121,29 +139,39 @@ func selectionConfig(opts Options, walkOpts walk.WalkOptions, needMeta bool) sel
 }
 
 type considerArgs struct {
-	walker    *walk.Walker
-	matcher   *selection.Matcher
-	snapshots *[]*ignore.Engine
-	out       *discovery
-	opts      Options
-	entry     *walk.WalkEntry
-	needMeta  bool
+	walker      *walk.Walker
+	matcher     *selection.Matcher
+	snapshots   *[]*ignore.Engine
+	out         *discovery
+	opts        Options
+	entry       *walk.WalkEntry
+	needMeta    bool
+	needSources bool
+	lastSnap    *int
 }
 
 func considerEntry(a considerArgs, selected, totalBytes *uint64) {
 	rel := pathx.Slash(a.entry.RelativePath())
-	restoreMatcher(a.matcher, *a.snapshots, a.entry.Depth())
+	restoreMatcher(a.matcher, *a.snapshots, a.entry.Depth(), a.lastSnap)
 	dec := a.matcher.Decide(a.entry)
+	if a.entry.IsDir() && dec.ShouldDescend() && !a.opts.RecordSkipped && a.matcher.MayContain(rel) == selection.ContainNo {
+		a.walker.SkipCurrentDir()
+		return
+	}
 	if a.entry.IsDir() && dec.ShouldDescend() && a.entry.Depth() > 0 {
+		detachEngine(a.matcher)
 		for _, w := range a.matcher.EnterDir(a.entry.Path(), rel) {
 			a.out.warnings = append(a.out.warnings, Warning{Relative: rel, Message: w})
 			a.out.complete = false
 		}
-		mergeIgnoreSources(&a.out.sources, a.matcher.Sources())
+		if a.needSources {
+			mergeIgnoreSources(&a.out.sources, a.matcher.Sources())
+		}
 		for len(*a.snapshots) <= a.entry.Depth() {
-			*a.snapshots = append(*a.snapshots, a.matcher.Engine().Clone())
+			*a.snapshots = append(*a.snapshots, nil)
 		}
 		(*a.snapshots)[a.entry.Depth()] = a.matcher.Engine().Clone()
+		*a.lastSnap = a.entry.Depth()
 		return
 	}
 	if !dec.ShouldDescend() && a.entry.IsDir() {
@@ -159,7 +187,9 @@ func considerEntry(a considerArgs, selected, totalBytes *uint64) {
 }
 
 func recordSelected(a considerArgs, rel string, selected, totalBytes *uint64) {
-	a.out.paths = append(a.out.paths, rel)
+	if !emitSelected(a.out, rel) {
+		return
+	}
 	if !a.needMeta {
 		*selected++
 		return
@@ -185,6 +215,19 @@ func recordSelected(a considerArgs, rel string, selected, totalBytes *uint64) {
 	*totalBytes += size
 }
 
+func emitSelected(out *discovery, rel string) bool {
+	if out.emit != nil {
+		if err := out.emit(rel); err != nil {
+			out.emitErr = err
+			out.complete = false
+			return false
+		}
+		return true
+	}
+	out.paths = append(out.paths, rel)
+	return true
+}
+
 func mergeIgnoreSources(dst *[]IgnoreSource, src []ignore.Source) {
 	for _, source := range src {
 		item := IgnoreSource{Kind: source.Kind, Location: source.Location, ContentHash: source.ContentHash}
@@ -201,14 +244,175 @@ func mergeIgnoreSources(dst *[]IgnoreSource, src []ignore.Source) {
 	}
 }
 
-func restoreMatcher(matcher *selection.Matcher, snaps []*ignore.Engine, depth int) {
+func restoreMatcher(matcher *selection.Matcher, snaps []*ignore.Engine, depth int, last *int) {
 	idx := 0
 	if depth > 0 {
 		idx = depth - 1
 	}
-	if idx >= 0 && idx < len(snaps) && snaps[idx] != nil {
-		*matcher.Engine() = *snaps[idx].Clone()
+	if last != nil && *last == idx {
+		return
 	}
+	if idx >= 0 && idx < len(snaps) && snaps[idx] != nil {
+		*matcher.Engine() = *snaps[idx]
+		if last != nil {
+			*last = idx
+		}
+	}
+}
+
+func detachEngine(matcher *selection.Matcher) {
+	eng := matcher.Engine()
+	*eng = *eng.Clone()
+}
+
+func listable(opts Options) bool {
+	w := opts.Walk
+	return !w.FollowLinks && !w.SameFileSystem && w.MinDepth == 0 && w.MaxDepth == nil
+}
+
+type listWalker struct {
+	ctx     context.Context
+	matcher *selection.Matcher
+	out     *discovery
+	opts    Options
+	picked  uint64
+}
+
+func listDiscover(ctx context.Context, root string, opts Options) (*discovery, error) {
+	if root == "" {
+		return nil, os.ErrInvalid
+	}
+	matcher, err := selection.NewDeferredMatcher(root, selectionConfig(opts, opts.Walk, false))
+	if err != nil {
+		return nil, err
+	}
+	dents, err := os.ReadDir(matcher.Root())
+	if err != nil {
+		return nil, err
+	}
+	out := &discovery{root: matcher.Root(), complete: true, portable: portablePolicy(opts), emit: opts.emitPath}
+	w := &listWalker{ctx: ctx, matcher: matcher, out: out, opts: opts}
+	w.noteListed(matcher.Root(), "", dents)
+	w.walk(matcher.Root(), "", 0, dents)
+	return out, nil
+}
+
+func (w *listWalker) walk(abs, rel string, depth int, dents []os.DirEntry) {
+	if w.out.emitErr != nil {
+		return
+	}
+	if w.ctx.Err() != nil {
+		w.out.term = TermCancelled
+		w.out.complete = false
+		return
+	}
+	if stopped, term := limitsHit(w.opts, w.picked, 0); stopped {
+		w.out.term = term
+		w.out.complete = false
+		return
+	}
+	w.visitFiles(rel, dents)
+	if w.out.term != TermNone {
+		return
+	}
+	w.visitDirs(abs, rel, depth, dents)
+}
+
+func (w *listWalker) visitFiles(rel string, dents []os.DirEntry) {
+	for i := range dents {
+		isDir, isFile, symlink := dentKind(dents[i])
+		if isDir {
+			continue
+		}
+		name := dents[i].Name()
+		fileRel := name
+		if rel != "" {
+			fileRel = rel + "/" + name
+		}
+		if !w.keepFile(fileRel, name, isFile, symlink) {
+			continue
+		}
+			if !emitSelected(w.out, fileRel) {
+			return
+		}
+		w.picked++
+	}
+}
+
+func (w *listWalker) keepFile(rel, name string, isFile, symlink bool) bool {
+	if keep, fast := w.matcher.KeepListedFile(name, isFile, symlink); fast {
+		return keep
+	}
+	return w.matcher.DecidePath(selection.PathQuery{
+		Rel: rel, Name: name, IsFile: isFile, IsSymlink: symlink,
+	}).IsSelected()
+}
+
+func (w *listWalker) visitDirs(abs, rel string, depth int, dents []os.DirEntry) {
+	for i := range dents {
+		isDir, _, _ := dentKind(dents[i])
+		if !isDir {
+			continue
+		}
+		name := dents[i].Name()
+		childRel := name
+		if rel != "" {
+			childRel = rel + "/" + name
+		}
+		if !w.keepDir(childRel, name) {
+			continue
+		}
+		w.enter(joinChild(abs, name), childRel, depth+1)
+	}
+}
+
+func (w *listWalker) keepDir(rel, name string) bool {
+	if w.matcher.MayContain(rel) == selection.ContainNo {
+		return false
+	}
+	if keep, fast := w.matcher.KeepListedDir(rel, name); fast {
+		return keep
+	}
+	return w.matcher.DecidePath(selection.PathQuery{Rel: rel, Name: name, IsDir: true}).ShouldDescend()
+}
+
+func (w *listWalker) enter(abs, rel string, depth int) {
+	dents, err := os.ReadDir(abs)
+	if err != nil {
+		w.out.complete = false
+		return
+	}
+	for _, msg := range w.matcher.WithListed(abs, rel, dents, func() {
+		w.walk(abs, rel, depth, dents)
+	}) {
+		w.out.warnings = append(w.out.warnings, Warning{Relative: rel, Message: msg})
+		w.out.complete = false
+	}
+}
+
+func (w *listWalker) noteListed(abs, rel string, dents []os.DirEntry) {
+	for _, msg := range w.matcher.EnterDirListed(abs, rel, dents) {
+		w.out.warnings = append(w.out.warnings, Warning{Relative: rel, Message: msg})
+		w.out.complete = false
+	}
+}
+
+func dentKind(dent os.DirEntry) (isDir, isFile, symlink bool) {
+	mode := dent.Type()
+	if mode == 0 {
+		if info, err := dent.Info(); err == nil {
+			mode = info.Mode()
+		}
+	}
+	symlink = mode&os.ModeSymlink != 0
+	return !symlink && mode.IsDir(), !symlink && mode.IsRegular(), symlink
+}
+
+func joinChild(dir, name string) string {
+	if dir == "" {
+		return name
+	}
+	return dir + string(os.PathSeparator) + name
 }
 
 func limitsHit(opts Options, selected, total uint64) (bool, Termination) {

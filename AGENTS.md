@@ -47,18 +47,24 @@ Following live `main` as the oracle destroys reproducibility.
 
 P2–P6 method surfaces are implemented: ignore, scan, parallel/pull,
 content visit, cache v2, incremental watch apply. Go-market extensions include
-selective links, arbitrary `fs.FS`, cached callback target `Stat`, and a
+selective links, arbitrary `fs.FS`, cached callback target `Stat`, a
 lazy single-directory `DirScanner` with reusable scratch buffer, optional
 `.gitmodules` skipping, changed-only content visit, confined watch-plan apply,
-and executor-owned parallel admission. P7
+executor-owned parallel admission, compiled override-scope pruning,
+`Explain`, identity-keyed content reuse, a shared admission budget,
+ordered-parallel directory pull, and a persistent Merkle `TreeSnapshot`.
+`ScanSession` still walks retained records for apply. P7
 fsnotify module and P8 official benches remain open. Functional parity,
 including cache/watch sequences, is in the Windows/Linux/macOS CI matrix.
 Ledger: `compat/ledger.json`.
 
 ## Next implementation work
 
-1. Optional `watch` module with fsnotify (never a main-module require).
-2. Official B01–B14 campaign against fastwalk, gocodewalker, and the rust oracle.
+1. Keep a `TreeSnapshot` on `ScanSession` and apply deltas without rebuilding
+   the Merkle tree from all N records. Do not replace `LegacyRevision`.
+2. Drive inspect/content through the same ready count+byte budget.
+3. Optional `watch` module with fsnotify (never a main-module require).
+4. Official B01–B14 campaign against fastwalk, gocodewalker, and the rust oracle.
    Informal go-compat benches are not that campaign.
 
 ## Local checks

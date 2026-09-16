@@ -1,6 +1,7 @@
 package selection
 
 import (
+	"encoding/binary"
 	"hash"
 	"path/filepath"
 	"regexp"
@@ -16,6 +17,15 @@ type Filters struct {
 	IncludeDirRegex, ExcludeDirRegex     []*regexp.Regexp
 	ExcludeExtensions                    []string
 	LocationExclude                      []string
+	err                                  error
+}
+
+func (f Filters) Err() error { return f.err }
+
+func (f *Filters) SetErr(err error) {
+	if err != nil {
+		f.err = err
+	}
 }
 
 func (f Filters) Empty() bool {
@@ -23,6 +33,8 @@ func (f Filters) Empty() bool {
 		len(f.IncludeNameRegex)+len(f.ExcludeNameRegex)+len(f.IncludeDirRegex)+len(f.ExcludeDirRegex)+
 		len(f.ExcludeExtensions)+len(f.LocationExclude) == 0
 }
+
+func (f Filters) needsLocation() bool { return len(f.LocationExclude) > 0 }
 
 func (f Filters) rejectDir(rel, name, joined string) bool {
 	if len(f.IncludeDirs) > 0 && !containsFold(f.IncludeDirs, name) && rel != "" {
@@ -131,19 +143,29 @@ func excludeExtension(name string, exts []string) bool {
 }
 
 func writeFilterList(h hash.Hash, label string, values []string) {
-	_, _ = h.Write([]byte(label))
-	for _, value := range values {
-		_, _ = h.Write([]byte(value))
-		_, _ = h.Write([]byte{0})
-	}
+	writeFilterField(h, label, values)
 }
 
 func writeFilterRegex(h hash.Hash, label string, exprs []*regexp.Regexp) {
-	_, _ = h.Write([]byte(label))
+	values := make([]string, 0, len(exprs))
 	for _, expr := range exprs {
 		if expr != nil {
-			_, _ = h.Write([]byte(expr.String()))
-			_, _ = h.Write([]byte{0})
+			values = append(values, expr.String())
 		}
+	}
+	writeFilterField(h, label, values)
+}
+
+func writeFilterField(h hash.Hash, label string, values []string) {
+	_, _ = h.Write([]byte{0x1e})
+	_, _ = h.Write([]byte(label))
+	_, _ = h.Write([]byte{0})
+	var hdr [4]byte
+	binary.LittleEndian.PutUint32(hdr[:], uint32(len(values)))
+	_, _ = h.Write(hdr[:])
+	for _, value := range values {
+		binary.LittleEndian.PutUint32(hdr[:], uint32(len(value)))
+		_, _ = h.Write(hdr[:])
+		_, _ = h.Write([]byte(value))
 	}
 }

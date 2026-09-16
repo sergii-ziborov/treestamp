@@ -70,6 +70,26 @@ func TestMatchedAndRefresh(t *testing.T) {
 	}
 }
 
+func TestLoadPathScopeNestedIgnore(t *testing.T) {
+	root := t.TempDir()
+	mustMkdir(t, filepath.Join(root, "sub"))
+	mustWrite(t, filepath.Join(root, "sub", ".gitignore"), "*.tmp\n")
+	mustWrite(t, filepath.Join(root, "sub", "drop.tmp"), "x")
+	m, err := NewMatcher(root, Config{IgnoreFiles: []string{".gitignore"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := PathQuery{Rel: "sub/drop.tmp", Name: "drop.tmp", IsFile: true}
+	if m.DecidePath(q).IsSelected() == false {
+		t.Fatal("root-only matcher should not yet see nested ignore")
+	}
+	_ = m.LoadPathScope("sub/drop.tmp")
+	dec := m.DecideWithAncestors(q)
+	if dec.IsSelected() || dec.Skip != SkipIgnored {
+		t.Fatalf("nested ignore %+v", dec)
+	}
+}
+
 func TestWalkSkipAndFileTypes(t *testing.T) {
 	root := t.TempDir()
 	m, err := NewMatcher(root, Config{
@@ -207,5 +227,24 @@ func TestDeclarativeFilters(t *testing.T) {
 	}
 	if m.DecidePath(PathQuery{Rel: "zz-drop/a.go", Name: "a.go", IsFile: true}).IsSelected() {
 		t.Fatal("location")
+	}
+}
+
+func TestCompiledSelectionMayContain(t *testing.T) {
+	plan := Compile(Config{OverrideRules: []string{"services/payments/**/*.go", "libs/contracts/**/*.proto"}})
+	if plan.MayContain("services/payments/api.go") != ContainMaybe {
+		t.Fatal("hit")
+	}
+	if plan.MayContain("services") != ContainMaybe {
+		t.Fatal("parent")
+	}
+	if plan.MayContain("vendor") != ContainNo {
+		t.Fatal("vendor")
+	}
+	if Compile(Config{OverrideRules: []string{"**/*.go"}}).MayContain("vendor") != ContainMaybe {
+		t.Fatal("unbounded")
+	}
+	if Compile(Config{}).MayContain("anywhere") != ContainMaybe {
+		t.Fatal("open")
 	}
 }

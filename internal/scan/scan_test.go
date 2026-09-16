@@ -413,6 +413,50 @@ func TestVisitChangedOnlyPlanFiles(t *testing.T) {
 	}
 }
 
+func TestVisitChangedHonorsNestedIgnore(t *testing.T) {
+	root := t.TempDir()
+	mustMkdir(t, filepath.Join(root, "sub"))
+	mustWrite(t, filepath.Join(root, "sub", ".gitignore"), "*.tmp\n")
+	mustWrite(t, filepath.Join(root, "sub", "drop.tmp"), "tmp")
+	mustWrite(t, filepath.Join(root, "keep.go"), "package keep\n")
+	var seen []string
+	report, err := VisitChanged(context.Background(), root, DefaultOptions(), WatchPlan{Changed: []string{"sub/drop.tmp"}}, func(int) ContentVisitor {
+		return func(ev ContentVisitEvent) ContentVisitControl {
+			if ev.Kind == ContentFileStart {
+				seen = append(seen, ev.File.Relative)
+			}
+			return ContentContinue
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 0 {
+		t.Fatalf("changed visit leaked ignored file %v", seen)
+	}
+	full, err := Full(context.Background(), root, DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range full.Files {
+		if file.Relative == "sub/drop.tmp" {
+			t.Fatal("full selected ignored tmp")
+		}
+	}
+	_ = report
+}
+
+func TestPathsTimeoutIsError(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "a.go"), "package a\n")
+	opts := DefaultOptions()
+	opts.Limits.Timeout = time.Nanosecond
+	opts.Started = time.Now().Add(-time.Second)
+	if _, err := Paths(context.Background(), root, opts); err == nil {
+		t.Fatal("timeout must fail ScanPaths")
+	}
+}
+
 func TestWatchReplacesPrefixEvidenceAndRejectsEscape(t *testing.T) {
 	root := t.TempDir()
 	mustWrite(t, filepath.Join(root, "keep.go"), "package keep\n")
@@ -461,4 +505,60 @@ func TestWatchReplacesPrefixEvidenceAndRejectsEscape(t *testing.T) {
 	if !sawIO {
 		t.Fatalf("missing %+v", missing.Report.Skipped)
 	}
+	if missing.Report.Complete {
+		t.Fatal("io skip must not look complete")
+	}
+}
+
+func TestWatchKeepsIncrementalWithNestedIgnores(t *testing.T) {
+	root := t.TempDir()
+	mustMkdir(t, filepath.Join(root, "other"))
+	mustMkdir(t, filepath.Join(root, "sub"))
+	mustWrite(t, filepath.Join(root, "other", ".gitignore"), "*.log\n")
+	mustWrite(t, filepath.Join(root, "sub", ".gitignore"), "*.tmp\n")
+	mustWrite(t, filepath.Join(root, "keep.go"), "package keep\n")
+	mustWrite(t, filepath.Join(root, "sub", "ok.go"), "package ok\n")
+	mustWrite(t, filepath.Join(root, "sub", "drop.tmp"), "tmp")
+	mustWrite(t, filepath.Join(root, "other", "noise.log"), "log")
+	opts := DefaultOptions()
+	first, err := Full(context.Background(), root, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(root, "sub", "ok.go"), "package ok\n// changed\n")
+	update, err := Watch(context.Background(), root, opts, first, WatchPlan{Changed: []string{"sub/ok.go"}})
+	if err != nil || update.Reason != WatchIncremental {
+		t.Fatalf("reason %v %v", update, err)
+	}
+	fresh, err := Full(context.Background(), root, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected(update.Report) != selected(fresh) {
+		t.Fatalf("watch %v full %v", selected(update.Report), selected(fresh))
+	}
+}
+
+func TestWatchPolicyChangeForcesRescan(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "keep.go"), "package keep\n")
+	mustWrite(t, filepath.Join(root, "drop.go"), "package drop\n")
+	first, err := Full(context.Background(), root, DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := DefaultOptions()
+	next.Filters.ExcludeNames = []string{"drop.go"}
+	update, err := Watch(context.Background(), root, next, first, WatchPlan{Changed: []string{"keep.go"}})
+	if err != nil || update.Reason != WatchFullPolicy {
+		t.Fatalf("policy %v %v", update, err)
+	}
+}
+
+func selected(report *Report) string {
+	var out []string
+	for _, file := range report.Files {
+		out = append(out, file.Relative)
+	}
+	return strings.Join(out, ",")
 }

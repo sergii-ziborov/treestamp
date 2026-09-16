@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/sergii-ziborov/treestamp/internal/fileread"
 	"github.com/sergii-ziborov/treestamp/internal/hashx"
 )
 
@@ -187,6 +188,32 @@ func TestMapIOAndSlashRel(t *testing.T) {
 	}
 	if slashRel(".") != "" || slashRel("a/b") != "a/b" {
 		t.Fatal("slash")
+	}
+}
+
+func TestSnapshotIdentityRejectsReplacement(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "a.txt")
+	if err := os.WriteFile(path, []byte("xxx"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ver := fileread.FromInfo(path, info)
+	files := []File{{Absolute: path, Relative: "a.txt", Bytes: 3, ModifiedNS: ver.ModifiedNS, Identity: ver.Identity}}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("yyy"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, info.ModTime(), info.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ReadBounded(root, files, "a.txt", 100); err == nil {
+		t.Fatal("same-size replacement accepted")
 	}
 }
 

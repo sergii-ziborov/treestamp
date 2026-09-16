@@ -12,8 +12,10 @@ import (
 	"os"
 	stdlib "runtime"
 	"sort"
+	"sync"
 
 	"github.com/sergii-ziborov/treestamp/internal/fileread"
+	"github.com/sergii-ziborov/treestamp/internal/platform"
 	"github.com/sergii-ziborov/treestamp/internal/filetypes"
 	"github.com/sergii-ziborov/treestamp/internal/hashx"
 	"github.com/sergii-ziborov/treestamp/internal/ignore"
@@ -38,8 +40,9 @@ func inspect(ctx context.Context, files []candidate, opts Options) ([]ScannedFil
 			workers = min(stdlib.GOMAXPROCS(0), 4)
 		}
 	}
+	memo := newContentMemo()
 	runOne := func(c candidate) inspectResult {
-		file, skip, stat, err := inspectOne(c, opts, index)
+		file, skip, stat, err := inspectOne(ctx, c, opts, index, memo)
 		return inspectResult{file: file, skip: skip, stat: stat, err: err}
 	}
 	if workers == 1 {
@@ -106,6 +109,7 @@ func inspectParallel(ctx context.Context, files []candidate, workers int, runOne
 
 func inspectCompact(ctx context.Context, files []candidate, opts Options) ([]CompactFile, []Skipped, CacheStats, error) {
 	index := cacheIndex(opts)
+	memo := newContentMemo()
 	var compact []CompactFile
 	var skipped []Skipped
 	var stats CacheStats
@@ -113,7 +117,7 @@ func inspectCompact(ctx context.Context, files []candidate, opts Options) ([]Com
 		if err := ctx.Err(); err != nil {
 			return nil, nil, stats, err
 		}
-		file, skip, stat, err := inspectOne(c, opts, index)
+		file, skip, stat, err := inspectOne(ctx, c, opts, index, memo)
 		if err != nil {
 			return nil, nil, stats, err
 		}
@@ -155,18 +159,74 @@ func cacheIndex(opts Options) map[string]CacheEntry {
 	return index
 }
 
-func inspectOne(c candidate, opts Options, index map[string]CacheEntry) (ScannedFile, *Skipped, CacheStats, error) {
+func inspectOne(ctx context.Context, c candidate, opts Options, index map[string]CacheEntry, memo *contentMemo) (ScannedFile, *Skipped, CacheStats, error) {
 	file := ScannedFile{Absolute: c.abs, Relative: c.rel, Bytes: c.size, Version: c.version}
-	if reused, skip, stat, ok := reuseCached(c, opts, index, &file); ok {
+	if reused, skip, stat, ok := reuseCached(ctx, c, opts, index, &file); ok {
 		return file, skip, stat, reused
 	}
 	if !opts.HashFileContents && !opts.DetectBinary {
 		return file, nil, CacheStats{}, nil
 	}
-	return hashOpened(c, opts, file)
+	if hit, ok := memo.lookup(c); ok {
+		applyMemo(&file, hit, opts)
+		return file, nil, CacheStats{ReusedHashes: 1}, nil
+	}
+	file, skip, stat, err := hashOpened(ctx, c, opts, file)
+	if err == nil && skip == nil {
+		memo.store(file)
+	}
+	return file, skip, stat, err
 }
 
-func reuseCached(c candidate, opts Options, index map[string]CacheEntry, file *ScannedFile) (error, *Skipped, CacheStats, bool) {
+type memoHit struct {
+	hash, fp string
+	size     uint64
+	mod      *uint64
+	binary   bool
+}
+type contentMemo struct {
+	mu sync.Mutex
+	by map[platform.Identity]memoHit
+}
+
+func newContentMemo() *contentMemo { return &contentMemo{by: map[platform.Identity]memoHit{}} }
+
+func (m *contentMemo) lookup(c candidate) (memoHit, bool) {
+	if m == nil || c.version.Identity == nil {
+		return memoHit{}, false
+	}
+	m.mu.Lock()
+	hit, ok := m.by[*c.version.Identity]
+	m.mu.Unlock()
+	if !ok || hit.size != c.size {
+		return memoHit{}, false
+	}
+	if c.version.ModifiedNS != nil && hit.mod != nil && *c.version.ModifiedNS != *hit.mod {
+		return memoHit{}, false
+	}
+	return hit, true
+}
+
+func (m *contentMemo) store(file ScannedFile) {
+	if m == nil || file.Version.Identity == nil {
+		return
+	}
+	m.mu.Lock()
+	m.by[*file.Version.Identity] = memoHit{
+		hash: file.ContentHash, fp: file.ContentFingerprint, size: file.Bytes,
+		mod: file.Version.ModifiedNS, binary: file.BinaryChecked,
+	}
+	m.mu.Unlock()
+}
+
+func applyMemo(file *ScannedFile, hit memoHit, opts Options) {
+	if opts.HashFileContents {
+		file.ContentHash, file.ContentFingerprint = hit.hash, hit.fp
+	}
+	file.BinaryChecked = opts.DetectBinary && hit.binary
+}
+
+func reuseCached(ctx context.Context, c candidate, opts Options, index map[string]CacheEntry, file *ScannedFile) (error, *Skipped, CacheStats, bool) {
 	cached, ok := index[c.rel]
 	if !ok || !canReuse(c, opts, cached) {
 		return nil, nil, CacheStats{}, false
@@ -181,10 +241,17 @@ func reuseCached(c candidate, opts Options, index map[string]CacheEntry, file *S
 		apply()
 		return nil, nil, CacheStats{ReusedHashes: 1}, true
 	}
-	fp, err := fingerprintFile(c.abs)
+	path, skip := confineCandidate(c, opts)
+	if skip != nil {
+		return nil, skip, CacheStats{}, true
+	}
+	fp, err := fingerprintFile(ctx, path)
 	if err == nil && fp == cached.ContentFingerprint {
 		apply()
 		return nil, nil, CacheStats{ReusedHashes: 1, FingerprintReads: 1}, true
+	}
+	if err != nil && ctx.Err() != nil {
+		return ctx.Err(), nil, CacheStats{FingerprintReads: 1}, true
 	}
 	return nil, nil, CacheStats{}, false
 }
@@ -205,14 +272,25 @@ func canReuse(c candidate, opts Options, cached CacheEntry) bool {
 	return true
 }
 
-func hashOpened(c candidate, opts Options, file ScannedFile) (ScannedFile, *Skipped, CacheStats, error) {
-	path := c.abs
-	if opts.Root != "" {
-		if confined, err := fileread.Confine(opts.Root, c.abs); err == nil {
-			path = confined
-		} else if errors.Is(err, fileread.ErrEscape) || errors.Is(err, fileread.ErrSymlink) {
-			return file, &Skipped{Relative: c.rel, Kind: selection.SkipPathEscape, Detail: err.Error()}, CacheStats{}, nil
-		}
+func confineCandidate(c candidate, opts Options) (string, *Skipped) {
+	if opts.Root == "" {
+		return c.abs, nil
+	}
+	confined, err := fileread.ConfineAt(opts.Root, c.abs, opts.Walk.FollowLinks)
+	if err == nil {
+		return confined, nil
+	}
+	kind := selection.SkipIOError
+	if errors.Is(err, fileread.ErrEscape) || errors.Is(err, fileread.ErrSymlink) {
+		kind = selection.SkipPathEscape
+	}
+	return "", &Skipped{Relative: c.rel, Kind: kind, Detail: err.Error()}
+}
+
+func hashOpened(ctx context.Context, c candidate, opts Options, file ScannedFile) (ScannedFile, *Skipped, CacheStats, error) {
+	path, skip := confineCandidate(c, opts)
+	if skip != nil {
+		return file, skip, CacheStats{}, nil
 	}
 	f, err := os.Open(path)
 	if err != nil {
@@ -222,6 +300,10 @@ func hashOpened(c candidate, opts Options, file ScannedFile) (ScannedFile, *Skip
 	if skip := checkContentSize(f, c, opts); skip != nil {
 		return file, skip, CacheStats{}, nil
 	}
+	return hashChunks(ctx, f, c, opts, file)
+}
+
+func hashChunks(ctx context.Context, f *os.File, c candidate, opts Options, file ScannedFile) (ScannedFile, *Skipped, CacheStats, error) {
 	var h hash.Hash
 	if opts.HashFileContents {
 		h = sha256.New()
@@ -231,6 +313,11 @@ func hashOpened(c candidate, opts Options, file ScannedFile) (ScannedFile, *Skip
 	buf := make([]byte, 64*1024)
 	var read uint64
 	for {
+		if ctx != nil {
+			if err := ctx.Err(); err != nil {
+				return file, nil, CacheStats{ContentReads: 1}, err
+			}
+		}
 		n, readErr := f.Read(buf)
 		if n > 0 {
 			chunk := buf[:n]
@@ -282,7 +369,7 @@ func checkContentSize(f *os.File, c candidate, opts Options) *Skipped {
 	return nil
 }
 
-func fingerprintFile(path string) (string, error) {
+func fingerprintFile(ctx context.Context, path string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return "", err
@@ -291,6 +378,9 @@ func fingerprintFile(path string) (string, error) {
 	fp := hashx.NewContentFingerprint()
 	buf := make([]byte, 64*1024)
 	for {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
 		n, err := f.Read(buf)
 		if n > 0 {
 			fp.Write(buf[:n])

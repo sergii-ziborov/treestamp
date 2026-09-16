@@ -36,6 +36,7 @@ func (w *Walker) visitPlain(path string, depth int, dent os.DirEntry, info os.Fi
 	return &WalkEntry{
 		root: w.root, path: path, name: entryName(dent, info), depth: depth,
 		isFile: isFile, isDir: isDir, symlink: symlink, dent: dent, info: info,
+		rel: relativeUnder(w.root, path), relOK: true,
 	}
 }
 
@@ -99,7 +100,7 @@ func plainWalkEntry(root, path string, depth int, dent os.DirEntry, mode os.File
 	return &WalkEntry{
 		root: root, path: path, name: dent.Name(), depth: depth,
 		isFile: !symlink && mode.IsRegular(), isDir: !symlink && mode.IsDir(),
-		symlink: symlink, dent: dent,
+		symlink: symlink, dent: dent, rel: relativeUnder(root, path), relOK: true,
 	}
 }
 

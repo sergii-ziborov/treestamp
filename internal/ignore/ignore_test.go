@@ -237,6 +237,19 @@ func TestGitModulesOptional(t *testing.T) {
 	if len(got) != 1 || got[0] != "vendor/foo" {
 		t.Fatalf("extract %v", got)
 	}
+	quoted := extractGitModuleFolders("path = \"third party/lib\"\npath = vendor[1]\npath = lib\n")
+	if len(quoted) != 3 || quoted[0] != "third party/lib" || quoted[1] != "vendor[1]" || quoted[2] != "lib" {
+		t.Fatalf("literal extract %v", quoted)
+	}
+	lit := NewEngine(nil, false, nil)
+	lit.SetGitModules(true)
+	lit.applyGitModules("", []byte("path = vendor[1]\npath = lib\n"))
+	if !lit.Match("vendor[1]", true).IsIgnored() || lit.Match("vendor1", true).IsIgnored() {
+		t.Fatal("bracket path must stay literal")
+	}
+	if !lit.Match("lib", true).IsIgnored() || lit.Match("other/lib", true).IsIgnored() {
+		t.Fatal("basename must not match nested lib")
+	}
 }
 
 func TestGlobParseAndEngineEdges(t *testing.T) {
@@ -306,4 +319,15 @@ func TestGlobParseAndEngineEdges(t *testing.T) {
 	_ = matchPattern("pre*", "prefix", true)
 	_ = matchPattern("*suf", "xsuf", true)
 	_ = asciiLower("AbC1")
+}
+
+func TestExplainWinningRule(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, ".gitignore"), "# keep\ngenerated/**\n")
+	eng := NewEngine([]string{".gitignore"}, false, nil)
+	eng.LoadDir(dir, "")
+	got, hit := eng.Explain("generated/model.go", false)
+	if got != MatchIgnore || hit.Pattern != "generated/**" || hit.Location != ".gitignore" || hit.Line != 2 {
+		t.Fatalf("%v %+v", got, hit)
+	}
 }

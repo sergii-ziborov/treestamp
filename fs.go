@@ -18,6 +18,7 @@ import (
 	"regexp"
 
 	"github.com/sergii-ziborov/treestamp/internal/dirread"
+	"github.com/sergii-ziborov/treestamp/internal/scan"
 	"github.com/sergii-ziborov/treestamp/internal/selection"
 	"github.com/sergii-ziborov/treestamp/internal/walk"
 	"github.com/sergii-ziborov/treestamp/internal/walkfs"
@@ -117,6 +118,8 @@ func (s *DirScanner) Close() error { return s.Err() }
 // ErrTerminateWalk is returned when FileWalker.Terminate stops a walk.
 var ErrTerminateWalk = errors.New("treestamp terminated")
 
+var errPostChildrenUnsupported = errors.New("PostChildrenCallback requires NumWorkers=0 and FollowSymbolicLinks=false")
+
 // Filters is the public declarative name/dir/regex filter set.
 type Filters = selection.Filters
 
@@ -175,7 +178,10 @@ func WalkDirs(root string, opts DirWalkOptions) error {
 			return inner(path, d, err)
 		}
 	}
-	if opts.NumWorkers == 0 && !opts.FollowSymbolicLinks && opts.PostChildrenCallback != nil {
+	if opts.PostChildrenCallback != nil {
+		if opts.NumWorkers != 0 || opts.FollowSymbolicLinks {
+			return errPostChildrenUnsupported
+		}
 		return walk.WalkCallbackHooks(root, fn, opts.PostChildrenCallback, opts.ToSlash, opts.ContentsFirst)
 	}
 	cfg := Config{
@@ -278,15 +284,17 @@ func emitFileWalkerRoot(w *FileWalker, root string, opts Options) error {
 	if opts.DetectBinaryFiles {
 		return emitScannedFiles(w, root, scanner)
 	}
-	paths, err := scanner.ScanPaths(context.Background())
-	if err != nil {
-		return err
-	}
-	return pushWalkerPaths(w, root, paths)
+	return streamWalkerPaths(w, root, opts)
+}
+
+func streamWalkerPaths(w *FileWalker, root string, opts Options) error {
+	return scan.StreamPaths(walkerContext(w), root, toScanOptions(opts), func(rel string) error {
+		return pushWalkerPath(w, root, rel)
+	})
 }
 
 func emitScannedFiles(w *FileWalker, root string, scanner *Scanner) error {
-	report, err := scanner.Scan(context.Background())
+	report, err := scanner.Scan(walkerContext(w))
 	if err != nil {
 		return err
 	}
@@ -297,35 +305,76 @@ func emitScannedFiles(w *FileWalker, root string, scanner *Scanner) error {
 	return pushWalkerPaths(w, root, paths)
 }
 
+func walkerContext(w *FileWalker) context.Context {
+	if w != nil && w.ctx != nil {
+		return w.ctx
+	}
+	return context.Background()
+}
+
 func pushWalkerPaths(w *FileWalker, root string, paths []string) error {
 	for _, rel := range paths {
-		if w.terminate.Load() {
-			return ErrTerminateWalk
+		if err := pushWalkerPath(w, root, rel); err != nil {
+			return err
 		}
-		native := filepath.FromSlash(rel)
-		w.queue <- &File{Location: filepath.Join(root, filepath.Dir(native)), Filename: filepath.Base(native)}
 	}
 	return nil
 }
 
-func CompileFilters(includeNames, excludeNames, includeDirs, excludeDirs []string, includeNameRE, excludeNameRE, includeDirRE, excludeDirRE []string) Filters {
-	return Filters{
-		IncludeNames: includeNames, ExcludeNames: excludeNames,
-		IncludeDirs: includeDirs, ExcludeDirs: excludeDirs,
-		IncludeNameRegex: compileRegexes(includeNameRE), ExcludeNameRegex: compileRegexes(excludeNameRE),
-		IncludeDirRegex: compileRegexes(includeDirRE), ExcludeDirRegex: compileRegexes(excludeDirRE),
+func pushWalkerPath(w *FileWalker, root, rel string) error {
+	if w.terminate.Load() {
+		return ErrTerminateWalk
+	}
+	native := filepath.FromSlash(rel)
+	file := &File{Location: filepath.Join(root, filepath.Dir(native)), Filename: filepath.Base(native)}
+	if w.stop == nil {
+		w.queue <- file
+		return nil
+	}
+	select {
+	case <-w.stop:
+		return ErrTerminateWalk
+	case w.queue <- file:
+		return nil
 	}
 }
 
-func compileRegexes(patterns []string) []*regexp.Regexp {
+func CompileFilters(includeNames, excludeNames, includeDirs, excludeDirs []string, includeNameRE, excludeNameRE, includeDirRE, excludeDirRE []string) (Filters, error) {
+	includeNameRegex, err := compileRegexes(includeNameRE)
+	if err != nil {
+		return Filters{}, err
+	}
+	excludeNameRegex, err := compileRegexes(excludeNameRE)
+	if err != nil {
+		return Filters{}, err
+	}
+	includeDirRegex, err := compileRegexes(includeDirRE)
+	if err != nil {
+		return Filters{}, err
+	}
+	excludeDirRegex, err := compileRegexes(excludeDirRE)
+	if err != nil {
+		return Filters{}, err
+	}
+	return Filters{
+		IncludeNames: includeNames, ExcludeNames: excludeNames,
+		IncludeDirs: includeDirs, ExcludeDirs: excludeDirs,
+		IncludeNameRegex: includeNameRegex, ExcludeNameRegex: excludeNameRegex,
+		IncludeDirRegex: includeDirRegex, ExcludeDirRegex: excludeDirRegex,
+	}, nil
+}
+
+func compileRegexes(patterns []string) ([]*regexp.Regexp, error) {
 	var out []*regexp.Regexp
 	for _, pattern := range patterns {
 		if pattern == "" {
 			continue
 		}
-		if expr, err := regexp.Compile(pattern); err == nil {
-			out = append(out, expr)
+		expr, err := regexp.Compile(pattern)
+		if err != nil {
+			return nil, err
 		}
+		out = append(out, expr)
 	}
-	return out
+	return out, nil
 }

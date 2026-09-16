@@ -3,6 +3,7 @@
 package dirread
 
 import (
+	"encoding/binary"
 	"os"
 	"syscall"
 	"unsafe"
@@ -75,10 +76,17 @@ func readInto(dir string, buf []Record, tmp []byte) ([]Record, error) {
 	}
 }
 
+func ParseRecords(block []byte) ([]Record, error) {
+	return appendRecords(".", block, nil)
+}
+
 func appendRecords(dir string, block []byte, buf []Record) ([]Record, error) {
 	for consumed := 0; consumed < len(block); {
 		adv, name, typ := parseLinux(block[consumed:])
 		if adv == 0 {
+			if consumed < len(block) {
+				return buf, ErrTruncatedRecord
+			}
 			break
 		}
 		consumed += adv
@@ -115,7 +123,7 @@ type fsMode = os.FileMode
 
 func openRetry(path string) (int, error) {
 	for {
-		fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_CLOEXEC, 0)
+		fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_CLOEXEC|syscall.O_DIRECTORY, 0)
 		if err != syscall.EINTR {
 			return fd, err
 		}
@@ -188,16 +196,12 @@ func readU16(b []byte, off uintptr) (uint16, bool) {
 	if off+2 > uintptr(len(b)) {
 		return 0, false
 	}
-	return uint16(b[off]) | uint16(b[off+1])<<8, true
+	return binary.NativeEndian.Uint16(b[off : off+2]), true
 }
 
 func readU64(b []byte, off uintptr) (uint64, bool) {
 	if off+8 > uintptr(len(b)) {
 		return 0, false
 	}
-	var v uint64
-	for i := uintptr(0); i < 8; i++ {
-		v |= uint64(b[off+i]) << (8 * i)
-	}
-	return v, true
+	return binary.NativeEndian.Uint64(b[off : off+8]), true
 }

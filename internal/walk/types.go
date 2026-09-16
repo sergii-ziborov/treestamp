@@ -108,18 +108,29 @@ type WalkEntry struct {
 	info    fs.FileInfo
 	stat    *fileInfoCache
 	cb      callbackDirEntry
+	rel     string
+	relOK   bool
 }
 
 func (e *WalkEntry) Path() string { return e.path }
 
 func (e *WalkEntry) RelativePath() string {
-	if e.path == "" || e.root == "" {
+	if e.relOK {
+		return e.rel
+	}
+	e.rel = relativeUnder(e.root, e.path)
+	e.relOK = true
+	return e.rel
+}
+
+func relativeUnder(root, path string) string {
+	if path == "" || root == "" || path == root {
 		return ""
 	}
-	if filepath.Clean(e.path) == filepath.Clean(e.root) {
-		return ""
+	if len(path) > len(root) && path[:len(root)] == root && os.IsPathSeparator(path[len(root)]) {
+		return path[len(root)+1:]
 	}
-	rel, err := filepath.Rel(e.root, e.path)
+	rel, err := filepath.Rel(root, path)
 	if err != nil || rel == "." {
 		return ""
 	}
@@ -420,12 +431,11 @@ func (e *fastEntry) IsDir() bool       { return e.typ.IsDir() }
 func (e *fastEntry) Type() fs.FileMode { return e.typ }
 func (e *fastEntry) Depth() int        { return e.depth }
 func (e *fastEntry) Info() (fs.FileInfo, error) {
+	if e.ready != nil {
+		return e.ready, nil
+	}
 	if e.info == nil {
 		e.info = newFileInfoCache()
-		if e.ready != nil {
-			e.info.load(e.ready, nil)
-			return e.ready, nil
-		}
 	}
 	return e.info.getLstat(e.path)
 }

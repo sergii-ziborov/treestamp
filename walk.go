@@ -51,12 +51,7 @@ type (
 	SelectionMatcher              = selection.Matcher
 	SelectionDecision             = selection.Decision
 	SelectionDisposition          = selection.Disposition
-	RepositoryMatch               = ignore.Match
-	StatefulWalkEntry[E any]      = walk.StatefulWalkEntry[E]
-	StatefulWalkBuilder[R, E any] = walk.StatefulWalkBuilder[R, E]
-	StatefulWalker[R, E any]      = walk.StatefulWalker[R, E]
-	ParallelStatefulWalker[E any] = walk.ParallelStatefulWalker[E]
-	StatefulResult[E any]         = walk.StatefulResult[E]
+	RepositoryMatch = ignore.Match
 )
 
 const (
@@ -78,7 +73,6 @@ const (
 	WalkContinue               = walk.WalkContinue
 	WalkSkip                   = walk.WalkSkip
 	WalkQuit                   = walk.WalkQuit
-	// WalkTraverseLink selects one directory symlink in ParallelWalker.Visit.
 	WalkTraverseLink    = walk.WalkTraverseLink
 	SelectedFile        = selection.SelectedFile
 	TraverseDirectory   = selection.TraverseDirectory
@@ -178,7 +172,7 @@ func (p *parallelMulti) Visit(fn func(ParallelMultiWalkEvent) WalkControl) (*Par
 	return out, nil
 }
 
-func NewStatefulWalkBuilder[R, E any](root string, rootState R) *StatefulWalkBuilder[R, E] {
+func NewStatefulWalkBuilder[R, E any](root string, rootState R) *walk.StatefulWalkBuilder[R, E] {
 	return walk.NewStatefulWalkBuilder[R, E](root, rootState)
 }
 
@@ -448,6 +442,10 @@ type FileWalker struct {
 	walking                  atomic.Bool
 	terminate                atomic.Bool
 	closeOnce                sync.Once
+	stopOnce                 sync.Once
+	stop                     chan struct{}
+	ctx                      context.Context
+	cancel                   context.CancelFunc
 	LocationExcludePattern   []string
 	IncludeDirectory         []string
 	ExcludeDirectory         []string
@@ -463,10 +461,14 @@ type FileWalker struct {
 }
 
 func NewFileWalker(directory string, queue chan *File) *FileWalker {
-	return &FileWalker{roots: []string{directory}, queue: queue}
+	return newFileWalker([]string{directory}, queue, 0)
 }
 func NewParallelFileWalker(directory string, queue chan *File, workers int) *FileWalker {
-	return &FileWalker{roots: []string{directory}, queue: queue, workers: workers}
+	return newFileWalker([]string{directory}, queue, workers)
+}
+func newFileWalker(roots []string, queue chan *File, workers int) *FileWalker {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &FileWalker{roots: roots, queue: queue, workers: workers, ctx: ctx, cancel: cancel, stop: make(chan struct{})}
 }
 func (w *FileWalker) AddRoot(directory string) *FileWalker {
 	w.roots = append(w.roots, directory)
@@ -480,18 +482,18 @@ func (w *FileWalker) SetConcurrency(n int) *FileWalker { w.workers = n; return w
 func (w *FileWalker) IgnoreGitignore() *FileWalker   { w.ignoreGitignore = true; return w }
 func (w *FileWalker) IgnoreIgnoreFile() *FileWalker  { w.ignoreIgnoreFile = true; return w }
 func (w *FileWalker) RespectGitModules() *FileWalker { w.gitModules = true; return w }
-func (w *FileWalker) IncludeHidden(enabled bool) *FileWalker {
-	w.includeHidden = &enabled
-	return w
-}
+func (w *FileWalker) IncludeHidden(enabled bool) *FileWalker { w.includeHidden = &enabled; return w }
 func (w *FileWalker) IgnoreBinaryFiles() *FileWalker { w.ignoreBinary = true; return w }
 func (w *FileWalker) SetMaxDepth(n int) *FileWalker  { w.maxDepth = n; return w }
-func (w *FileWalker) Terminate()                     { w.terminate.Store(true) }
-func (w *FileWalker) Walking() bool                  { return w.walking.Load() }
-func (w *FileWalker) SetErrorHandler(fn func(error) bool) *FileWalker {
-	w.errorHandler = fn
-	return w
+func (w *FileWalker) Terminate() {
+	w.terminate.Store(true)
+	if w.cancel != nil {
+		w.cancel()
+	}
+	w.stopOnce.Do(func() { close(w.stop) })
 }
+func (w *FileWalker) Walking() bool                  { return w.walking.Load() }
+func (w *FileWalker) SetErrorHandler(fn func(error) bool) *FileWalker { w.errorHandler = fn; return w }
 func (w *FileWalker) Start() error { return runFileWalker(w) }
 
 type MultiScanReport struct{ Reports []*ScanReport }
@@ -516,7 +518,6 @@ func (m *MultiScanner) WithAdmitTimeout(d time.Duration) *MultiScanner {
 	m.admitTimeout = d
 	return m
 }
-
 func (m *MultiScanner) Scan(ctx context.Context) (*MultiScanReport, error) {
 	workers := m.rootParallelism
 	if workers <= 0 {

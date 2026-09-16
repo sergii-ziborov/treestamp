@@ -1,12 +1,10 @@
 package walk
 
 import (
-	"errors"
-	"io"
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"sync"
 	"sync/atomic"
 
@@ -50,33 +48,6 @@ func (p *ParallelWalker) workerCount() int {
 	return n
 }
 
-func (p *ParallelWalker) Walk() (*ParallelWalkReport, error) {
-	var mu sync.Mutex
-	report := &ParallelWalkReport{}
-	_, err := p.Visit(func(ev WalkEvent) WalkControl {
-		mu.Lock()
-		defer mu.Unlock()
-		if ev.Err != nil {
-			report.Errors = append(report.Errors, ev.Err)
-			if p.options.ErrorPolicy == ErrorAbort {
-				return WalkQuit
-			}
-			return WalkContinue
-		}
-		clone := *ev.Entry
-		report.Entries = append(report.Entries, &clone)
-		return WalkContinue
-	})
-	if err != nil {
-		return report, err
-	}
-	if p.options.ErrorPolicy == ErrorAbort && len(report.Errors) > 0 {
-		return report, report.Errors[0]
-	}
-	sort.Slice(report.Entries, func(i, j int) bool { return report.Entries[i].path < report.Entries[j].path })
-	return report, nil
-}
-
 func (p *ParallelWalker) Visit(fn ControlFunc) (*ParallelVisitReport, error) {
 	return p.VisitWithToken(nil, fn)
 }
@@ -86,58 +57,6 @@ func (p *ParallelWalker) VisitWithToken(token *rtruntime.Token, fn ControlFunc) 
 		options: p.options.Normalize(), workers: p.workerCount(), skipStdout: p.skipStdout,
 		token: token, runtime: p.runtime,
 	}, fn)
-}
-
-func WalkParallel(root string, workers int, fn WalkFunc) error {
-	var fnErr error
-	_, err := NewParallelWalker(root).WithParallelism(workers).Visit(func(ev WalkEvent) WalkControl {
-		if ev.Err != nil {
-			return WalkContinue
-		}
-		if err := fn(ev.Entry); err != nil {
-			if errors.Is(err, ErrTraverseLink) && ev.Entry.symlink {
-				return WalkTraverseLink
-			}
-			fnErr = err
-			if err == io.EOF {
-				fnErr = nil
-			}
-			return WalkQuit
-		}
-		return WalkContinue
-	})
-	if fnErr != nil {
-		return fnErr
-	}
-	return err
-}
-
-func CollectParallel(root string, workers int, sortPaths bool) ([]*WalkEntry, error) {
-	walker := NewParallelWalker(root).WithParallelism(workers)
-	if !sortPaths {
-		return collectParallelUnsorted(walker)
-	}
-	report, err := walker.Walk()
-	if err != nil {
-		return nil, err
-	}
-	return report.Entries, nil
-}
-
-func collectParallelUnsorted(walker *ParallelWalker) ([]*WalkEntry, error) {
-	var mu sync.Mutex
-	var entries []*WalkEntry
-	_, err := walker.Visit(func(ev WalkEvent) WalkControl {
-		if ev.Err != nil {
-			return WalkContinue
-		}
-		clone := *ev.Entry
-		mu.Lock()
-		entries = append(entries, &clone)
-		mu.Unlock()
-		return WalkContinue
-	})
-	return entries, err
 }
 
 type concurrentOpts struct {
@@ -181,9 +100,10 @@ func walkConcurrent(root string, opts concurrentOpts, fn ControlFunc) (*Parallel
 	}
 	queue.push(dirJob{path: state.abs, depth: 0, ancestors: ancestors})
 	var wg sync.WaitGroup
-	wg.Add(opts.workers)
+	started := 0
 	for i := 0; i < opts.workers; i++ {
-		opts.runtime.Admit(func() {
+		wg.Add(1)
+		if err := opts.runtime.AdmitWait(func() {
 			defer wg.Done()
 			for !state.quit.Load() {
 				job, ok := queue.pop()
@@ -193,7 +113,21 @@ func walkConcurrent(root string, opts concurrentOpts, fn ControlFunc) (*Parallel
 				state.processJob(job, queue, emit)
 			}
 			queue.close()
-		})
+		}); err != nil {
+			wg.Done()
+			state.mu.Lock()
+			if state.first == nil {
+				state.first = err
+			}
+			state.mu.Unlock()
+			state.quit.Store(true)
+			queue.close()
+			break
+		}
+		started++
+	}
+	if started == 0 {
+		queue.close()
 	}
 	wg.Wait()
 	return state.report, state.first
@@ -392,237 +326,267 @@ type dirQueue struct {
 	closed   bool
 }
 
-func newDirQueue() *dirQueue {
-	q := &dirQueue{}
-	q.cond = sync.NewCond(&q.mu)
-	return q
-}
-
-func (q *dirQueue) push(job dirJob) {
-	q.mu.Lock()
-	if !q.closed {
-		q.items = append(q.items, job)
-		q.cond.Signal()
-	}
-	q.mu.Unlock()
-}
-
-func (q *dirQueue) pop() (dirJob, bool) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	for {
-		if q.closed {
-			return dirJob{}, false
-		}
-		if len(q.items) > 0 {
-			job := q.items[0]
-			q.items = q.items[1:]
-			q.inflight++
-			return job, true
-		}
-		if q.inflight == 0 {
-			q.closed = true
-			q.cond.Broadcast()
-			return dirJob{}, false
-		}
-		q.cond.Wait()
-	}
-}
-
-func (q *dirQueue) done() {
-	q.mu.Lock()
-	q.inflight--
-	if q.inflight == 0 && len(q.items) == 0 {
-		q.closed = true
-		q.cond.Broadcast()
-	} else {
-		q.cond.Signal()
-	}
-	q.mu.Unlock()
-}
-
-func orderDirents(entries []os.DirEntry, opts WalkOptions) []os.DirEntry {
-	if !opts.ContentsFirst && !opts.DirsFirst {
-		return entries
-	}
-	files, dirs, other := splitDirents(entries)
-	if opts.ContentsFirst {
-		return append(append(files, other...), dirs...)
-	}
-	return append(append(dirs, other...), files...)
-}
-
-func splitDirents(entries []os.DirEntry) (files, dirs, other []os.DirEntry) {
-	for _, dent := range entries {
-		switch {
-		case dent.Type().IsRegular():
-			files = append(files, dent)
-		case dent.IsDir() || dent.Type()&os.ModeDir != 0:
-			dirs = append(dirs, dent)
-		default:
-			other = append(other, dent)
-		}
-	}
-	return files, dirs, other
-}
-
-func (q *dirQueue) close() {
-	q.mu.Lock()
-	q.closed = true
-	q.cond.Broadcast()
-	q.mu.Unlock()
-}
-
-func (v FileVersion) Reusable(other FileVersion) bool {
-	if v.ModifiedNS == nil || other.ModifiedNS == nil || *v.ModifiedNS != *other.ModifiedNS {
-		return false
-	}
-	if v.ChangedNS != nil && other.ChangedNS != nil && *v.ChangedNS != *other.ChangedNS {
-		return false
-	}
-	if v.Identity != nil && other.Identity != nil && !v.Identity.Equal(*other.Identity) {
-		return false
-	}
-	return true
-}
-
-type ParallelWalkIter struct {
-	ch     chan item
-	token  *cancelFlag
-	once   sync.Once
-	closed bool
-}
-
-type item struct {
-	entry *WalkEntry
-	err   error
-}
-
-type cancelFlag struct {
-	mu   sync.Mutex
-	done bool
-	fn   func()
-}
-
-func (c *cancelFlag) cancel() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if !c.done {
-		c.done = true
-		if c.fn != nil {
-			c.fn()
-		}
-	}
-}
-
-func (p *ParallelWalker) IntoIterOrderedBounded(capacity int) *ParallelWalkIter {
-	iter, err := p.TryIntoIterOrderedBounded(capacity)
-	if err != nil {
-		ch := make(chan item)
-		close(ch)
-		return &ParallelWalkIter{ch: ch, closed: true}
-	}
-	return iter
-}
-
 func (p *ParallelWalker) TryIntoIterOrderedBounded(capacity int) (*ParallelWalkIter, error) {
 	if capacity < 1 {
 		capacity = 1
 	}
-	walker, err := NewWithOptions(p.root, p.options)
+	opts := concurrentOpts{
+		options: p.options.Normalize(), workers: p.workerCount(),
+		skipStdout: p.skipStdout, runtime: p.runtime,
+	}
+	state, err := setupConcurrent(p.root, opts)
 	if err != nil {
 		return nil, err
 	}
 	ch := make(chan item, capacity)
 	quit := make(chan struct{})
-	flag := &cancelFlag{fn: func() { close(quit) }}
-	iter := &ParallelWalkIter{ch: ch, token: flag}
-	p.runtime.Admit(func() {
+	iter := &ParallelWalkIter{ch: ch, token: &cancelFlag{fn: func() { close(quit) }}}
+	go func() {
 		defer close(ch)
-		defer walker.Close()
-		for {
-			select {
-			case <-quit:
-				return
-			default:
-			}
-			entry, nextErr := walker.Next()
-			if nextErr == io.EOF {
-				return
-			}
-			it := item{err: nextErr}
-			if nextErr == nil && entry != nil {
-				clone := *entry
-				it.entry = &clone
-			}
-			select {
-			case <-quit:
-				return
-			case ch <- it:
-			}
-		}
-	})
+		runOrderedPull(state, opts, capacity, quit, ch)
+	}()
 	return iter, nil
 }
 
-func (p *ParallelWalker) IntoIterBounded(capacity int) *ParallelWalkIter {
-	if capacity < 1 {
-		capacity = 1
-	}
-	ch := make(chan item, capacity)
-	quit := make(chan struct{})
-	flag := &cancelFlag{fn: func() { close(quit) }}
-	iter := &ParallelWalkIter{ch: ch, token: flag}
-	p.runtime.Admit(func() {
-		defer close(ch)
-		_, _ = p.Visit(func(ev WalkEvent) WalkControl {
-			select {
-			case <-quit:
-				return WalkQuit
-			default:
-			}
-			var it item
-			if ev.Err != nil {
-				it.err = ev.Err
-			} else {
-				clone := *ev.Entry
-				it.entry = &clone
-			}
-			select {
-			case <-quit:
-				return WalkQuit
-			case ch <- it:
-				return WalkContinue
-			}
-		})
-	})
-	return iter
+type listedDir struct {
+	entries  []*WalkEntry
+	descents []dirJob
+	err      error
 }
 
-func (it *ParallelWalkIter) Next() (*WalkEntry, error) {
-	if it == nil || it.closed {
-		return nil, io.EOF
+type orderedPull struct {
+	state            *concurrentState
+	opts             concurrentOpts
+	budget           *rtruntime.Budget
+	ctx              context.Context
+	quit             <-chan struct{}
+	mu               sync.Mutex
+	cond             *sync.Cond
+	listed           map[string]*listedDir
+	jobs             map[string]dirJob
+	queue            []dirJob
+	queued           map[string]bool
+	window           int
+	stopCh           chan struct{}
+	once             sync.Once
+	wg               sync.WaitGroup
+}
+
+func runOrderedPull(state *concurrentState, opts concurrentOpts, window int, quit <-chan struct{}, ch chan item) {
+	if state.rootEntry == nil {
+		return
 	}
-	got, ok := <-it.ch
-	if !ok {
-		it.closed = true
-		return nil, io.EOF
+	clone := *state.rootEntry
+	if !sendOrdered(quit, ch, item{entry: &clone}) || !state.rootEntry.isDir || state.rootEntry.hasSkip() {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		select {
+		case <-quit:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	p := startOrdered(state, opts, window, ctx, quit)
+	defer p.stop()
+	job := dirJob{path: state.abs}
+	if state.rootEntry.dirID != nil {
+		job.ancestors = []platformID{{fs: state.rootEntry.dirID.FileSystem, file: state.rootEntry.dirID.File}}
+	}
+	p.addJob(job, true)
+	p.emitDir(state.abs, ch)
+}
+
+func startOrdered(state *concurrentState, opts concurrentOpts, window int, ctx context.Context, quit <-chan struct{}) *orderedPull {
+	lim := rtruntime.DefaultLimits(opts.workers)
+	lim.Ready = window
+	p := &orderedPull{
+		state: state, opts: opts, budget: rtruntime.NewBudget(lim), ctx: ctx, quit: quit,
+		listed: map[string]*listedDir{}, jobs: map[string]dirJob{}, queued: map[string]bool{},
+		window: window, stopCh: make(chan struct{}),
+	}
+	p.cond = sync.NewCond(&p.mu)
+	n := 0
+	for i := 0; i < opts.workers; i++ {
+		p.wg.Add(1)
+		if err := opts.runtime.AdmitWait(p.worker); err != nil {
+			p.wg.Done()
+			continue
+		}
+		n++
+	}
+	if n == 0 {
+		p.wg.Add(1)
+		go p.worker()
+	}
+	return p
+}
+
+func (p *orderedPull) worker() {
+	defer p.wg.Done()
+	for {
+		job, ok := p.take()
+		if !ok || p.budget.Admit(p.ctx, rtruntime.KindDirectory) != nil {
+			return
+		}
+		listed := p.list(job)
+		p.budget.Release(rtruntime.KindDirectory)
+		p.publish(job.path, listed)
+	}
+}
+
+func (p *orderedPull) list(job dirJob) *listedDir {
+	dents, err := dirread.OSEntries(job.path)
+	if err != nil {
+		return &listedDir{err: walkErr(job.path, job.depth+1, OpReadDirectory, err)}
+	}
+	out := &listedDir{}
+	for _, dent := range orderDirents(dents, p.opts.options) {
+		entry, next, listErr := p.child(job, dent)
+		if listErr != nil {
+			return &listedDir{err: listErr}
+		}
+		if entry == nil {
+			continue
+		}
+		out.entries = append(out.entries, entry)
+		if next != nil {
+			out.descents = append(out.descents, *next)
+		}
+	}
+	return out
+}
+
+func (p *orderedPull) child(job dirJob, dent os.DirEntry) (*WalkEntry, *dirJob, *WalkError) {
+	path := childPath(job.path, dent.Name())
+	entry, err := p.state.entryFromDent(job, dent, path)
+	if err != nil {
+		return nil, nil, err
+	}
+	if p.state.stdout != nil && entry.isFile {
+		if match, _ := platform.PathMatchesIdentity(path, *p.state.stdout); match {
+			return nil, nil, nil
+		}
+	}
+	if policyErr := p.state.applyDirPolicy(entry, path, job); policyErr != nil {
+		return nil, nil, policyErr
+	}
+	if !entry.isDir || entry.hasSkip() {
+		return entry, nil, nil
+	}
+	next := dirJob{path: path, depth: entry.depth, ancestors: job.ancestors}
+	if entry.dirID != nil {
+		next.ancestors = append(append([]platformID(nil), job.ancestors...), platformID{fs: entry.dirID.FileSystem, file: entry.dirID.File})
+	}
+	return entry, &next, nil
+}
+
+func (p *orderedPull) emitDir(path string, ch chan item) bool {
+	got := p.waitListed(path)
+	if got == nil {
+		return false
 	}
 	if got.err != nil {
-		return nil, got.err
+		return sendOrdered(p.quit, ch, item{err: got.err})
 	}
-	return got.entry, nil
+	for _, entry := range got.entries {
+		clone := *entry
+		if !sendOrdered(p.quit, ch, item{entry: &clone}) {
+			return false
+		}
+		if entry.isDir && !entry.hasSkip() && !p.emitDir(entry.path, ch) {
+			return false
+		}
+	}
+	return true
 }
 
-func (it *ParallelWalkIter) Close() error {
-	if it == nil {
-		return nil
+func (p *orderedPull) addJob(job dirJob, force bool) {
+	if job.path == "" {
+		return
 	}
-	it.once.Do(func() {
-		it.token.cancel()
-		for range it.ch {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.jobs[job.path] = job
+	if p.queued[job.path] || p.listed[job.path] != nil || (!force && p.window > 0 && len(p.queue) >= p.window) {
+		return
+	}
+	p.queued[job.path] = true
+	p.queue = append(p.queue, job)
+	p.cond.Signal()
+}
+
+func (p *orderedPull) take() (dirJob, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for !p.done() {
+		if len(p.queue) > 0 {
+			job := p.queue[0]
+			p.queue = p.queue[1:]
+			return job, true
 		}
-		it.closed = true
-	})
+		p.cond.Wait()
+	}
+	return dirJob{}, false
+}
+
+func (p *orderedPull) publish(path string, listed *listedDir) {
+	p.mu.Lock()
+	p.listed[path] = listed
+	p.cond.Broadcast()
+	p.mu.Unlock()
+	if listed == nil {
+		return
+	}
+	for _, job := range listed.descents {
+		p.addJob(job, false)
+	}
+}
+
+func (p *orderedPull) waitListed(path string) *listedDir {
+	p.mu.Lock()
+	if job, ok := p.jobs[path]; ok {
+		p.mu.Unlock()
+		p.addJob(job, true)
+		p.mu.Lock()
+	}
+	defer p.mu.Unlock()
+	for !p.done() {
+		if got := p.listed[path]; got != nil {
+			return got
+		}
+		p.cond.Wait()
+	}
 	return nil
+}
+
+func (p *orderedPull) stop() {
+	p.once.Do(func() { close(p.stopCh) })
+	p.mu.Lock()
+	p.cond.Broadcast()
+	p.mu.Unlock()
+	p.budget.Close()
+	p.wg.Wait()
+}
+
+func (p *orderedPull) done() bool {
+	select {
+	case <-p.stopCh:
+		return true
+	case <-p.quit:
+		return true
+	default:
+		return false
+	}
+}
+
+func sendOrdered(quit <-chan struct{}, ch chan item, it item) bool {
+	select {
+	case <-quit:
+		return false
+	case ch <- it:
+		return true
+	}
 }

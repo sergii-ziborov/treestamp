@@ -11,12 +11,13 @@ type Scanner struct {
 	name    string
 	typ     os.FileMode
 	info    os.FileInfo
+	pending []os.DirEntry
 	err     error
 }
 
 // NewScanner opens dirname. Pass a reusable scratch buffer on Linux.
 func NewScanner(dir string, scratch []byte) (*Scanner, error) {
-	file, err := os.Open(dir)
+	file, err := openDir(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -50,6 +51,7 @@ func (s *Scanner) finish(err error) {
 	closeErr := s.file.Close()
 	s.file = nil
 	s.work = nil
+	s.pending = nil
 	if err != nil {
 		s.err = err
 		return

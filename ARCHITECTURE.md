@@ -17,9 +17,10 @@ internal/platform    file/volume identity, hidden, stdout identity
 internal/walk        serial, parallel, pull, and stateful walkers
 internal/walkfs      deterministic traversal over arbitrary io/fs filesystems
 internal/ignore      ignore parser and sources
-internal/selection   typed matchers and named types
-internal/runtime     executors and bounded queues
+internal/runtime     executors, admission, and a shared resource budget
+internal/selection   typed matchers, named types, and compiled query scope
 internal/scan        discover, inspect, content visit, cache v2, watch apply
+internal/merkle      persistent keyed TreeRevision (not legacy flat digest)
 internal/report      snapshot reads, deltas, portable hashing
 internal/hashx       SHA-256 prefix and content fingerprint
 internal/filetypes   named type catalog
@@ -47,6 +48,8 @@ Unused alias packages (`internal/cache`, `internal/content`,
   unless `OverflowCallerRuns` is set
 - `WithAdmitTimeout` bounds how long a job waits for a worker slot
 - One worker budget across several roots
+- `Budget` also bounds ready results by count and bytes
+- `TreeRevision` (`tree2:`) is not interchangeable with legacy `sha256:` revision
 - Callback-scoped `[]byte`; owned reports
 - `context.Context` on scan APIs
 - Pull APIs have explicit `Close`

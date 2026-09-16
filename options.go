@@ -9,6 +9,7 @@ import (
 
 	"github.com/sergii-ziborov/treestamp/internal/filetypes"
 	"github.com/sergii-ziborov/treestamp/internal/ignore"
+	"github.com/sergii-ziborov/treestamp/internal/merkle"
 	"github.com/sergii-ziborov/treestamp/internal/report"
 	"github.com/sergii-ziborov/treestamp/internal/runtime"
 	"github.com/sergii-ziborov/treestamp/internal/scan"
@@ -145,15 +146,21 @@ func (o Options) WithExcludeFilenames(names ...string) Options {
 	return o
 }
 func (o Options) WithIncludeFilenameRegex(patterns ...string) Options {
-	o.Filters.IncludeNameRegex = compileRegexes(patterns)
+	exprs, err := compileRegexes(patterns)
+	o.Filters.IncludeNameRegex = exprs
+	o.Filters.SetErr(err)
 	return o
 }
 func (o Options) WithExcludeFilenameRegex(patterns ...string) Options {
-	o.Filters.ExcludeNameRegex = compileRegexes(patterns)
+	exprs, err := compileRegexes(patterns)
+	o.Filters.ExcludeNameRegex = exprs
+	o.Filters.SetErr(err)
 	return o
 }
 func (o Options) WithExcludeDirectoryRegex(patterns ...string) Options {
-	o.Filters.ExcludeDirRegex = compileRegexes(patterns)
+	exprs, err := compileRegexes(patterns)
+	o.Filters.ExcludeDirRegex = exprs
+	o.Filters.SetErr(err)
 	return o
 }
 func (o Options) MetadataOnly() Options {
@@ -396,7 +403,10 @@ func mapSnapErr(err error) error {
 func toReportFiles(files []ScannedFile) []report.File {
 	out := make([]report.File, len(files))
 	for i, file := range files {
-		out[i] = report.File{Absolute: file.Absolute, Relative: file.Relative, ContentHash: file.ContentHash, Bytes: file.Bytes, ModifiedNS: file.Version.ModifiedNS}
+		out[i] = report.File{
+			Absolute: file.Absolute, Relative: file.Relative, ContentHash: file.ContentHash,
+			Bytes: file.Bytes, ModifiedNS: file.Version.ModifiedNS, Identity: file.Version.Identity,
+		}
 	}
 	return out
 }
@@ -504,4 +514,49 @@ func (s *ScanSession) ApplyWatchPlanWithCancellation(ctx context.Context, plan W
 func (s *ScanSession) install(report *ScanReport, reason WatchUpdateReason) {
 	s.report, s.lastReason, s.hasReason = report, reason, true
 	s.generation++
+}
+
+// TreeSnapshot is a persistent keyed Merkle index. It is not LegacyRevision.
+type TreeSnapshot struct {
+	tree *merkle.Tree
+	Cover merkle.Coverage
+}
+
+func SnapshotFromFiles(files []ScannedFile) *TreeSnapshot {
+	recs := make([]merkle.Record, 0, len(files))
+	for _, file := range files {
+		recs = append(recs, merkle.Record{Path: file.Relative, Hash: file.ContentHash, Size: file.Bytes})
+	}
+	return &TreeSnapshot{tree: merkle.Build(recs)}
+}
+
+func (s *TreeSnapshot) Len() int {
+	if s == nil || s.tree == nil {
+		return 0
+	}
+	return s.tree.Len()
+}
+
+func (s *TreeSnapshot) TreeRevision() string {
+	if s == nil || s.tree == nil {
+		return merkle.New().Revision()
+	}
+	return s.tree.Revision()
+}
+
+func (s *TreeSnapshot) Apply(upserts, deletes []ScannedFile) *TreeSnapshot {
+	if s == nil {
+		return SnapshotFromFiles(upserts)
+	}
+	next := *s
+	next.tree = s.tree.Apply(recordsOf(upserts), recordsOf(deletes))
+	return &next
+}
+
+func recordsOf(files []ScannedFile) []merkle.Record {
+	out := make([]merkle.Record, len(files))
+	for i, file := range files {
+		out[i] = merkle.Record{Path: file.Relative, Hash: file.ContentHash, Size: file.Bytes}
+	}
+	return out
 }

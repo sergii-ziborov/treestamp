@@ -33,6 +33,7 @@ type ignoreRule struct {
 	target  ruleTarget
 	scope   ruleScope
 	ci      bool
+	line    int
 }
 
 func parseFile(text string, caseInsensitive bool) ([]ignoreRule, []string) {
@@ -46,6 +47,7 @@ func parseFile(text string, caseInsensitive bool) ([]ignoreRule, []string) {
 			continue
 		}
 		if rule != nil {
+			rule.line = i + 1
 			rules = append(rules, *rule)
 		}
 	}
@@ -205,6 +207,52 @@ func matchPattern(pattern, value string, ci bool) bool {
 
 func hasMeta(value string) bool {
 	return strings.ContainsAny(value, "*?[{{\\")
+}
+
+// ScopePrefixes returns static directory prefixes of positive override includes.
+// unbounded means no safe subtree prune is possible.
+func ScopePrefixes(overrides []string, caseInsensitive bool) (prefixes []string, unbounded bool) {
+	if len(overrides) == 0 {
+		return nil, true
+	}
+	rules, _ := parseFile(strings.Join(overrides, "\n"), caseInsensitive)
+	sawInclude := false
+	for _, rule := range rules {
+		action := actionInclude
+		if rule.action == actionInclude {
+			action = actionIgnore
+		}
+		if action != actionInclude {
+			continue
+		}
+		sawInclude = true
+		prefix, ok := staticPrefix(rule.pattern)
+		if !ok {
+			return nil, true
+		}
+		prefixes = append(prefixes, prefix)
+	}
+	if !sawInclude {
+		return nil, true
+	}
+	return prefixes, false
+}
+
+func staticPrefix(pattern string) (string, bool) {
+	var parts []string
+	for _, part := range strings.Split(pattern, "/") {
+		if part == "" || part == "." {
+			continue
+		}
+		if part == "**" || hasMeta(part) {
+			break
+		}
+		parts = append(parts, part)
+	}
+	if len(parts) == 0 {
+		return "", false
+	}
+	return strings.Join(parts, "/"), true
 }
 
 func asciiLower(value string) string {

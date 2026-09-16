@@ -38,10 +38,11 @@ const (
 )
 
 type layer struct {
-	base   string
-	prefix string
-	rules  []ignoreRule
-	parent *layer
+	base     string
+	prefix   string
+	location string
+	rules    []ignoreRule
+	parent   *layer
 }
 
 // Engine holds nested ignore sources and override globs.
@@ -54,6 +55,7 @@ type Engine struct {
 	policy          Policy
 	sources         []Source
 	gitModules      bool
+	modules         []string
 }
 
 // NewEngine builds a matcher. Call LoadDir as directories are entered.
@@ -116,6 +118,54 @@ func (e *Engine) LoadDir(directory, base string) []string {
 	return warnings
 }
 
+// LoadDirListed loads ignore files that already appear in a directory listing.
+func (e *Engine) LoadDirListed(directory, base string, dents []os.DirEntry) ([]string, bool) {
+	var warnings []string
+	loaded := false
+	for _, dent := range dents {
+		name := dent.Name()
+		if !e.listedIgnore(name) {
+			continue
+		}
+		loaded = true
+		location := name
+		if base != "" {
+			location = base + "/" + name
+		}
+		if name == ".gitmodules" {
+			warnings = append(warnings, e.loadGitModules(directory, base)...)
+			continue
+		}
+		warnings = append(warnings, e.loadFile(filepath.Join(directory, name), base, "", location, rankFor(name), kindFor(name))...)
+	}
+	return warnings, loaded
+}
+
+// Idle reports that no ignore/override rules are loaded.
+func (e *Engine) Idle() bool {
+	if e == nil || e.hasIncludes || len(e.overrides) > 0 || len(e.sources) > 0 || len(e.modules) > 0 {
+		return false
+	}
+	for i := range e.layers {
+		if e.layers[i] != nil {
+			return false
+		}
+	}
+	return true
+}
+
+func (e *Engine) listedIgnore(name string) bool {
+	if name == ".gitmodules" {
+		return e.gitModules
+	}
+	for _, file := range e.files {
+		if file == name && e.policy.Allows(name) {
+			return true
+		}
+	}
+	return false
+}
+
 func (e *Engine) loadFile(path, base, prefix, location string, rank int, kind SourceKind) []string {
 	info, err := os.Lstat(path)
 	if err != nil {
@@ -130,7 +180,7 @@ func (e *Engine) loadFile(path, base, prefix, location string, rank int, kind So
 	}
 	rules, errs := parseFile(string(body), e.caseInsensitive)
 	if len(rules) > 0 {
-		e.layers[rank] = &layer{base: base, prefix: prefix, rules: rules, parent: e.layers[rank]}
+		e.layers[rank] = &layer{base: base, prefix: prefix, location: location, rules: rules, parent: e.layers[rank]}
 	}
 	e.sources = append(e.sources, Source{
 		Kind: kind, Location: strings.ReplaceAll(location, "\\", "/"),
@@ -139,39 +189,74 @@ func (e *Engine) loadFile(path, base, prefix, location string, rank int, kind So
 	return errs
 }
 
+// Hit is the winning rule when one is known.
+type Hit struct {
+	Pattern, Location string
+	Line              int
+}
+
 // Match reports the winning ignore/override decision.
 func (e *Engine) Match(rel string, isDir bool) Match {
-	rel = strings.ReplaceAll(rel, "\\", "/")
-	if ov := e.matchOverrides(rel, isDir); ov != MatchNone {
-		return ov
+	m, _ := e.Explain(rel, isDir)
+	return m
+}
+
+func (e *Engine) Explain(rel string, isDir bool) (Match, Hit) {
+	if strings.IndexByte(rel, '\\') >= 0 {
+		rel = strings.ReplaceAll(rel, "\\", "/")
 	}
-	if action, ok := e.matchRules(rel, isDir); ok {
+	if ov, hit, ok := e.explainOverrides(rel, isDir); ok {
+		return ov, hit
+	}
+	if e.matchModule(rel) {
+		return MatchIgnore, Hit{Pattern: rel, Location: ".gitmodules"}
+	}
+	if action, hit, ok := e.explainRules(rel, isDir); ok {
 		if action == actionIgnore {
-			return MatchIgnore
+			return MatchIgnore, hit
 		}
-		return MatchInclude
+		return MatchInclude, hit
 	}
-	return MatchNone
+	return MatchNone, Hit{}
+}
+
+func (e *Engine) matchModule(rel string) bool {
+	for _, prefix := range e.modules {
+		if rel == prefix || strings.HasPrefix(rel, prefix+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func (e *Engine) explainOverrides(rel string, isDir bool) (Match, Hit, bool) {
+	if len(e.overrides) == 0 {
+		return MatchNone, Hit{}, false
+	}
+	if rule := bestRule(e.overrides, rel, isDir); rule != nil {
+		hit := Hit{Pattern: rule.pattern, Location: "<override>", Line: rule.line}
+		if rule.action == actionIgnore {
+			return MatchOverrideIgnore, hit, true
+		}
+		return MatchOverrideInclude, hit, true
+	}
+	if e.hasIncludes && !isDir {
+		return MatchOverrideIgnore, Hit{Location: "<override>"}, true
+	}
+	return MatchNone, Hit{}, false
 }
 
 func (e *Engine) matchOverrides(rel string, isDir bool) Match {
-	if len(e.overrides) == 0 {
+	m, _, ok := e.explainOverrides(rel, isDir)
+	if !ok {
 		return MatchNone
 	}
-	if action, ok := bestExact(e.overrides, rel, isDir); ok {
-		if action == actionIgnore {
-			return MatchOverrideIgnore
-		}
-		return MatchOverrideInclude
-	}
-	if e.hasIncludes && !isDir {
-		return MatchOverrideIgnore
-	}
-	return MatchNone
+	return m
 }
 
-func (e *Engine) matchRules(path string, isDir bool) (ruleAction, bool) {
+func (e *Engine) explainRules(path string, isDir bool) (ruleAction, Hit, bool) {
 	ancestorIncluded := false
+	var ancestorHit Hit
 	for rank := sourceCount - 1; rank >= 0; rank-- {
 		for current := e.layers[rank]; current != nil; current = current.parent {
 			lookup := path
@@ -182,24 +267,41 @@ func (e *Engine) matchRules(path string, isDir bool) (ruleAction, bool) {
 			if !ok {
 				continue
 			}
-			if rm, found := matchSet(current.rules, candidate, isDir); found {
-				switch rm.kind {
-				case matchExact:
-					return rm.action, true
-				case matchAncestor:
-					if rm.action == actionInclude {
-						ancestorIncluded = true
-					} else if !ancestorIncluded {
-						return actionIgnore, true
-					}
+			rm, found := matchSet(current.rules, candidate, isDir)
+			if !found {
+				continue
+			}
+			hit := Hit{Pattern: rm.rule.pattern, Location: current.location, Line: rm.rule.line}
+			switch rm.kind {
+			case matchExact:
+				return rm.action, hit, true
+			case matchAncestor:
+				if rm.action == actionInclude {
+					ancestorIncluded, ancestorHit = true, hit
+				} else if !ancestorIncluded {
+					return actionIgnore, hit, true
 				}
 			}
 		}
 	}
 	if ancestorIncluded {
-		return actionInclude, true
+		return actionInclude, ancestorHit, true
 	}
-	return 0, false
+	return 0, Hit{}, false
+}
+
+func bestRule(rules []ignoreRule, path string, isDir bool) *ignoreRule {
+	for i := len(rules) - 1; i >= 0; i-- {
+		if rules[i].matchesExact(path, isDir) {
+			return &rules[i]
+		}
+	}
+	return nil
+}
+
+func (e *Engine) matchRules(path string, isDir bool) (ruleAction, bool) {
+	action, _, ok := e.explainRules(path, isDir)
+	return action, ok
 }
 
 type matchKind int
@@ -212,11 +314,12 @@ const (
 type setMatch struct {
 	kind   matchKind
 	action ruleAction
+	rule   ignoreRule
 }
 
 func matchSet(rules []ignoreRule, path string, isDir bool) (setMatch, bool) {
-	if action, ok := bestExact(rules, path, isDir); ok {
-		return setMatch{kind: matchExact, action: action}, true
+	if rule := bestRule(rules, path, isDir); rule != nil {
+		return setMatch{kind: matchExact, action: rule.action, rule: *rule}, true
 	}
 	ancestor := path
 	for {
@@ -225,19 +328,10 @@ func matchSet(rules []ignoreRule, path string, isDir bool) (setMatch, bool) {
 			return setMatch{}, false
 		}
 		ancestor = ancestor[:slash]
-		if action, ok := bestExact(rules, ancestor, true); ok {
-			return setMatch{kind: matchAncestor, action: action}, true
+		if rule := bestRule(rules, ancestor, true); rule != nil {
+			return setMatch{kind: matchAncestor, action: rule.action, rule: *rule}, true
 		}
 	}
-}
-
-func bestExact(rules []ignoreRule, path string, isDir bool) (ruleAction, bool) {
-	for i := len(rules) - 1; i >= 0; i-- {
-		if rules[i].matchesExact(path, isDir) {
-			return rules[i].action, true
-		}
-	}
-	return 0, false
 }
 
 func candidateForBase(path, base string) (string, bool) {

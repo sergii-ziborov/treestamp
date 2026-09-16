@@ -9,22 +9,24 @@ Pinned comparators: fastwalk v1.0.14, gocodewalker v1.5.1, godirwalk v1.17.0.
 Recorded 16 September 2026 on Windows/amd64, Intel Core Ultra 7 255U,
 `go test -bench … -benchmem -count=3`. Values are medians of three runs.
 The corpus is a small temp tree (about 400 wide files for raw walk, 80
-groups for regex selection). This is not a 10k/100k/1M campaign.
+groups for regex selection, 4000 names for `DirScanner`). This is not a
+10k/100k/1M campaign.
 
 ## Method-matched timings
 
 | Case | Treestamp | Competitor | Note |
 | --- | --- | --- | --- |
-| Raw walk, serial callback | 237 µs, 175 KiB, 1241 allocs | fastwalk 257 µs, 152 KiB, 1652 allocs; godirwalk 269 µs, 232 KiB, 2031 allocs | Same ignore-nothing listing |
-| Raw walk, parallel callback | 265 µs, 177 KiB, 1252 allocs | fastwalk (default workers) 257 µs | Same syscall floor |
-| Regex filename selection | 4.28 ms, 426 KiB, 4121 allocs | gocodewalker 3.48 ms, 140 KiB, 1667 allocs | Treestamp also applies later excludes; gocodewalker include-regex overwrites `ExcludeFilename` |
-| Cached regular `Stat` | 255 µs, 198 KiB, 1647 allocs | fastwalk 232 µs, 149 KiB, 1641 allocs; `os.Stat` 9.5 ms | Callback cache, not a full scan |
-| Lazy `DirScanner` | 1.35 ms, 577 KiB, 12009 allocs | godirwalk `Scanner` 1.13 ms, 577 KiB, 12008 allocs | Wide directory |
+| Raw walk, serial callback | 327 µs, 175 KiB, 1241 allocs | fastwalk 322 µs, 153 KiB, 1652 allocs; godirwalk 378 µs, 233 KiB, 2031 allocs | Same ignore-nothing listing |
+| Raw walk, parallel callback | 282 µs, 177 KiB, 1252 allocs | fastwalk (default workers) 322 µs | Same syscall floor |
+| Regex filename selection | 5.83 ms, 104 KiB, 1339 allocs | gocodewalker 6.96 ms, 154 KiB, 1746 allocs | Files-first listing like gocodewalker; ignore files load only when present in the directory listing |
+| Cached regular `Stat` | 298 µs, 178 KiB, 1245 allocs | fastwalk 295 µs, 149 KiB, 1641 allocs; `os.Stat` 12.1 ms | Callback cache, not a full scan |
+| Lazy `DirScanner` | 1.48 ms, 663 KiB, 8152 allocs | godirwalk `Scanner` 1.84 ms, 577 KiB, 12008 allocs | Wide directory; Treestamp does not `Stat` each name |
 
-Treestamp is in the same band as fastwalk/godirwalk on raw listing. It is
-not 2× faster. Selection is heavier because it builds a repository matcher
-and descriptor-safe options. The large win versus naive `os.Stat` is the
-cached callback `Stat`, which matches fastwalk’s design.
+Treestamp is in the same band as fastwalk/godirwalk on raw listing and
+cached `Stat`. It is not 2× faster. Regex `ScanPaths` now follows
+gocodewalker’s files-first listing and skips idle ignore work; on this
+machine it is ahead on time and allocations. The large win versus naive
+`os.Stat` is the cached callback `Stat`.
 
 ## Contract benefits these benches do not measure
 

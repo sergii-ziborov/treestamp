@@ -70,20 +70,20 @@ func (r Runtime) TryExecute(job Job) error {
 	return r.exec.TryExecute(job)
 }
 
-func (r Runtime) Run(job Job) {
+func (r Runtime) Run(job Job) error {
 	if r.callerRuns {
 		if err := r.TryExecute(job); err != nil {
 			job()
 		}
-		return
+		return nil
 	}
-	r.Admit(job)
+	return r.AdmitWait(job)
 }
 
 // Admit starts job under the executor, waiting for a slot. It never
 // silently runs the job on the caller.
-func (r Runtime) Admit(job Job) {
-	_ = r.AdmitWait(job)
+func (r Runtime) Admit(job Job) error {
+	return r.AdmitWait(job)
 }
 
 // AdmitWait starts job under the executor. A configured timeout
@@ -98,17 +98,17 @@ func (r Runtime) AdmitWait(job Job) error {
 	}); ok {
 		return w.AdmitWait(job, r.admitTimeout)
 	}
-	if a, ok := exec.(interface{ Admit(Job) }); ok {
-		a.Admit(job)
-		return nil
-	}
 	deadline := time.Time{}
 	if r.admitTimeout > 0 {
 		deadline = time.Now().Add(r.admitTimeout)
 	}
 	for {
-		if err := exec.TryExecute(job); err == nil {
+		err := exec.TryExecute(job)
+		if err == nil {
 			return nil
+		}
+		if !errors.Is(err, ErrBusy) {
+			return err
 		}
 		if !deadline.IsZero() && time.Now().After(deadline) {
 			return ErrAdmitTimeout
@@ -152,8 +152,8 @@ func (p *poolExecutor) TryExecute(job Job) error {
 	}
 }
 
-func (p *poolExecutor) Admit(job Job) {
-	_ = p.AdmitWait(job, 0)
+func (p *poolExecutor) Admit(job Job) error {
+	return p.AdmitWait(job, 0)
 }
 
 func (p *poolExecutor) AdmitWait(job Job, d time.Duration) error {
@@ -195,11 +195,7 @@ func (g *Group) Go(job func() error) {
 	wrapped := func() {
 		defer g.wg.Done()
 		if err := job(); err != nil {
-			g.mu.Lock()
-			if g.err == nil {
-				g.err = err
-			}
-			g.mu.Unlock()
+			g.setErr(err)
 		}
 	}
 	if g.rt.callerRuns {
@@ -208,7 +204,18 @@ func (g *Group) Go(job func() error) {
 		}
 		return
 	}
-	g.rt.Admit(wrapped)
+	if err := g.rt.AdmitWait(wrapped); err != nil {
+		g.wg.Done()
+		g.setErr(err)
+	}
+}
+
+func (g *Group) setErr(err error) {
+	g.mu.Lock()
+	if g.err == nil {
+		g.err = err
+	}
+	g.mu.Unlock()
 }
 
 func (g *Group) Wait() error {

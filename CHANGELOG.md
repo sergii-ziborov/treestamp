@@ -55,6 +55,12 @@ Method-complete native scanner surfaces. Still not a full port.
   the pinned Rust driver, and the campaign runs in the Windows/Linux/macOS CI
   matrix. Official B01–B14 benches remain `NOT_RUN`.
 - Optional fsnotify module and official benches remain open.
+- `ScanPaths` lists from directory names and loads ignore files only when
+  they appear in that listing; `DirScanner` batches reads and skips eager
+  `Stat`. Informal go-compat medians are in `bench/go-compat/BENEFITS.md`.
+- Path-only discovery walks files first then directories, restores ignore
+  state only after a listing actually loaded rules, and skips matcher work
+  when the ignore engine is idle.
 - `VisitChangedContent` visits only `WatchPlan.Changed`.
 - Watch apply confines `..`, records Lstat failures as skips, stamps candidate
   versions, and replaces skip/warning evidence under changed prefixes.
@@ -65,6 +71,20 @@ Method-complete native scanner surfaces. Still not a full port.
 - Declarative `Filters` (name/dir/regex/location), full `FileWalker` gocodewalker-class fields, `FindRepositoryRoot`, `WalkDirs` hooks, parallel files-first/dirs-first.
 - Informal competitor benches and a method table live in `bench/go-compat/BENEFITS.md` and `COMPETITORS.md`. Official B01–B14 remain `NOT_RUN`.
 - Benchmark campaign remains `NOT_RUN`.
+- Fail-closed regex filters, literal `.gitmodules` paths, honest watch
+  completeness, ancestor ignore on changed/watch paths, and snapshot identity
+  checks.
+- Compile override includes into `MayContainMatch` prefixes; `ScanPaths` /
+  `FileWalker` prune unrelated subtrees when skip lists are off.
+- `FileWalker` streams paths during discovery; content reuse is keyed by
+  filesystem identity.
+- `Scanner.Explain` reports the winning ignore/override source, pattern, and
+  line.
+- Shared `runtime.Budget` for roots/directory/metadata/content and ready
+  count+bytes. Ordered parallel pull lists directories concurrently and emits
+  serial DFS order.
+- Persistent keyed Merkle `TreeSnapshot` / `TreeRevision` (`tree2:`). Legacy
+  flat `sha256:` revision is unchanged.
 
 ## 0.1.0-alpha.0 (2026-09-14)
 

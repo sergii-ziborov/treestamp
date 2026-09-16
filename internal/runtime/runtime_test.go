@@ -124,6 +124,45 @@ func TestAdmitTimeout(t *testing.T) {
 	}
 }
 
+func TestGroupAdmitTimeoutUnblocks(t *testing.T) {
+	busy := Dedicated(1).WithAdmitTimeout(10 * time.Millisecond)
+	started := make(chan struct{})
+	_ = busy.TryExecute(func() {
+		close(started)
+		time.Sleep(80 * time.Millisecond)
+	})
+	<-started
+	g := busy.Group()
+	g.Go(func() error { return nil })
+	done := make(chan error, 1)
+	go func() { done <- g.Wait() }()
+	select {
+	case err := <-done:
+		if !errors.Is(err, ErrAdmitTimeout) {
+			t.Fatalf("err %v", err)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("group wait hung after admit timeout")
+	}
+}
+
+type closedExec struct{}
+
+func (closedExec) TryExecute(Job) error { return errors.New("closed") }
+func (closedExec) Parallelism() int     { return 1 }
+
+func TestAdmitClosedExecutor(t *testing.T) {
+	rt := Owned(closedExec{}).WithAdmitTimeout(50 * time.Millisecond)
+	start := time.Now()
+	err := rt.AdmitWait(func() {})
+	if err == nil || errors.Is(err, ErrAdmitTimeout) {
+		t.Fatalf("want closed, got %v", err)
+	}
+	if time.Since(start) > 30*time.Millisecond {
+		t.Fatalf("spun on permanent reject: %v", time.Since(start))
+	}
+}
+
 func TestOverflowCallerRuns(t *testing.T) {
 	busy := Dedicated(1).OverflowCallerRuns()
 	_ = busy.TryExecute(func() { time.Sleep(20 * time.Millisecond) })

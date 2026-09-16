@@ -1,10 +1,13 @@
 package walk
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"sync"
 
 	"github.com/sergii-ziborov/treestamp/internal/platform"
 )
@@ -308,4 +311,281 @@ func readBatch[R, E any](spec batchSpec, state R, process ProcessReadDir[R, E]) 
 		process(spec.depth, spec.dir, &state, &batch)
 	}
 	return batch, state, nil
+}
+
+func (p *ParallelWalker) Walk() (*ParallelWalkReport, error) {
+	var mu sync.Mutex
+	report := &ParallelWalkReport{}
+	_, err := p.Visit(func(ev WalkEvent) WalkControl {
+		mu.Lock()
+		defer mu.Unlock()
+		if ev.Err != nil {
+			report.Errors = append(report.Errors, ev.Err)
+			if p.options.ErrorPolicy == ErrorAbort {
+				return WalkQuit
+			}
+			return WalkContinue
+		}
+		clone := *ev.Entry
+		report.Entries = append(report.Entries, &clone)
+		return WalkContinue
+	})
+	if err != nil {
+		return report, err
+	}
+	if p.options.ErrorPolicy == ErrorAbort && len(report.Errors) > 0 {
+		return report, report.Errors[0]
+	}
+	sort.Slice(report.Entries, func(i, j int) bool { return report.Entries[i].path < report.Entries[j].path })
+	return report, nil
+}
+
+func WalkParallel(root string, workers int, fn WalkFunc) error {
+	var fnErr error
+	_, err := NewParallelWalker(root).WithParallelism(workers).Visit(func(ev WalkEvent) WalkControl {
+		if ev.Err != nil {
+			return WalkContinue
+		}
+		if err := fn(ev.Entry); err != nil {
+			if errors.Is(err, ErrTraverseLink) && ev.Entry.symlink {
+				return WalkTraverseLink
+			}
+			fnErr = err
+			if err == io.EOF {
+				fnErr = nil
+			}
+			return WalkQuit
+		}
+		return WalkContinue
+	})
+	if fnErr != nil {
+		return fnErr
+	}
+	return err
+}
+
+func CollectParallel(root string, workers int, sortPaths bool) ([]*WalkEntry, error) {
+	walker := NewParallelWalker(root).WithParallelism(workers)
+	if !sortPaths {
+		return collectParallelUnsorted(walker)
+	}
+	report, err := walker.Walk()
+	if err != nil {
+		return nil, err
+	}
+	return report.Entries, nil
+}
+
+func collectParallelUnsorted(walker *ParallelWalker) ([]*WalkEntry, error) {
+	var mu sync.Mutex
+	var entries []*WalkEntry
+	_, err := walker.Visit(func(ev WalkEvent) WalkControl {
+		if ev.Err != nil {
+			return WalkContinue
+		}
+		clone := *ev.Entry
+		mu.Lock()
+		entries = append(entries, &clone)
+		mu.Unlock()
+		return WalkContinue
+	})
+	return entries, err
+}
+
+func (v FileVersion) Reusable(other FileVersion) bool {
+	if v.ModifiedNS == nil || other.ModifiedNS == nil || *v.ModifiedNS != *other.ModifiedNS {
+		return false
+	}
+	if v.ChangedNS != nil && other.ChangedNS != nil && *v.ChangedNS != *other.ChangedNS {
+		return false
+	}
+	if v.Identity != nil && other.Identity != nil && !v.Identity.Equal(*other.Identity) {
+		return false
+	}
+	return true
+}
+
+type ParallelWalkIter struct {
+	ch     chan item
+	token  *cancelFlag
+	once   sync.Once
+	closed bool
+}
+
+type item struct {
+	entry *WalkEntry
+	err   error
+}
+
+type cancelFlag struct {
+	mu   sync.Mutex
+	done bool
+	fn   func()
+}
+
+func (c *cancelFlag) cancel() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.done {
+		c.done = true
+		if c.fn != nil {
+			c.fn()
+		}
+	}
+}
+
+func (p *ParallelWalker) IntoIterOrderedBounded(capacity int) *ParallelWalkIter {
+	iter, err := p.TryIntoIterOrderedBounded(capacity)
+	if err != nil {
+		ch := make(chan item)
+		close(ch)
+		return &ParallelWalkIter{ch: ch, closed: true}
+	}
+	return iter
+}
+
+func (p *ParallelWalker) IntoIterBounded(capacity int) *ParallelWalkIter {
+	if capacity < 1 {
+		capacity = 1
+	}
+	ch := make(chan item, capacity)
+	quit := make(chan struct{})
+	flag := &cancelFlag{fn: func() { close(quit) }}
+	iter := &ParallelWalkIter{ch: ch, token: flag}
+	if err := p.runtime.AdmitWait(func() {
+		defer close(ch)
+		_, _ = p.Visit(func(ev WalkEvent) WalkControl {
+			select {
+			case <-quit:
+				return WalkQuit
+			default:
+			}
+			var it item
+			if ev.Err != nil {
+				it.err = ev.Err
+			} else {
+				clone := *ev.Entry
+				it.entry = &clone
+			}
+			select {
+			case <-quit:
+				return WalkQuit
+			case ch <- it:
+				return WalkContinue
+			}
+		})
+	}); err != nil {
+		close(ch)
+		iter.closed = true
+	}
+	return iter
+}
+
+func (it *ParallelWalkIter) Next() (*WalkEntry, error) {
+	if it == nil || it.closed {
+		return nil, io.EOF
+	}
+	got, ok := <-it.ch
+	if !ok {
+		it.closed = true
+		return nil, io.EOF
+	}
+	if got.err != nil {
+		return nil, got.err
+	}
+	return got.entry, nil
+}
+
+func (it *ParallelWalkIter) Close() error {
+	if it == nil {
+		return nil
+	}
+	it.once.Do(func() {
+		it.token.cancel()
+		for range it.ch {
+		}
+		it.closed = true
+	})
+	return nil
+}
+
+func newDirQueue() *dirQueue {
+	q := &dirQueue{}
+	q.cond = sync.NewCond(&q.mu)
+	return q
+}
+
+func (q *dirQueue) push(job dirJob) {
+	q.mu.Lock()
+	if !q.closed {
+		q.items = append(q.items, job)
+		q.cond.Signal()
+	}
+	q.mu.Unlock()
+}
+
+func (q *dirQueue) pop() (dirJob, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	for {
+		if q.closed {
+			return dirJob{}, false
+		}
+		if len(q.items) > 0 {
+			job := q.items[0]
+			q.items = q.items[1:]
+			q.inflight++
+			return job, true
+		}
+		if q.inflight == 0 {
+			q.closed = true
+			q.cond.Broadcast()
+			return dirJob{}, false
+		}
+		q.cond.Wait()
+	}
+}
+
+func (q *dirQueue) done() {
+	q.mu.Lock()
+	q.inflight--
+	if q.inflight == 0 && len(q.items) == 0 {
+		q.closed = true
+		q.cond.Broadcast()
+	} else {
+		q.cond.Signal()
+	}
+	q.mu.Unlock()
+}
+
+func (q *dirQueue) close() {
+	q.mu.Lock()
+	q.closed = true
+	q.cond.Broadcast()
+	q.mu.Unlock()
+}
+
+func orderDirents(entries []os.DirEntry, opts WalkOptions) []os.DirEntry {
+	if !opts.ContentsFirst && !opts.DirsFirst {
+		return entries
+	}
+	files, dirs, other := splitDirents(entries)
+	if opts.ContentsFirst {
+		return append(append(files, other...), dirs...)
+	}
+	return append(append(dirs, other...), files...)
+}
+
+func splitDirents(entries []os.DirEntry) (files, dirs, other []os.DirEntry) {
+	for _, dent := range entries {
+		switch {
+		case dent.Type().IsRegular():
+			files = append(files, dent)
+		case dent.IsDir() || dent.Type()&os.ModeDir != 0:
+			dirs = append(dirs, dent)
+		default:
+			other = append(other, dent)
+		}
+	}
+	return files, dirs, other
 }

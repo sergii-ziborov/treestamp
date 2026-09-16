@@ -2,9 +2,13 @@
 package dirread
 
 import (
+	"errors"
 	"io/fs"
 	"os"
 )
+
+// ErrTruncatedRecord is returned when a getdents buffer ends mid-record.
+var ErrTruncatedRecord = errors.New("truncated directory record")
 
 // Record is a name and file mode type from a directory read.
 type Record struct {

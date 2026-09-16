@@ -42,6 +42,7 @@ type Options struct {
 	Cache             *Cache
 	Started           time.Time
 	Root              string
+	emitPath          func(string) error
 }
 
 type Limits struct {
@@ -264,19 +265,59 @@ func (c *Cache) Invalidate(relatives []string) int {
 }
 
 func Paths(ctx context.Context, root string, opts Options) ([]string, error) {
+	discovered, err := discover(ctx, root, pathOpts(opts), false)
+	if err != nil {
+		return nil, err
+	}
+	if err := pathTermErr(ctx, discovered); err != nil {
+		return nil, err
+	}
+	sort.Strings(discovered.paths)
+	return discovered.paths, nil
+}
+
+// StreamPaths emits selected relatives during discovery instead of buffering them.
+func StreamPaths(ctx context.Context, root string, opts Options, emit func(string) error) error {
+	sel := pathOpts(opts)
+	sel.emitPath = emit
+	if emit == nil {
+		return nil
+	}
+	discovered, err := discover(ctx, root, sel, false)
+	if err != nil {
+		return err
+	}
+	if discovered != nil && discovered.emitErr != nil {
+		return discovered.emitErr
+	}
+	return pathTermErr(ctx, discovered)
+}
+
+func pathOpts(opts Options) Options {
 	sel := opts
 	sel.HashFileContents, sel.DetectBinary, sel.RecordSkipped = false, false, false
 	sel.Walk.CollectMetadata = false
 	sel.Cache = nil
-	discovered, err := discover(ctx, root, sel, false)
-	if err != nil {
-		return nil, err
+	return sel
+}
+
+func pathTermErr(ctx context.Context, discovered *discovery) error {
+	if discovered == nil {
+		return nil
 	}
 	if discovered.term == TermCancelled {
-		return nil, context.Canceled
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return context.Canceled
 	}
-	sort.Strings(discovered.paths)
-	return discovered.paths, nil
+	if discovered.term == TermTimeout {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return context.DeadlineExceeded
+	}
+	return nil
 }
 
 func Full(ctx context.Context, root string, opts Options) (*Report, error) {
