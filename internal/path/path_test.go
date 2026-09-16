@@ -36,6 +36,22 @@ func TestSlashAndUnderRoot(t *testing.T) {
 	if UnderRoot(root, filepath.Join(root, "..", "outside")) {
 		t.Fatal("parent must not be under root")
 	}
+	extended := `\\?\` + root
+	if !UnderRoot(extended, child) || !UnderRoot(root, `\\?\`+child) {
+		t.Fatal("extended-length prefix must not change confinement")
+	}
+}
+
+func TestNativeStripsExtendedPrefix(t *testing.T) {
+	if Native(`\\?\C:\temp\root`) != `C:\temp\root` {
+		t.Fatal(Native(`\\?\C:\temp\root`))
+	}
+	if Native(`\\?\UNC\server\share\dir`) != `\\server\share\dir` {
+		t.Fatal(Native(`\\?\UNC\server\share\dir`))
+	}
+	if Native(`/tmp/root`) != `/tmp/root` {
+		t.Fatal("unix")
+	}
 }
 
 func TestCollapsePathPrefixes(t *testing.T) {

@@ -195,7 +195,7 @@ func (w *Walker) classifyDir(path string, depth int, symlink, isDir bool, target
 		if absErr != nil {
 			return SkipNone, nil, walkErr(path, depth, OpCanonicalize, absErr)
 		}
-		resolved, resErr := filepath.EvalSymlinks(abs)
+		resolved, resErr := pathx.Resolve(abs)
 		if resErr != nil {
 			return SkipNone, nil, walkErr(path, depth, OpCanonicalize, resErr)
 		}
@@ -265,11 +265,11 @@ func inspectSelectedLink(p selectedLinkPolicy) (selectedLinkResult, *WalkError) 
 	if !target.IsDir() {
 		return selectedLinkResult{}, walkErr(p.path, p.depth, OpReadDirectory, errSelectedLinkNotDir)
 	}
-	root, err := filepath.EvalSymlinks(p.root)
+	root, err := pathx.Resolve(p.root)
 	if err != nil {
 		return selectedLinkResult{}, walkErr(p.path, p.depth, OpCanonicalize, err)
 	}
-	resolved, err := filepath.EvalSymlinks(p.path)
+	resolved, err := pathx.Resolve(p.path)
 	if err != nil {
 		return selectedLinkResult{}, walkErr(p.path, p.depth, OpCanonicalize, err)
 	}

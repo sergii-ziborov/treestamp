@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/sergii-ziborov/treestamp/internal/listwalk"
+	pathx "github.com/sergii-ziborov/treestamp/internal/path"
 	"github.com/sergii-ziborov/treestamp/internal/platform"
 )
 
@@ -124,6 +125,7 @@ func (e *WalkEntry) RelativePath() string {
 }
 
 func relativeUnder(root, path string) string {
+	root, path = pathx.Native(root), pathx.Native(path)
 	if path == "" || root == "" || path == root {
 		return ""
 	}

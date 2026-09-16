@@ -47,7 +47,7 @@ func ConfineAt(root, path string, follow bool) (string, error) {
 }
 
 func confineFollowed(rootAbs, abs string) (string, error) {
-	resolved, err := filepath.EvalSymlinks(abs)
+	resolved, err := pathx.Resolve(abs)
 	if err != nil {
 		return "", err
 	}

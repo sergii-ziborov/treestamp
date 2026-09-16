@@ -11,10 +11,33 @@ func Slash(p string) string {
 	return filepath.ToSlash(p)
 }
 
+// Native strips a Windows extended-length prefix so Rel and relative
+// symlink targets stay in ordinary DOS form. Unix paths are unchanged.
+func Native(path string) string {
+	const prefix = `\\?\`
+	if !strings.HasPrefix(path, prefix) {
+		return path
+	}
+	rest := path[len(prefix):]
+	if len(rest) >= 4 && (rest[:4] == `UNC\` || rest[:4] == `unc\`) {
+		return `\\` + rest[4:]
+	}
+	return rest
+}
+
+// Resolve evaluates symlinks and returns a native path.
+func Resolve(path string) (string, error) {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", err
+	}
+	return Native(resolved), nil
+}
+
 // UnderRoot reports whether path is the root or a descendant of root.
 // "." after Rel is under root. A Rel of ".." or a parent prefix is not.
 func UnderRoot(root, path string) bool {
-	rel, err := filepath.Rel(root, path)
+	rel, err := filepath.Rel(Native(root), Native(path))
 	if err != nil {
 		return false
 	}

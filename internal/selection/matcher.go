@@ -99,22 +99,22 @@ type Config struct {
 }
 
 type PathQuery struct {
-	Rel, Name                    string
-	IsDir, IsFile, IsSymlink     bool
-	WalkSkip                     walk.WalkSkipReason
-	Size                         *uint64
+	Rel, Name                string
+	IsDir, IsFile, IsSymlink bool
+	WalkSkip                 walk.WalkSkipReason
+	Size                     *uint64
 }
 
 type Matcher struct {
-	root          string
-	engine        *ignore.Engine
-	cfg           Config
-	plan          CompiledSelection
-	warnings      []string
-	filtersEmpty  bool
-	idle          bool
-	simple        bool
-	loadedScopes  map[string]struct{}
+	root         string
+	engine       *ignore.Engine
+	cfg          Config
+	plan         CompiledSelection
+	warnings     []string
+	filtersEmpty bool
+	idle         bool
+	simple       bool
+	loadedScopes map[string]struct{}
 }
 
 func NewMatcher(root string, cfg Config) (*Matcher, error) {
@@ -292,9 +292,9 @@ func (m *Matcher) Decide(entry *walk.WalkEntry) Decision {
 		WalkSkip: entry.SkipReason(), Size: entry.Bytes(),
 	})
 }
-func (m *Matcher) Root() string     { return m.root }
-func (m *Matcher) Config() Config   { return m.cfg }
-func (m *Matcher) Warnings() []string { return append([]string(nil), m.warnings...) }
+func (m *Matcher) Root() string                                { return m.root }
+func (m *Matcher) Config() Config                              { return m.cfg }
+func (m *Matcher) Warnings() []string                          { return append([]string(nil), m.warnings...) }
 func (m *Matcher) MatchedEntry(entry *walk.WalkEntry) Decision { return m.Decide(entry) }
 
 func (m *Matcher) Refresh() (bool, error) {
@@ -325,7 +325,7 @@ func (m *Matcher) Matched(path string) (Decision, error) {
 		return Decision{Disposition: Skipped, Skip: SkipSymlink, Repo: ignore.MatchNone}, nil
 	}
 	if isSymlink {
-		target, evalErr := filepath.EvalSymlinks(abs)
+		target, evalErr := pathx.Resolve(abs)
 		if evalErr != nil {
 			return Decision{}, evalErr
 		}

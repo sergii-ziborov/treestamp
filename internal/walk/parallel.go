@@ -183,7 +183,7 @@ func concurrentRoot(root string, options WalkOptions) (string, os.FileInfo, erro
 		return "", nil, walkErr(abs, 0, OpReadMetadata, errRootSymlink)
 	}
 	if options.FollowLinks || options.SameFileSystem {
-		resolved, resolveErr := filepath.EvalSymlinks(abs)
+		resolved, resolveErr := pathx.Resolve(abs)
 		if resolveErr != nil {
 			return "", nil, walkErr(abs, 0, OpCanonicalize, resolveErr)
 		}
@@ -274,7 +274,7 @@ func (s *concurrentState) handleDirent(job dirJob, dent os.DirEntry, queue *dirQ
 func (s *concurrentState) applyDirPolicy(entry *WalkEntry, path string, job dirJob) *WalkError {
 	options := s.opts.options
 	if entry.symlink && options.FollowLinks {
-		canonical, err := filepath.EvalSymlinks(path)
+		canonical, err := pathx.Resolve(path)
 		if err != nil {
 			return walkErr(path, entry.depth, OpCanonicalize, err)
 		}

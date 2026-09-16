@@ -13,6 +13,7 @@ import (
 
 	"github.com/sergii-ziborov/treestamp/internal/dirread"
 	"github.com/sergii-ziborov/treestamp/internal/listwalk"
+	pathx "github.com/sergii-ziborov/treestamp/internal/path"
 	"github.com/sergii-ziborov/treestamp/internal/platform"
 )
 
@@ -93,7 +94,7 @@ func resolveWalkRoot(root string, options WalkOptions) (string, error) {
 		if absErr != nil {
 			return "", walkErr(root, 0, OpCanonicalize, absErr)
 		}
-		resolved, resErr := filepath.EvalSymlinks(abs)
+		resolved, resErr := pathx.Resolve(abs)
 		if resErr != nil {
 			return "", walkErr(root, 0, OpCanonicalize, resErr)
 		}

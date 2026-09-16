@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync/atomic"
 	"testing"
 )
@@ -115,18 +116,35 @@ func makeNode(root, path string, entry fs.DirEntry) node {
 	return node{Relative: relPath(root, path), Kind: entryKind(entry)}
 }
 
-func canon(path string) string {
-	if resolved, err := filepath.EvalSymlinks(path); err == nil {
-		return resolved
-	}
-	return path
-}
-
 func relPath(root, path string) string {
-	value, err := filepath.Rel(canon(root), canon(path))
+	if value, ok := relUnder(root, path); ok {
+		return value
+	}
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		if value, ok := relUnder(resolved, path); ok {
+			return value
+		}
+	}
+	value, err := filepath.Rel(root, path)
 	if err != nil {
 		return filepath.ToSlash(path)
 	}
+	return slashRel(value)
+}
+
+func relUnder(root, path string) (string, bool) {
+	value, err := filepath.Rel(root, path)
+	if err != nil || escapesRoot(value) {
+		return "", false
+	}
+	return slashRel(value), true
+}
+
+func escapesRoot(rel string) bool {
+	return rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator))
+}
+
+func slashRel(value string) string {
 	if value == "." {
 		return ""
 	}
@@ -203,4 +221,15 @@ func equalStrings(left, right []string) bool {
 		}
 	}
 	return true
+}
+
+func TestRelPathKeepsWalkName(t *testing.T) {
+	root := t.TempDir()
+	link := filepath.Join(root, "chosen", "file.txt")
+	if got := relPath(root, link); got != "chosen/file.txt" {
+		t.Fatalf("relPath = %q", got)
+	}
+	if got := relPath(root, filepath.Join(root, "..", "002", "outside.txt")); strings.Contains(got, "escape") {
+		t.Fatalf("escaped path should not invent a link name: %q", got)
+	}
 }
