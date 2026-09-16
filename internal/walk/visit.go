@@ -206,14 +206,12 @@ func (w *Walker) classifyDir(path string, depth int, symlink, isDir bool, target
 		}
 		resolved, resErr := pathx.Resolve(abs)
 		if resErr != nil {
-			joined, joinErr := pathx.JoinLink(abs)
-			if joinErr != nil {
-				return SkipNone, nil, walkErr(path, depth, OpCanonicalize, resErr)
+			if pathx.EscapesRoot(w.root, abs) {
+				return SkipPathEscape, nil, nil
 			}
-			canonical = joined
-		} else {
-			canonical = resolved
+			return SkipNone, nil, walkErr(path, depth, OpCanonicalize, resErr)
 		}
+		canonical = resolved
 	}
 	if !pathx.UnderRoot(w.root, canonical) {
 		return SkipPathEscape, nil, nil

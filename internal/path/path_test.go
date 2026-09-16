@@ -78,6 +78,17 @@ func TestJoinLinkReadsRelativeTarget(t *testing.T) {
 	}
 }
 
+func TestEscapesRootKeepsDanglingInTree(t *testing.T) {
+	root := t.TempDir()
+	link := filepath.Join(root, "dangling")
+	if err := os.Symlink(filepath.Join(root, "missing"), link); err != nil {
+		t.Skip(err)
+	}
+	if EscapesRoot(root, link) {
+		t.Fatal("dangling in-tree target is not an escape")
+	}
+}
+
 func TestCollapsePathPrefixes(t *testing.T) {
 	got := CollapsePathPrefixes([]string{"src/nested", "src", "src", "src2"})
 	want := []string{"src", "src2"}

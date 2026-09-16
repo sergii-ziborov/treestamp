@@ -49,8 +49,9 @@ func JoinLink(path string) (string, error) {
 	return Native(filepath.Clean(filepath.Join(filepath.Dir(path), target))), nil
 }
 
-// EscapesRoot reports whether following path leaves root. It uses the
-// link text when the target cannot be opened.
+// EscapesRoot reports whether following path leaves root. A dangling
+// in-tree target is not an escape, even when the walk root was
+// canonicalized through an alias such as /var → /private/var.
 func EscapesRoot(root, path string) bool {
 	if resolved, err := Resolve(path); err == nil {
 		return !UnderRoot(root, resolved)
@@ -59,7 +60,28 @@ func EscapesRoot(root, path string) bool {
 	if err != nil {
 		return false
 	}
-	return !UnderRoot(root, joined)
+	if resolved, err := Resolve(joined); err == nil {
+		return !UnderRoot(root, resolved)
+	}
+	return !underAlias(root, joined)
+}
+
+func underAlias(root, path string) bool {
+	if UnderRoot(root, path) {
+		return true
+	}
+	rootRes := root
+	if resolved, err := Resolve(root); err == nil {
+		rootRes = resolved
+	}
+	if UnderRoot(rootRes, path) {
+		return true
+	}
+	dir, err := Resolve(filepath.Dir(path))
+	if err != nil {
+		return false
+	}
+	return UnderRoot(rootRes, filepath.Join(dir, filepath.Base(path)))
 }
 
 // UnderRoot reports whether path is the root or a descendant of root.
