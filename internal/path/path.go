@@ -1,6 +1,7 @@
 package pathx
 
 import (
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -32,6 +33,33 @@ func Resolve(path string) (string, error) {
 		return "", err
 	}
 	return Native(resolved), nil
+}
+
+// JoinLink joins a symlink's target without opening it. Forward slashes
+// in the target are converted so Windows relative escape links stay readable.
+func JoinLink(path string) (string, error) {
+	target, err := os.Readlink(path)
+	if err != nil {
+		return "", err
+	}
+	target = filepath.FromSlash(target)
+	if filepath.IsAbs(target) {
+		return Native(filepath.Clean(target)), nil
+	}
+	return Native(filepath.Clean(filepath.Join(filepath.Dir(path), target))), nil
+}
+
+// EscapesRoot reports whether following path leaves root. It uses the
+// link text when the target cannot be opened.
+func EscapesRoot(root, path string) bool {
+	if resolved, err := Resolve(path); err == nil {
+		return !UnderRoot(root, resolved)
+	}
+	joined, err := JoinLink(path)
+	if err != nil {
+		return false
+	}
+	return !UnderRoot(root, joined)
 }
 
 // UnderRoot reports whether path is the root or a descendant of root.

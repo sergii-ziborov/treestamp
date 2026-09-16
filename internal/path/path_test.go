@@ -1,6 +1,7 @@
 package pathx
 
 import (
+	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -51,6 +52,29 @@ func TestNativeStripsExtendedPrefix(t *testing.T) {
 	}
 	if Native(`/tmp/root`) != `/tmp/root` {
 		t.Fatal("unix")
+	}
+}
+
+func TestJoinLinkReadsRelativeTarget(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	link := filepath.Join(root, "escape")
+	target, relErr := filepath.Rel(root, outside)
+	if relErr != nil {
+		t.Fatal(relErr)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Skip(err)
+	}
+	joined, err := JoinLink(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if UnderRoot(root, joined) {
+		t.Fatalf("joined still under root: %s", joined)
+	}
+	if !EscapesRoot(root, link) {
+		t.Fatal("escape link must leave the root")
 	}
 }
 

@@ -12,8 +12,9 @@ Still not a full port.
 - `--scope` is `Filters.LocationInclude`. It does not reuse override
   include rules. `--output` refuses a path inside the scan root.
 - Follow canonicalizes the walk root and strips Windows `\\?\` prefixes
-  so relative escape links stay resolvable. Compat `relPath` keeps
-  symlink names; it only resolves the root when `Rel` would escape.
+  so relative escape links stay resolvable. If a followed link cannot be
+  opened, confinement uses the link text. Compat `relPath` keeps symlink
+  names; it only resolves the root when `Rel` would escape.
 - Unsorted directory listing (`File.ReadDir`, no `os.ReadDir` sort), lazy
   callback `Info`, and `WalkFS` = `fs.WalkDir`. Informal Windows medians
   now beat godirwalk `ReadDirents` and use less `B/op` than fastwalk

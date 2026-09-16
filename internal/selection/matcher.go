@@ -325,11 +325,7 @@ func (m *Matcher) Matched(path string) (Decision, error) {
 		return Decision{Disposition: Skipped, Skip: SkipSymlink, Repo: ignore.MatchNone}, nil
 	}
 	if isSymlink {
-		target, evalErr := pathx.Resolve(abs)
-		if evalErr != nil {
-			return Decision{}, evalErr
-		}
-		if !pathx.UnderRoot(m.root, target) {
+		if pathx.EscapesRoot(m.root, abs) {
 			return Decision{Disposition: Skipped, Skip: SkipPathEscape, Repo: ignore.MatchNone}, nil
 		}
 		info, err = os.Stat(abs)

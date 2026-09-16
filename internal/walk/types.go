@@ -460,3 +460,40 @@ func (w *callbackWork) follow(entry *listwalk.Entry, job dirJob) bool {
 }
 
 func showPath(path string, toSlash bool) string { return listwalk.Show(path, toSlash) }
+
+func containsID(ids []platformID, id platform.Identity) bool {
+	for _, item := range ids {
+		if item.fs == id.FileSystem && item.file == id.File {
+			return true
+		}
+	}
+	return false
+}
+
+func childPath(dir, name string) string {
+	if dir == "" {
+		return name
+	}
+	return dir + string(os.PathSeparator) + name
+}
+
+func chainHasID(root, dir string, id platform.Identity, depth int) (bool, *WalkError) {
+	for dir != "" {
+		info, err := platform.DirectoryInfo(dir)
+		if err != nil {
+			return false, walkErr(dir, depth, OpReadMetadata, err)
+		}
+		if info.Identity == id {
+			return true, nil
+		}
+		if filepath.Clean(dir) == filepath.Clean(root) {
+			return false, nil
+		}
+		next := filepath.Dir(dir)
+		if next == dir {
+			return false, nil
+		}
+		dir = next
+	}
+	return false, nil
+}

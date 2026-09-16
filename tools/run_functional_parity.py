@@ -71,7 +71,7 @@ def add_symlink_fixture(root: Path) -> tuple[bool, str | None]:
     links = root / "links"
     links.mkdir()
     try:
-        os.symlink("../sub", links / "internal-dir", target_is_directory=True)
+        os.symlink(os.path.normpath("../sub"), links / "internal-dir", target_is_directory=True)
     except OSError as error:
         links.rmdir()
         code = getattr(error, "winerror", None) or error.errno
@@ -79,9 +79,9 @@ def add_symlink_fixture(root: Path) -> tuple[bool, str | None]:
     outside = root.parent / "outside"
     outside.mkdir()
     (outside / "outside.txt").write_text("outside\n", encoding="utf-8", newline="\n")
-    os.symlink("../a.txt", links / "file-link")
-    os.symlink("../../outside", links / "escape", target_is_directory=True)
-    os.symlink("..", root / "sub" / "back", target_is_directory=True)
+    os.symlink(os.path.normpath("../a.txt"), links / "file-link")
+    os.symlink(os.path.normpath("../../outside"), links / "escape", target_is_directory=True)
+    os.symlink(os.path.normpath(".."), root / "sub" / "back", target_is_directory=True)
     return True, None
 
 

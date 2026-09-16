@@ -276,6 +276,10 @@ func (s *concurrentState) applyDirPolicy(entry *WalkEntry, path string, job dirJ
 	if entry.symlink && options.FollowLinks {
 		canonical, err := pathx.Resolve(path)
 		if err != nil {
+			if pathx.EscapesRoot(s.abs, path) {
+				entry.skip = SkipPathEscape
+				return nil
+			}
 			return walkErr(path, entry.depth, OpCanonicalize, err)
 		}
 		if !pathx.UnderRoot(s.abs, canonical) {

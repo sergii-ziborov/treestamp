@@ -84,7 +84,13 @@ func (s *concurrentState) entryFromDent(job dirJob, dent os.DirEntry, path strin
 	if info.Mode()&os.ModeSymlink != 0 && s.opts.options.FollowLinks {
 		target, err := os.Stat(path)
 		if err != nil {
-			return nil, walkErr(path, job.depth+1, OpReadMetadata, err)
+			if !pathx.EscapesRoot(s.abs, path) {
+				return nil, walkErr(path, job.depth+1, OpReadMetadata, err)
+			}
+			entry := makeEntry(s.abs, path, job.depth+1, info, s.opts.options, nil)
+			entry.dent = dent
+			entry.skip = SkipPathEscape
+			return entry, nil
 		}
 		entry := makeEntry(s.abs, path, job.depth+1, info, s.opts.options, target)
 		entry.dent = dent
@@ -170,6 +176,9 @@ func (w *Walker) followTarget(path string, depth int, symlink, isFile bool, meta
 	}
 	info, err := os.Stat(path)
 	if err != nil {
+		if pathx.EscapesRoot(w.root, path) {
+			return nil, meta, nil
+		}
 		return nil, visitMeta{}, walkErr(path, depth, OpReadMetadata, err)
 	}
 	if w.options.CollectMetadata && info.Mode().IsRegular() {
@@ -197,9 +206,14 @@ func (w *Walker) classifyDir(path string, depth int, symlink, isDir bool, target
 		}
 		resolved, resErr := pathx.Resolve(abs)
 		if resErr != nil {
-			return SkipNone, nil, walkErr(path, depth, OpCanonicalize, resErr)
+			joined, joinErr := pathx.JoinLink(abs)
+			if joinErr != nil {
+				return SkipNone, nil, walkErr(path, depth, OpCanonicalize, resErr)
+			}
+			canonical = joined
+		} else {
+			canonical = resolved
 		}
-		canonical = resolved
 	}
 	if !pathx.UnderRoot(w.root, canonical) {
 		return SkipPathEscape, nil, nil
@@ -271,6 +285,9 @@ func inspectSelectedLink(p selectedLinkPolicy) (selectedLinkResult, *WalkError) 
 	}
 	resolved, err := pathx.Resolve(p.path)
 	if err != nil {
+		if pathx.EscapesRoot(root, p.path) {
+			return selectedLinkResult{skip: SkipPathEscape}, nil
+		}
 		return selectedLinkResult{}, walkErr(p.path, p.depth, OpCanonicalize, err)
 	}
 	if !pathx.UnderRoot(root, resolved) {
@@ -441,15 +458,6 @@ func makeEntry(root, path string, depth int, info os.FileInfo, options WalkOptio
 	return entry
 }
 
-func containsID(ids []platformID, id platform.Identity) bool {
-	for _, item := range ids {
-		if item.fs == id.FileSystem && item.file == id.File {
-			return true
-		}
-	}
-	return false
-}
-
 type openEntries struct {
 	file *os.File
 	buf  []os.DirEntry
@@ -567,32 +575,4 @@ func sortDirEntries(entries []os.DirEntry, cmp func(a, b os.DirEntry) int) {
 			j--
 		}
 	}
-}
-
-func childPath(dir, name string) string {
-	if dir == "" {
-		return name
-	}
-	return dir + string(os.PathSeparator) + name
-}
-
-func chainHasID(root, dir string, id platform.Identity, depth int) (bool, *WalkError) {
-	for dir != "" {
-		info, err := platform.DirectoryInfo(dir)
-		if err != nil {
-			return false, walkErr(dir, depth, OpReadMetadata, err)
-		}
-		if info.Identity == id {
-			return true, nil
-		}
-		if filepath.Clean(dir) == filepath.Clean(root) {
-			return false, nil
-		}
-		next := filepath.Dir(dir)
-		if next == dir {
-			return false, nil
-		}
-		dir = next
-	}
-	return false, nil
 }
