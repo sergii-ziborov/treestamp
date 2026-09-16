@@ -80,6 +80,26 @@ jobs:
         working-directory: consumer
         run: go test .
 
+  cli:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.2"
+      - name: CLI module tests
+        working-directory: cmd/treestamp
+        run: go test ./...
+      - name: CLI help smoke
+        working-directory: cmd/treestamp
+        run: go run . version --json
+
   parity:
     strategy:
       fail-fast: false

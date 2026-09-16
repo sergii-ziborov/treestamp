@@ -1,7 +1,15 @@
 # Architecture
 
-Treestamp is one importable module. Implementation lives under `internal/`.
-Users should not need a dozen packages.
+Treestamp is one Git repository and two Go modules. Implementation of the
+scanner lives under `internal/`. Users should not need a dozen packages.
+
+```text
+github.com/sergii-ziborov/treestamp              library
+github.com/sergii-ziborov/treestamp/cmd/treestamp  CLI
+```
+
+The library does not import the CLI. The CLI imports only the public facade.
+`cmd/treestamp-driver` stays a fixture protocol driver.
 
 Public import: `treestamp`. The facade converts oracle-shaped options and
 reports. Work runs as a layered pipeline:
@@ -24,6 +32,19 @@ internal/merkle      persistent keyed TreeRevision (not legacy flat digest)
 internal/report      snapshot reads, deltas, portable hashing
 internal/hashx       SHA-256 prefix and content fingerprint
 internal/filetypes   named type catalog
+```
+
+CLI process, not part of the library graph:
+
+```text
+cmd/treestamp
+  arguments / config / signals
+  render (human, JSON, NUL)
+  store (manifest v1, atomic --output)
+        ↓ public API
+  ScanWith / ScanPathsWith / Explain / DeltaBetween
+        ↓
+walk → selection → inspect/stream → report
 ```
 
 Optional later modules, not part of the required graph:

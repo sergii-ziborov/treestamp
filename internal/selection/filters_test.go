@@ -23,6 +23,19 @@ func writePolicyBytes(f Filters) string {
 	return string(h.Sum(nil))
 }
 
+func TestLocationIncludeKeepsPrefixDirs(t *testing.T) {
+	f := Filters{LocationInclude: []string{"services/payments/**"}}
+	if f.rejectDir("services", "services", "services") {
+		t.Fatal("must enter prefix directory")
+	}
+	if !f.rejectDir("libs", "libs", "libs") {
+		t.Fatal("must skip other trees")
+	}
+	if f.rejectFile("a.go", "services/payments/a.go") || !f.rejectFile("a.go", "libs/a.go") {
+		t.Fatal("file scope")
+	}
+}
+
 func TestWritePolicyEmptyListsStayDistinct(t *testing.T) {
 	onlyInc := Filters{IncludeNames: []string{"a"}}
 	onlyExc := Filters{ExcludeNames: []string{"a"}}

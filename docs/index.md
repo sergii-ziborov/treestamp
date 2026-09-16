@@ -25,6 +25,7 @@ not from remembered snippets.
 | Revisions and snapshots | [guides/snapshots.md](guides/snapshots.md) |
 | Errors and ownership | [guides/errors.md](guides/errors.md) |
 | Informal benches | [guides/performance.md](guides/performance.md) |
+| Command-line app | [guides/cli.md](guides/cli.md) |
 | Agent consumer index | [agent-guide.md](agent-guide.md) |
 
 Existing design notes stay where they are:

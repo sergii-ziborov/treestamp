@@ -11,13 +11,14 @@ import (
 // Filters are declarative name/dir/regex rules used by FileWalker
 // and Scan. Empty filters do not change default oracle selection.
 type Filters struct {
-	IncludeNames, ExcludeNames           []string
-	IncludeDirs, ExcludeDirs             []string
-	IncludeNameRegex, ExcludeNameRegex   []*regexp.Regexp
-	IncludeDirRegex, ExcludeDirRegex     []*regexp.Regexp
-	ExcludeExtensions                    []string
-	LocationExclude                      []string
-	err                                  error
+	IncludeNames, ExcludeNames         []string
+	IncludeDirs, ExcludeDirs           []string
+	IncludeNameRegex, ExcludeNameRegex []*regexp.Regexp
+	IncludeDirRegex, ExcludeDirRegex   []*regexp.Regexp
+	ExcludeExtensions                  []string
+	LocationExclude                    []string
+	LocationInclude                    []string
+	err                                error
 }
 
 func (f Filters) Err() error { return f.err }
@@ -31,10 +32,12 @@ func (f *Filters) SetErr(err error) {
 func (f Filters) Empty() bool {
 	return len(f.IncludeNames)+len(f.ExcludeNames)+len(f.IncludeDirs)+len(f.ExcludeDirs)+
 		len(f.IncludeNameRegex)+len(f.ExcludeNameRegex)+len(f.IncludeDirRegex)+len(f.ExcludeDirRegex)+
-		len(f.ExcludeExtensions)+len(f.LocationExclude) == 0
+		len(f.ExcludeExtensions)+len(f.LocationExclude)+len(f.LocationInclude) == 0
 }
 
-func (f Filters) needsLocation() bool { return len(f.LocationExclude) > 0 }
+func (f Filters) needsLocation() bool {
+	return len(f.LocationExclude)+len(f.LocationInclude) > 0
+}
 
 func (f Filters) rejectDir(rel, name, joined string) bool {
 	if len(f.IncludeDirs) > 0 && !containsFold(f.IncludeDirs, name) && rel != "" {
@@ -47,6 +50,9 @@ func (f Filters) rejectDir(rel, name, joined string) bool {
 		return true
 	}
 	if anyRegex(f.ExcludeDirRegex, name) {
+		return true
+	}
+	if !locationIncluded(joined, f.LocationInclude, true) {
 		return true
 	}
 	return locationExcluded(joined, f.LocationExclude)
@@ -68,6 +74,9 @@ func (f Filters) rejectFile(name, joined string) bool {
 	if excludeExtension(name, f.ExcludeExtensions) {
 		return true
 	}
+	if !locationIncluded(joined, f.LocationInclude, false) {
+		return true
+	}
 	return locationExcluded(joined, f.LocationExclude)
 }
 
@@ -78,6 +87,7 @@ func (f Filters) WritePolicy(h hash.Hash) {
 	writeFilterList(h, "exc-dir", f.ExcludeDirs)
 	writeFilterList(h, "exc-ext", f.ExcludeExtensions)
 	writeFilterList(h, "loc", f.LocationExclude)
+	writeFilterList(h, "loc-inc", f.LocationInclude)
 	writeFilterRegex(h, "inc-name-re", f.IncludeNameRegex)
 	writeFilterRegex(h, "exc-name-re", f.ExcludeNameRegex)
 	writeFilterRegex(h, "inc-dir-re", f.IncludeDirRegex)
@@ -100,6 +110,40 @@ func anyRegex(exprs []*regexp.Regexp, name string) bool {
 		}
 	}
 	return false
+}
+
+func locationIncluded(joined string, patterns []string, isDir bool) bool {
+	if len(patterns) == 0 {
+		return true
+	}
+	slash := strings.Trim(filepath.ToSlash(joined), "/")
+	if slash == "" && isDir {
+		return true
+	}
+	for _, pattern := range patterns {
+		if scopeAllows(slash, pattern, isDir) {
+			return true
+		}
+	}
+	return false
+}
+
+func scopeAllows(rel, pattern string, isDir bool) bool {
+	pat := strings.Trim(filepath.ToSlash(pattern), "/")
+	if pat == "" || pat == "**" || pat == "*" {
+		return true
+	}
+	prefix := strings.TrimSuffix(pat, "/**")
+	prefix = strings.TrimSuffix(prefix, "/*")
+	prefix = strings.Trim(prefix, "/")
+	if rel == prefix || strings.HasPrefix(rel, prefix+"/") {
+		return true
+	}
+	if isDir && (prefix == rel || strings.HasPrefix(prefix, rel+"/")) {
+		return true
+	}
+	ok, _ := filepath.Match(pat, rel)
+	return ok
 }
 
 func locationExcluded(joined string, patterns []string) bool {

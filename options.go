@@ -17,6 +17,9 @@ import (
 	"github.com/sergii-ziborov/treestamp/internal/walk"
 )
 
+// Version is the library module version published with this tree.
+const Version = "0.1.0-alpha.1"
+
 type Options struct {
 	MaxFileBytes      uint64
 	IgnoreFiles       []string

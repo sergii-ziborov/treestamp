@@ -97,17 +97,29 @@ func EscapeName(s string) string {
 	return b.String()
 }
 
+func safeBase(path string) string {
+	trimmed := strings.TrimRight(path, `/\`)
+	if trimmed == "" {
+		return filepath.Base(path)
+	}
+	i := strings.LastIndexAny(trimmed, `/\`)
+	if i < 0 {
+		return trimmed
+	}
+	return trimmed[i+1:]
+}
+
 func SafeCause(err error) string {
 	if err == nil {
 		return ""
 	}
 	var pe *fs.PathError
 	if errors.As(err, &pe) {
-		return pe.Op + " " + filepath.Base(pe.Path) + ": " + pe.Err.Error()
+		return pe.Op + " " + safeBase(pe.Path) + ": " + pe.Err.Error()
 	}
 	var oe *os.PathError
 	if errors.As(err, &oe) {
-		return oe.Op + " " + filepath.Base(oe.Path) + ": " + oe.Err.Error()
+		return oe.Op + " " + safeBase(oe.Path) + ": " + oe.Err.Error()
 	}
 	return EscapeName(err.Error())
 }

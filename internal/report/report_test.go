@@ -202,7 +202,11 @@ func TestSnapshotIdentityRejectsReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	ver := fileread.FromInfo(path, info)
-	files := []File{{Absolute: path, Relative: "a.txt", Bytes: 3, ModifiedNS: ver.ModifiedNS, Identity: ver.Identity}}
+	files := []File{{
+		Absolute: path, Relative: "a.txt", Bytes: 3,
+		ContentHash: hashx.SHA256Prefix([]byte("xxx")),
+		ModifiedNS:  ver.ModifiedNS, Identity: ver.Identity,
+	}}
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}

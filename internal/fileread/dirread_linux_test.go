@@ -49,8 +49,12 @@ func TestParseRecordsNativeEndian(t *testing.T) {
 	if int(nameOff)+2 > len(buf) {
 		buf = make([]byte, nameOff+4)
 	}
+	typeOff := unsafe.Offsetof(syscall.Dirent{}.Type)
 	binary.NativeEndian.PutUint16(buf[reclenOff:], uint16(len(buf)))
 	binary.NativeEndian.PutUint64(buf[inoOff:], 1)
+	if int(typeOff) < len(buf) {
+		buf[typeOff] = syscall.DT_REG
+	}
 	copy(buf[nameOff:], []byte("a\x00"))
 	recs, err := dirread.ParseRecords(buf)
 	if err != nil {

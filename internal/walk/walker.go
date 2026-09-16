@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sergii-ziborov/treestamp/internal/dirread"
+	"github.com/sergii-ziborov/treestamp/internal/listwalk"
 	"github.com/sergii-ziborov/treestamp/internal/platform"
 )
 
@@ -92,11 +93,7 @@ func resolveWalkRoot(root string, options WalkOptions) (string, error) {
 		if absErr != nil {
 			return "", walkErr(root, 0, OpCanonicalize, absErr)
 		}
-		resolved, resErr := filepath.EvalSymlinks(abs)
-		if resErr != nil {
-			return "", walkErr(root, 0, OpCanonicalize, resErr)
-		}
-		return resolved, nil
+		return abs, nil
 	}
 	if !filepath.IsAbs(root) {
 		cwd, cwdErr := os.Getwd()
@@ -494,10 +491,10 @@ func prepareCallback(root string, fn fs.WalkDirFunc, toSlash bool) (string, bool
 	if err != nil {
 		return "", false, fn(showPath(abs, toSlash), nil, err)
 	}
-	entry := acquireFast(info.Name(), abs, info.Mode().Type(), 0, info)
-	cbErr := invokeFast(fn, entry, toSlash)
-	typ := entry.typ
-	releaseFast(entry)
+	entry := listwalk.Acquire(info.Name(), abs, info.Mode().Type(), 0, info)
+	cbErr := listwalk.Call(fn, entry, toSlash)
+	typ := entry.Type()
+	listwalk.Release(entry)
 	if cbErr != nil {
 		if errors.Is(cbErr, fs.SkipAll) || errors.Is(cbErr, fs.SkipDir) {
 			return "", false, nil
@@ -529,45 +526,46 @@ func (w *callbackWork) visitDir(job dirJob) {
 	if w.quit.Load() {
 		return
 	}
-	recs, err := dirread.Read(job.path, nil)
+	dents, err := dirread.OSEntries(job.path)
 	if err != nil {
 		w.reportRead(job.path, err)
 		return
 	}
 	skipFiles := false
-	for i := range recs {
+	for i := range dents {
 		if w.quit.Load() {
 			return
 		}
-		if skipFiles && recs[i].Type.IsRegular() {
+		if skipFiles && dents[i].Type().IsRegular() {
 			continue
 		}
-		entry := acquireFast(recs[i].Name, childPath(job.path, recs[i].Name), recs[i].Type, job.depth+1, recs[i].Info)
-		cbErr := invokeFast(w.fn, entry, w.toSlash)
+		entry := listwalk.Acquire(dents[i].Name(), childPath(job.path, dents[i].Name()), dents[i].Type(), job.depth+1, nil)
+		entry.Bind(dents[i])
+		cbErr := listwalk.Call(w.fn, entry, w.toSlash)
 		stop := w.control(cbErr, entry, job, &skipFiles)
-		releaseFast(entry)
+		listwalk.Release(entry)
 		if stop {
 			return
 		}
 	}
 }
 
-func (w *callbackWork) control(err error, entry *fastEntry, job dirJob, skipFiles *bool) bool {
+func (w *callbackWork) control(err error, entry *listwalk.Entry, job dirJob, skipFiles *bool) bool {
 	switch {
 	case err == nil:
-		if entry.typ.IsDir() {
-			w.queue.push(dirJob{path: entry.path, depth: entry.depth})
+		if entry.IsDir() {
+			w.queue.push(dirJob{path: entry.Path(), depth: entry.Depth()})
 		}
 		return false
 	case errors.Is(err, fs.SkipDir):
-		return !entry.typ.IsDir()
+		return !entry.IsDir()
 	case errors.Is(err, fs.SkipAll):
 		w.stop(nil)
 		return true
 	case errors.Is(err, ErrSkipFiles):
 		*skipFiles = true
 		return false
-	case errors.Is(err, ErrTraverseLink) && entry.typ&os.ModeSymlink != 0:
+	case errors.Is(err, ErrTraverseLink) && entry.Type()&os.ModeSymlink != 0:
 		return w.follow(entry, job)
 	default:
 		w.stop(err)

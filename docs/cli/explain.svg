@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="300" viewBox="0 0 720 300" role="img" aria-label="treestamp explain excluded file">
+  <rect width="720" height="300" rx="12" fill="#111827"/>
+  <circle cx="28" cy="24" r="6" fill="#f87171"/>
+  <circle cx="48" cy="24" r="6" fill="#fbbf24"/>
+  <circle cx="68" cy="24" r="6" fill="#34d399"/>
+  <text x="96" y="29" fill="#9ca3af" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14">treestamp explain</text>
+  <text x="32" y="72" fill="#fbbf24" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="16" font-weight="700">excluded</text>
+  <text x="32" y="96" fill="#9ca3af" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14">generated/model.go</text>
+  <text x="32" y="136" fill="#67e8f9" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14">Reason</text>
+  <text x="170" y="136" fill="#f9fafb" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14">ignore_rule</text>
+  <text x="32" y="164" fill="#67e8f9" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14">Source</text>
+  <text x="170" y="164" fill="#f9fafb" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14">.gitignore:1</text>
+  <text x="32" y="192" fill="#67e8f9" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14">Checked</text>
+  <text x="170" y="192" fill="#f9fafb" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14">selection rules</text>
+  <text x="32" y="220" fill="#67e8f9" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14">Not checked</text>
+  <text x="170" y="220" fill="#f9fafb" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14">content bytes, binary detection</text>
+  <text x="32" y="264" fill="#6b7280" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13">Excluded by policy is still a successful explanation.</text>
+</svg>

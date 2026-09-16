@@ -55,8 +55,10 @@ executor-owned parallel admission, compiled override-scope pruning,
 ordered-parallel directory pull, and a persistent Merkle `TreeSnapshot`.
 `ScanSession` applies Merkle deltas when a `TreeSnapshot` is present.
 The recommended facade is `ScanWith` / `EachFile` / `Compile` without
-changing the two-argument `Scan` / `ScanPaths` signatures. Task docs live
-in `docs/`. P7 fsnotify module and P8 official benches remain open.
+changing the two-argument `Scan` / `ScanPaths` signatures. The user CLI
+is `cmd/treestamp` (separate Go module). `cmd/treestamp-driver` stays the
+fixture driver. Task docs live in `docs/`. P7 fsnotify module and P8
+official benches remain open.
 Functional parity, including cache/watch sequences, is in the
 Windows/Linux/macOS CI matrix. Ledger: `compat/ledger.json`.
 
@@ -66,7 +68,8 @@ Windows/Linux/macOS CI matrix. Ledger: `compat/ledger.json`.
 2. Optional `watch` module with fsnotify (never a main-module require).
 3. Official B01–B14 campaign against fastwalk, gocodewalker, and the rust oracle.
    Informal go-compat benches are not that campaign.
-4. Publish a real module tag before claiming a release consumer.
+4. Keep library tag `v0.1.0-alpha.1` and CLI tag `cmd/treestamp/v0.1.0-alpha.1`
+   in lockstep until a later help-only CLI bump.
 
 ## Local checks
 
@@ -76,6 +79,7 @@ python3 -m unittest discover -s tools -p "test_*.py"
 python3 tools/run_functional_parity.py
 python3 tools/audit.py --require-full
 go test ./...
+cd cmd/treestamp && go test ./...
 cd bench/go-compat && go test ./...
 ```
 

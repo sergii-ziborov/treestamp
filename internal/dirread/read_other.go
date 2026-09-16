@@ -4,9 +4,10 @@ package dirread
 
 import "os"
 
-// Read appends directory records using os.ReadDir.
+// Read appends unsorted directory records. It does not call os.ReadDir,
+// which sorts names and is slower than godirwalk on wide directories.
 func Read(dir string, buf []Record) ([]Record, error) {
-	dents, err := os.ReadDir(dir)
+	dents, err := OSEntries(dir)
 	if err != nil {
 		return buf, err
 	}
@@ -23,15 +24,15 @@ func ReadScratch(dir string, buf []Record, _ []byte) ([]Record, error) {
 }
 
 func OSEntries(dir string) ([]os.DirEntry, error) {
-	return os.ReadDir(dir)
+	return OSEntriesScratch(dir, nil)
 }
 
 func OSEntriesScratch(dir string, _ []byte) ([]os.DirEntry, error) {
-	return os.ReadDir(dir)
+	return unsortedEntries(dir)
 }
 
 func Names(dir string, _ []byte) ([]string, error) {
-	dents, err := os.ReadDir(dir)
+	dents, err := unsortedEntries(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -40,4 +41,17 @@ func Names(dir string, _ []byte) ([]string, error) {
 		out[i] = dent.Name()
 	}
 	return out, nil
+}
+
+func unsortedEntries(dir string) ([]os.DirEntry, error) {
+	file, err := os.Open(dir)
+	if err != nil {
+		return nil, err
+	}
+	dents, err := file.ReadDir(-1)
+	closeErr := file.Close()
+	if err != nil {
+		return nil, err
+	}
+	return dents, closeErr
 }

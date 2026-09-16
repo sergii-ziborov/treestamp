@@ -1,9 +1,22 @@
 # Changelog
 
-## Unreleased — 0.1.0-alpha.2 (2026-09-16)
+## Unreleased — 0.1.0-alpha.1 (2026-09-16)
 
-Method-complete native scanner surfaces. Still not a full port.
+Method-complete native scanner surfaces plus a nested CLI module.
+Still not a full port.
 
+- First user CLI: `scan`, `paths`, `explain`, `diff`, `verify`, plus
+  `version`, `doctor`, `config show`, and `schema`. Nested module
+  `github.com/sergii-ziborov/treestamp/cmd/treestamp`. Cobra stays out
+  of the library `go.mod`. Manifest schema `treestamp.manifest/v1`.
+- `--scope` is `Filters.LocationInclude`. It does not reuse override
+  include rules. `--output` refuses a path inside the scan root.
+- `WalkWithConfig` Follow keeps the caller-supplied root path instead of
+  replacing it with `EvalSymlinks` (`/var` vs `/private/var` on macOS).
+- Unsorted directory listing (`File.ReadDir`, no `os.ReadDir` sort), lazy
+  callback `Info`, and `WalkFS` = `fs.WalkDir`. Informal Windows medians
+  now beat godirwalk `ReadDirents` and use less `B/op` than fastwalk
+  cached `Stat`. Official B01–B14 stay `NOT_RUN`.
 - Task-first docs, executable `Example` recipes, `examples/docquickstart`,
   and a docs/consumer CI job. Official B01–B14 stay `NOT_RUN`.
 - High-level facade: `ScanWith`, `ScanPathsWith`, `EachFile`, `Compile` /

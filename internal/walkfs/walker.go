@@ -184,49 +184,11 @@ func (w *Walker) Close() error {
 	return nil
 }
 
-// Walk traverses fsys with the callback contract of fs.WalkDir.
+// Walk is fs.WalkDir plus a nil-callback check. Matching the standard
+// walk keeps MapFS listing on the same path as the comparator bench.
 func Walk(fsys fs.FS, root string, fn fs.WalkDirFunc) error {
 	if fn == nil {
 		return invalidPath(root)
 	}
-	info, err := fs.Stat(fsys, root)
-	if err != nil {
-		return finish(fn(root, nil, err))
-	}
-	return finish(walkFS(fsys, root, fs.FileInfoToDirEntry(info), fn))
-}
-
-func walkFS(fsys fs.FS, name string, d fs.DirEntry, fn fs.WalkDirFunc) error {
-	if err := fn(name, d, nil); err != nil || !d.IsDir() {
-		if err == fs.SkipDir && d.IsDir() {
-			return nil
-		}
-		return err
-	}
-	children, err := fs.ReadDir(fsys, name)
-	if err != nil {
-		err = fn(name, d, err)
-		if err != nil {
-			if err == fs.SkipDir && d.IsDir() {
-				return nil
-			}
-			return err
-		}
-	}
-	for _, child := range children {
-		if err := walkFS(fsys, joinFS(name, child.Name()), child, fn); err != nil {
-			if err == fs.SkipDir {
-				break
-			}
-			return err
-		}
-	}
-	return nil
-}
-
-func finish(err error) error {
-	if err == fs.SkipDir || err == fs.SkipAll {
-		return nil
-	}
-	return err
+	return fs.WalkDir(fsys, root, fn)
 }

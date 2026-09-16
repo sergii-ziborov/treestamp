@@ -183,11 +183,9 @@ func concurrentRoot(root string, options WalkOptions) (string, os.FileInfo, erro
 		return "", nil, walkErr(abs, 0, OpReadMetadata, errRootSymlink)
 	}
 	if options.FollowLinks || options.SameFileSystem {
-		resolved, resolveErr := filepath.EvalSymlinks(abs)
-		if resolveErr != nil {
+		if _, resolveErr := filepath.EvalSymlinks(abs); resolveErr != nil {
 			return "", nil, walkErr(abs, 0, OpCanonicalize, resolveErr)
 		}
-		abs = resolved
 	}
 	info, err := os.Stat(abs)
 	if err != nil {
@@ -355,21 +353,21 @@ type listedDir struct {
 }
 
 type orderedPull struct {
-	state            *concurrentState
-	opts             concurrentOpts
-	budget           *rtruntime.Budget
-	ctx              context.Context
-	quit             <-chan struct{}
-	mu               sync.Mutex
-	cond             *sync.Cond
-	listed           map[string]*listedDir
-	jobs             map[string]dirJob
-	queue            []dirJob
-	queued           map[string]bool
-	window           int
-	stopCh           chan struct{}
-	once             sync.Once
-	wg               sync.WaitGroup
+	state  *concurrentState
+	opts   concurrentOpts
+	budget *rtruntime.Budget
+	ctx    context.Context
+	quit   <-chan struct{}
+	mu     sync.Mutex
+	cond   *sync.Cond
+	listed map[string]*listedDir
+	jobs   map[string]dirJob
+	queue  []dirJob
+	queued map[string]bool
+	window int
+	stopCh chan struct{}
+	once   sync.Once
+	wg     sync.WaitGroup
 }
 
 func runOrderedPull(state *concurrentState, opts concurrentOpts, window int, quit <-chan struct{}, ch chan item) {

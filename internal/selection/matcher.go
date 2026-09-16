@@ -235,6 +235,9 @@ func (m *Matcher) KeepListedFile(name string, isFile, symlink bool) (keep, fast 
 	if m.cfg.SkipHidden && platform.HiddenName(name) {
 		return false, true
 	}
+	if m.cfg.Filters.needsLocation() {
+		return false, false
+	}
 	return m.filtersEmpty || !m.cfg.Filters.rejectFile(name, ""), true
 }
 
@@ -432,10 +435,7 @@ func (m *Matcher) rejectByFilter(q PathQuery) bool {
 	if m.filtersEmpty {
 		return false
 	}
-	joined := ""
-	if m.cfg.Filters.needsLocation() {
-		joined = filepath.Join(m.root, filepath.FromSlash(q.Rel))
-	}
+	joined := q.Rel
 	if q.IsDir {
 		return m.cfg.Filters.rejectDir(q.Rel, q.Name, joined)
 	}

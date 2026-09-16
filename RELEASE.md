@@ -7,9 +7,13 @@ Do not publish this project from the Weavatrix or EdgeHawk organizations.
 
 ## Current
 
-There is no scanner release. Module consumers may import the serial walker.
-`Scan` and friends return not implemented. Do not tag `v1` or write “full
-port” in a release title.
+Alpha tags, still not a full port:
+
+- Library: `v0.1.0-alpha.1` → `go get github.com/sergii-ziborov/treestamp@v0.1.0-alpha.1`
+- CLI: `cmd/treestamp/v0.1.0-alpha.1` → `go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.0-alpha.1`
+
+Do not tag `v1` or write “full port” in a release title. The published CLI
+`go.mod` must not contain a `replace` of the library.
 
 ## Full-port gate
 

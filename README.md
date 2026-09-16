@@ -13,8 +13,8 @@ cd treestamp
 go test .
 ```
 
-There is no certified published tag yet. Pin the commit you clone, not an
-invented latest-stable version. Go 1.23.0+, `CGO_ENABLED=0`.
+Library tag: `v0.1.0-alpha.1`. CLI tag: `cmd/treestamp/v0.1.0-alpha.1`.
+Go 1.23.0+, `CGO_ENABLED=0`. This is still not a full port.
 
 ```go
 ctx := context.Background()
@@ -49,34 +49,53 @@ under the chosen policy. Full program:
 `TreeSnapshot` is an in-memory persistent structure, not a disk index.
 `ContentProvider.Open` returns loaded bytes, not an `io.Reader`.
 
+## Command line
+
+The same scanner, as a nested module. Not a second engine.
+
+```text
+go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.0-alpha.1
+treestamp scan . --ext go --json --output ../baseline.tstamp.json
+```
+
+![treestamp scan](docs/cli/scan.svg)
+![treestamp explain](docs/cli/explain.svg)
+![treestamp verify](docs/cli/verify.svg)
+
+CLI README: [cmd/treestamp/README.md](cmd/treestamp/README.md).
+Guide: [docs/guides/cli.md](docs/guides/cli.md).
+
 ## Informal benches (reproducible, not official)
 
-Windows/amd64, Intel Core Ultra 7 255U, 16 September 2026, Go 1.26.5,
-`CGO_ENABLED=0`. Medians of three runs. Official B01–B14 stay **`NOT_RUN`**.
+Windows/amd64, Intel Core Ultra 7 255U, 16 September 2026.
+Go **1.26.5** (`go env GOVERSION`), module line **1.23.0**, `CGO_ENABLED=0`,
+`GOTOOLCHAIN=local`. Comparators pinned in `bench/go-compat`:
+**fastwalk v1.0.14**, **gocodewalker v1.5.1**, **godirwalk v1.17.0**.
+Medians of three runs. Official B01–B14 stay **`NOT_RUN`**.
 
 | Case | Treestamp | Comparator |
 | --- | --- | --- |
-| Raw serial walk | 386 µs, 172 KiB, 1241 allocs | fastwalk 502 µs / 150 KiB; godirwalk 365 µs / 227 KiB |
-| Raw parallel walk | 288 µs, 174 KiB, 1252 allocs | fastwalk 502 µs / 150 KiB |
-| Regex `ScanPaths` | 2.63 ms, 101 KiB, 1339 allocs | gocodewalker 3.24 ms / 137 KiB |
-| Cached `Stat` | 266 µs, 174 KiB, 1245 allocs | fastwalk 265 µs / 146 KiB; `os.Stat` 20.3 ms / 496 KiB |
-| `DirScanner` | 1.55 ms, 648 KiB, 8152 allocs | godirwalk 2.06 ms / 564 KiB / 12008 allocs |
+| Raw serial walk | 375 µs, 123 KiB, 1230 allocs | fastwalk v1.0.14: 520 µs / 150 KiB; godirwalk v1.17.0: 609 µs / 227 KiB |
+| Raw parallel walk | 633 µs, 125 KiB, 1242 allocs | fastwalk v1.0.14: 520 µs / 150 KiB |
+| Regex `ScanPaths` | 2.36 ms, 102 KiB, 1339 allocs | gocodewalker v1.5.1: 3.01 ms / 134 KiB |
+| Cached `Stat` | 197 µs, 126 KiB, 1233 allocs | fastwalk v1.0.14: 344 µs / 146 KiB; `os.Stat` 23.2 ms |
+| `DirScanner` | 1.22 ms, 648 KiB, 8152 allocs | godirwalk v1.17.0: 1.46 ms / 564 KiB / 12008 allocs |
+| Scratch `ReadDirents` | 1.82 ms, 736 KiB, 8021 allocs | godirwalk v1.17.0: 2.26 ms / 955 KiB / 12023 allocs |
 
-Compiled test-binary peak working set **54.7 MiB**, process CPU **80.3 s**
-on a one-pass `-test.count=1` of the same suite. Per-op memory is `B/op`,
-not that RSS. `ScanWith` added about 4 allocs / 1.5 KiB versus `Scan` on a
-one-file tree.
+`WalkFS` is `fs.WalkDir` (same allocs). Compiled test-binary peak working set
+**54.2 MiB**, process CPU **93.9 s** on `-test.count=1`. Per-op memory is
+`B/op`, not that RSS. `ScanWith` added about 4 allocs / 2 KiB versus `Scan`
+on a one-file tree. Parallel raw walk is still slower than fastwalk on this
+small tree.
 
 ```text
 set CGO_ENABLED=0
 set GOTOOLCHAIN=local
 python tools/run_informal_benches.py
-cd bench/go-compat
-go test -c -o compat.test.exe .
-.\compat.test.exe -test.bench=. -test.benchmem -test.count=1
 ```
 
-Receipt: [`bench/go-compat/INFORMAL_RUN.json`](bench/go-compat/INFORMAL_RUN.json).
+Receipt: [`bench/go-compat/INFORMAL_RUN.json`](bench/go-compat/INFORMAL_RUN.json)
+(`modules` lists the exact `go list -m` versions).
 Method notes: [`bench/go-compat/BENEFITS.md`](bench/go-compat/BENEFITS.md).
 Policy: [BENCHMARKS.md](BENCHMARKS.md).
 

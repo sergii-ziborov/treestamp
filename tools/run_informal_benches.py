@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run method-matched informal benches and sample the test process RSS/CPU."""
+"""Run method-matched informal benches and sample the compiled test process."""
 
 from __future__ import annotations
 
@@ -9,11 +9,15 @@ import platform
 import subprocess
 import sys
 import threading
-import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 COMPAT = ROOT / "bench" / "go-compat"
+MODULES = (
+    "github.com/charlievieth/fastwalk",
+    "github.com/boyter/gocodewalker",
+    "github.com/karrick/godirwalk",
+)
 
 
 def sample_windows(pid: int, peaks: dict[str, float], stop: threading.Event) -> None:
@@ -24,7 +28,7 @@ def sample_windows(pid: int, peaks: dict[str, float], stop: threading.Event) -> 
                     "powershell",
                     "-NoProfile",
                     "-Command",
-                    f"$p=Get-Process -Id {pid}; '{{0}} {{1}} {{2}}' -f $p.WorkingSet64,$p.CPU,$p.Handles",
+                    f"$p=Get-Process -Id {pid}; '{{0}} {{1}}' -f $p.WorkingSet64,$p.CPU",
                 ],
                 text=True,
             )
@@ -33,30 +37,27 @@ def sample_windows(pid: int, peaks: dict[str, float], stop: threading.Event) -> 
         parts = out.split()
         if len(parts) < 2:
             continue
-        ws = float(parts[0])
-        cpu = float(parts[1])
-        peaks["rss"] = max(peaks.get("rss", 0.0), ws)
-        peaks["cpu"] = max(peaks.get("cpu", 0.0), cpu)
+        peaks["rss"] = max(peaks.get("rss", 0.0), float(parts[0]))
+        peaks["cpu"] = max(peaks.get("cpu", 0.0), float(parts[1]))
 
 
-def run_benches() -> dict:
+def env_with_local() -> dict[str, str]:
     env = os.environ.copy()
     env["CGO_ENABLED"] = "0"
     env["GOTOOLCHAIN"] = env.get("GOTOOLCHAIN", "local")
     env["GOWORK"] = "off"
-    cmd = ["go", "test", "-bench", ".", "-benchmem", "-count", "3", "-timeout", "25m"]
+    env["GOEXPERIMENT"] = ""
+    return env
+
+
+def run(cmd: list[str], env: dict[str, str], sample: bool) -> tuple[str, dict[str, float]]:
     proc = subprocess.Popen(
-        cmd,
-        cwd=COMPAT,
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
+        cmd, cwd=COMPAT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
     )
     peaks: dict[str, float] = {}
     stop = threading.Event()
     sampler = None
-    if os.name == "nt":
+    if sample and os.name == "nt":
         sampler = threading.Thread(target=sample_windows, args=(proc.pid, peaks, stop), daemon=True)
         sampler.start()
     out, _ = proc.communicate()
@@ -65,21 +66,18 @@ def run_benches() -> dict:
         sampler.join(timeout=1)
     if proc.returncode != 0:
         sys.stderr.write(out)
-        raise SystemExit(f"benches failed: {proc.returncode}")
-    return {
-        "output": out,
-        "host": {
-            "os": platform.system(),
-            "arch": platform.machine(),
-            "processor": platform.processor(),
-            "python": platform.python_version(),
-            "go": subprocess.check_output(["go", "env", "GOVERSION"], text=True, env=env).strip(),
-        },
-        "process": {
-            "peak_working_set_bytes": int(peaks.get("rss", 0)),
-            "peak_cpu_seconds": peaks.get("cpu", 0.0),
-        },
-    }
+        raise SystemExit(f"command failed: {cmd} ({proc.returncode})")
+    return out, peaks
+
+
+def module_versions(env: dict[str, str]) -> dict[str, str]:
+    out = subprocess.check_output(["go", "list", "-m"] + list(MODULES), cwd=COMPAT, env=env, text=True)
+    versions = {}
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) >= 2:
+            versions[parts[0]] = parts[1]
+    return versions
 
 
 def parse_medians(text: str) -> list[dict]:
@@ -101,19 +99,45 @@ def parse_medians(text: str) -> list[dict]:
     out = []
     for name, items in rows.items():
         items.sort(key=lambda row: row["ns_op"])
-        mid = items[len(items) // 2]
-        out.append(mid)
+        out.append(items[len(items) // 2])
     return out
 
 
 def main() -> int:
-    result = run_benches()
-    result["medians"] = parse_medians(result["output"])
-    dest = ROOT / "bench" / "go-compat" / "INFORMAL_RUN.json"
+    env = env_with_local()
+    versions = module_versions(env)
+    go = subprocess.check_output(["go", "env", "GOVERSION"], text=True, env=env).strip()
+    out, _ = run(["go", "test", "-bench", ".", "-benchmem", "-count", "3", "-timeout", "25m"], env, False)
+    exe = "compat.test.exe" if os.name == "nt" else "compat.test"
+    run(["go", "test", "-c", "-o", exe, "."], env, False)
+    _, peaks = run([str(COMPAT / exe), "-test.bench=.", "-test.benchmem", "-test.count=1", "-test.timeout=25m"], env, True)
+    result = {
+        "output": out,
+        "host": {
+            "os": platform.system(),
+            "arch": platform.machine(),
+            "processor": platform.processor(),
+            "python": platform.python_version(),
+            "go": go,
+            "cgo": env.get("CGO_ENABLED", ""),
+            "gotoolchain": env.get("GOTOOLCHAIN", ""),
+        },
+        "modules": versions,
+        "process": {
+            "note": "RSS/CPU are from the compiled test binary, not go test",
+            "compiled_test_peak_working_set_bytes": int(peaks.get("rss", 0)),
+            "compiled_test_cpu_seconds": peaks.get("cpu", 0.0),
+            "compiled_test_command": f"go test -c -o {exe} . && ./{exe} -test.bench=. -test.benchmem -test.count=1",
+        },
+        "medians": parse_medians(out),
+        "official_benches": "NOT_RUN",
+    }
+    dest = COMPAT / "INFORMAL_RUN.json"
     dest.write_text(json.dumps(result, indent=2), encoding="utf-8")
     print(dest)
-    print(f"peak_working_set_bytes={result['process']['peak_working_set_bytes']}")
-    print(f"peak_cpu_seconds={result['process']['peak_cpu_seconds']}")
+    print(f"modules={versions}")
+    print(f"compiled_rss={result['process']['compiled_test_peak_working_set_bytes']}")
+    print(f"compiled_cpu={result['process']['compiled_test_cpu_seconds']}")
     return 0
 
 

@@ -255,10 +255,32 @@ func cloneOptions(o Options) Options {
 	return o
 }
 
+func WithScope(globs ...string) Option {
+	return func(b *planBuilder) error {
+		b.opts.Filters.LocationInclude = append(b.opts.Filters.LocationInclude, globs...)
+		return nil
+	}
+}
+
+func WithLocationExclude(globs ...string) Option {
+	return func(b *planBuilder) error {
+		b.opts.Filters.LocationExclude = append(b.opts.Filters.LocationExclude, globs...)
+		return nil
+	}
+}
+
+func WithNoIgnore() Option {
+	return func(b *planBuilder) error {
+		b.opts.IgnoreFiles = nil
+		return nil
+	}
+}
+
 func cloneFilters(f Filters) Filters {
 	f.IncludeNames, f.ExcludeNames = dx.Clone(f.IncludeNames), dx.Clone(f.ExcludeNames)
 	f.IncludeDirs, f.ExcludeDirs = dx.Clone(f.IncludeDirs), dx.Clone(f.ExcludeDirs)
 	f.ExcludeExtensions, f.LocationExclude = dx.Clone(f.ExcludeExtensions), dx.Clone(f.LocationExclude)
+	f.LocationInclude = dx.Clone(f.LocationInclude)
 	f.IncludeNameRegex = append([]*regexp.Regexp(nil), f.IncludeNameRegex...)
 	f.ExcludeNameRegex = append([]*regexp.Regexp(nil), f.ExcludeNameRegex...)
 	f.IncludeDirRegex = append([]*regexp.Regexp(nil), f.IncludeDirRegex...)
