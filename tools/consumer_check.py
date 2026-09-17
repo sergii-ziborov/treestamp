@@ -31,7 +31,7 @@ def source_consumer() -> None:
                 [
                     "module consumercheck",
                     "",
-                    "go 1.23.0",
+                    "go 1.23.2",
                     "",
                     "require github.com/sergii-ziborov/treestamp v0.0.0",
                     "",

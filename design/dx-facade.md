@@ -8,6 +8,6 @@ Closed in this checkout:
 
 - optional `watch/` fsnotify module (never a main-module require)
 - official B01–B14 first campaign (`MEASURED`, 1000-file tree)
-- published library `v0.1.0` / CLI `cmd/treestamp/v0.1.1`
+- published library `v0.1.2` / CLI `cmd/treestamp/v0.1.2`
 
 Do not copy RFC-only names into recipes until a test runs them.

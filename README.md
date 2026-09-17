@@ -1,38 +1,50 @@
 # Treestamp
 
-Deterministic repository scanning for Go.
-Select files, hash what you chose, explain the rule, and verify the next tree.
+Native Go library for deterministic repository scanning.
 
-Native Go library. Pinned Weavatrix Scan **0.5.2** is the port oracle.
-T01–T35 are implemented. Official B01–B14 first-campaign rows are
-**`MEASURED`** on a 1000-file tree
-([receipt](compat/results/official-benches.json)). That is not a 10k/100k/1M
-ranking. Informal 16 September Windows listing medians stay below.
+It selects files under ignore and filter rules, hashes what it selected,
+explains why a path was kept or dropped, and verifies the next tree.
+
+Docs: [pkg.go.dev/github.com/sergii-ziborov/treestamp](https://pkg.go.dev/github.com/sergii-ziborov/treestamp)
 
 ```text
-go get github.com/sergii-ziborov/treestamp@v0.1.0
+go get github.com/sergii-ziborov/treestamp@v0.1.2
 ```
 
-Library tag: `v0.1.0`. CLI tag: `cmd/treestamp/v0.1.1`.
-Go 1.23.0+, `CGO_ENABLED=0`.
+Requires **Go 1.23.2** or newer. `CGO_ENABLED=0`. The CLI is a nested module:
+
+```text
+go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.2
+```
 
 ```go
-ctx := context.Background()
-report, err := treestamp.ScanWith(ctx, root, treestamp.WithExtensions("go"))
-if err != nil {
-    return err
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	"github.com/sergii-ziborov/treestamp"
+)
+
+func main() {
+	ctx := context.Background()
+	report, err := treestamp.ScanWith(ctx, ".", treestamp.WithExtensions("go"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(report.Summary())
+	why, err := treestamp.Explain(".", "generated/model.go")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(why.Outcome, why.Source, why.Line, why.Pattern)
 }
-fmt.Println(report.Summary())
-why, err := treestamp.Explain(root, "generated/model.go")
-if err != nil {
-    return err
-}
-fmt.Println(why.Outcome, why.Source, why.Line, why.Pattern)
 ```
 
-Check `err` before using `report`. A nil error means selected work finished
-under the chosen policy. Full program:
-[`examples/docquickstart`](examples/docquickstart).
+A nil error means selected work finished under the chosen policy.
+Runnable copy: [`examples/docquickstart`](examples/docquickstart).
 
 | Task | Start here |
 | --- | --- |
@@ -49,12 +61,15 @@ under the chosen policy. Full program:
 `TreeSnapshot` is an in-memory persistent structure, not a disk index.
 `ContentProvider.Open` returns loaded bytes, not an `io.Reader`.
 
+The library is a native Go port of pinned Weavatrix Scan **0.5.2**. It is not
+a parser, search engine, graph, embedder, secret scanner, MCP server, web
+service, or daemon.
+
 ## Command line
 
-The same scanner, as a nested module. Not a second engine.
+The same scanner. Not a second engine.
 
 ```text
-go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.1
 treestamp scan . --ext go --json --output ../baseline.tstamp.json
 treestamp explain generated/model.go --root .
 treestamp verify ../baseline.tstamp.json --root .
@@ -66,29 +81,30 @@ treestamp verify ../baseline.tstamp.json --root .
 
 CLI README: [cmd/treestamp/README.md](cmd/treestamp/README.md).
 Guide: [docs/guides/cli.md](docs/guides/cli.md).
+CLI docs: [pkg.go.dev/github.com/sergii-ziborov/treestamp/cmd/treestamp](https://pkg.go.dev/github.com/sergii-ziborov/treestamp/cmd/treestamp).
 
 ## Official first campaign
 
-1000-file tree, one process, `TREESTAMP_OFFICIAL=1`. Receipt:
+Official B01–B14 first-campaign rows are **MEASURED** on a
+1000-file tree, `TREESTAMP_OFFICIAL=1`. Receipt:
 [`compat/results/official-benches.json`](compat/results/official-benches.json).
-Policy: [BENCHMARKS.md](BENCHMARKS.md). Reproduce:
+Policy: [BENCHMARKS.md](BENCHMARKS.md).
 
 ```text
 set CGO_ENABLED=0
 python tools/run_official_benches.py
 ```
 
-These nanoseconds are host-local. Do not publish them as a cross-machine
-ranking or as Rust oracle percentages.
+These nanoseconds are host-local. They are not a 10k/100k/1M ranking and not
+Rust oracle percentages.
 
-## Informal benches (reproducible, not official)
+## Informal benches
 
 Windows/amd64, Intel Core Ultra 7 255U, 16 September 2026.
-Go **1.26.5** (`go env GOVERSION`), module line **1.23.0**, `CGO_ENABLED=0`,
-`GOTOOLCHAIN=local`. Comparators pinned in `bench/go-compat`:
+Go **1.26.5** (`go env GOVERSION`), module line **1.23.2**, `CGO_ENABLED=0`,
+`GOTOOLCHAIN=local`. Comparators in `bench/go-compat`:
 **fastwalk v1.0.14**, **gocodewalker v1.5.1**, **godirwalk v1.17.0**.
-Medians of three runs. A 17 September refresh ran on a loaded host and is
-not used as a claimed ranking.
+Medians of three runs.
 
 | Case | Treestamp | Comparator |
 | --- | --- | --- |
@@ -111,14 +127,6 @@ python tools/run_informal_benches.py
 ```
 
 Receipt: [`bench/go-compat/INFORMAL_RUN.json`](bench/go-compat/INFORMAL_RUN.json).
-Method notes: [`bench/go-compat/BENEFITS.md`](bench/go-compat/BENEFITS.md).
-
-## What this is not
-
-Not a parser, search engine, graph, embedder, secret scanner, MCP server,
-web service, or daemon. No CGO, WASM, or Rust in the runtime library.
-`.treestampignore` is not a default ignore file.
-Optional `watch/` uses fsnotify and is never a main-module require.
 
 ## Authorship and license
 
@@ -126,6 +134,9 @@ Personal public repository of [Sergii Ziborov](https://github.com/sergii-ziborov
 Module: `github.com/sergii-ziborov/treestamp`. Not a Weavatrix or EdgeHawk
 organization repository. Oracle pin: weavatrix-scan **0.5.2**, commit
 `29c003a6ad541c9a10faf30505235375fa78b9d8`.
+
+`.treestampignore` is not a default ignore file.
+Optional `watch/` uses fsnotify and is never a main-module require.
 
 MIT. Copyright (c) 2026 Sergii Ziborov.
 

@@ -1,6 +1,6 @@
 # Choose an API
 
-Minimum Go: 1.23.0. `CGO_ENABLED=0` for the intended runtime.
+Minimum Go: 1.23.2. `CGO_ENABLED=0` for the intended runtime.
 
 | Need | Call | Does not do |
 | --- | --- | --- |

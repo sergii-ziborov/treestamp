@@ -66,8 +66,8 @@ def main() -> int:
         errors.append("descriptor_version must be 2")
     if upstream.get("cache_format") != 2:
         errors.append("cache_format must be 2")
-    if pin.get("go_minimum") != "1.23.0":
-        errors.append("go_minimum must be 1.23.0")
+    if pin.get("go_minimum") != "1.23.2":
+        errors.append("go_minimum must be 1.23.2")
     exports = pin.get("crate_root_exports", {})
     if exports.get("total_named") != 108:
         errors.append("crate-root export total must be 108")
@@ -142,8 +142,8 @@ def main() -> int:
     go_mod = (ROOT / "go.mod").read_text(encoding="utf-8")
     if "module github.com/sergii-ziborov/treestamp" not in go_mod:
         errors.append("go.mod module path is wrong")
-    if "go 1.23.0" not in go_mod:
-        errors.append("go.mod must declare go 1.23.0")
+    if "go 1.23.2" not in go_mod:
+        errors.append("go.mod must declare go 1.23.2")
     if "github.com/fsnotify/fsnotify" in go_mod:
         errors.append("fsnotify must not be a main-module dependency")
 

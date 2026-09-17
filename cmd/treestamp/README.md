@@ -1,26 +1,19 @@
-# Treestamp CLI
+# treestamp
 
-A small command-line app on the Treestamp library. It is not a second scanner
-and not a `find` or `ripgrep` replacement.
-
-The useful story is: select a tree by policy, save the rules with the result,
-explain a decision, then verify what changed.
+Command-line app for the Treestamp library. Scan a tree, save the policy
+with the result, explain a skip, then verify what changed.
 
 ```text
-go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.1
+go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.2
 ```
 
-Go 1.23.0+, `CGO_ENABLED=0`. The Git tag for this nested module is
-`cmd/treestamp/v0.1.1`. The version you pass to `go install` is
-`v0.1.1`. The published CLI requires library `v0.1.0`.
+Requires **Go 1.23.2** or newer. `CGO_ENABLED=0`. This is not a second
+scanner and not a `find` or `ripgrep` replacement.
 
-People without Go should use a release binary. The library import path is
-separate: `github.com/sergii-ziborov/treestamp`.
-
-## Commands
+Library: [`github.com/sergii-ziborov/treestamp`](https://pkg.go.dev/github.com/sergii-ziborov/treestamp)
+(tag `v0.1.2`). People without Go should use a release binary.
 
 ```text
-treestamp scan .
 treestamp scan . --ext go --json --output ../baseline.tstamp.json
 treestamp paths . --ext go --null
 treestamp explain src/generated/model.go --root .
@@ -40,4 +33,3 @@ Exit `0` is a completed operation. `1` is a finished difference
 impossible. `5` is a publish failure.
 
 Guide: [docs/guides/cli.md](../../docs/guides/cli.md).
-Library: [the module README](../../README.md).

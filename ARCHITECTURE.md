@@ -57,7 +57,7 @@ Unused alias packages (`internal/cache`, `internal/content`,
 
 ## Runtime constraints
 
-- Minimum Go: 1.23.0
+- Minimum Go: 1.23.2
 - Intended build: `CGO_ENABLED=0`
 - `golang.org/x/sys` is allowed where the standard library cannot express
   volume/file identity

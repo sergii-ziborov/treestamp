@@ -1,6 +1,6 @@
 module github.com/sergii-ziborov/treestamp/bench/go-compat
 
-go 1.23.0
+go 1.23.2
 
 require (
 	github.com/boyter/gocodewalker v1.5.1

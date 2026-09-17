@@ -1,13 +1,12 @@
 // Package treestamp is a native Go library for deterministic repository scanning.
 //
-// Select files, verify content, and produce manifests with explainable
-// decisions. Start with [ScanPathsWith], [ScanWith], [EachFile], or [Compile].
-// [Explain] reports the winning selection rule; it does not re-verify content.
-// Official B01–B14 first-campaign receipts live in compat/results.
+// It selects files under ignore and filter rules, hashes selected content,
+// and explains why a path was kept or dropped. Start with [ScanWith],
+// [ScanPathsWith], [EachFile], or [Compile]. [Explain] is selection only;
+// it does not re-read file bytes.
 //
-// The repository is the personal public project of Sergii Ziborov
-// (github.com/sergii-ziborov/treestamp). It is not published from the
-// Weavatrix or EdgeHawk organizations.
+// Requires Go 1.23.2 or newer. The command-line app is the nested module
+// github.com/sergii-ziborov/treestamp/cmd/treestamp.
 package treestamp
 
 import (

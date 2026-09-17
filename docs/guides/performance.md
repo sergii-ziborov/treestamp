@@ -10,7 +10,7 @@ listing campaign only.
 | --- | --- |
 | Host | Windows/amd64, Intel Core Ultra 7 255U, 16 September 2026 |
 | Go | 1.26.5 (`GOTOOLCHAIN=local`, `CGO_ENABLED=0`) |
-| Module line | 1.23.0 |
+| Module line | 1.23.2 |
 | fastwalk | v1.0.14 |
 | gocodewalker | v1.5.1 |
 | godirwalk | v1.17.0 |

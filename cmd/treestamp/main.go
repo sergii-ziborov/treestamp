@@ -1,3 +1,7 @@
+// Command treestamp scans a repository tree with the Treestamp library:
+// select files, save a baseline, explain a skip, and verify the next tree.
+//
+//	go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.2
 package main
 
 import (

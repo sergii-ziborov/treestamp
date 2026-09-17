@@ -1,5 +1,11 @@
 # Changelog
 
+## Library 0.1.2 / CLI 0.1.2 (2026-09-17)
+
+pkg.go.dev pages now describe the product first. Minimum Go is **1.23.2**,
+the version CI already compiles. Tags `v0.1.0` and `cmd/treestamp/v0.1.1`
+stay immutable.
+
 ## Full-port gate (2026-09-17)
 
 T01–T35 closed. Official B01–B14 first campaign recorded on a 1000-file

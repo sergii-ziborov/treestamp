@@ -13,7 +13,7 @@ re-run is not used as a claimed ranking.
 | Item | Version |
 | --- | --- |
 | Go (`go env GOVERSION`) | go1.26.5 |
-| Module `go` line | 1.23.0 |
+| Module `go` line | 1.23.2 |
 | `CGO_ENABLED` | 0 |
 | `GOTOOLCHAIN` | local |
 | `GOEXPERIMENT` | empty |
