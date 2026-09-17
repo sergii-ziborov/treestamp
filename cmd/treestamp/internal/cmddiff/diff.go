@@ -13,7 +13,7 @@ func New(env *app.Env) *cobra.Command {
 	var asJSON, exitCode bool
 	cmd := &cobra.Command{
 		Use:   "diff BEFORE AFTER",
-		Short: "Compare two saved manifests without opening the tree",
+		Short: "Compare two snapshots without opening the tree",
 		Example: "  treestamp diff ./baselines/before.tstamp.json ./baselines/after.tstamp.json --exit-code\n" +
 			"  treestamp diff ./baselines/before.tstamp.json ./baselines/after.tstamp.json --json",
 		Args: cobra.ExactArgs(2),
@@ -21,8 +21,8 @@ func New(env *app.Env) *cobra.Command {
 			return run(env, args[0], args[1], asJSON, exitCode)
 		},
 	}
-	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable delta")
-	cmd.Flags().BoolVar(&exitCode, "exit-code", false, "exit 1 when a completed comparison finds differences")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "print JSON instead of the human summary")
+	cmd.Flags().BoolVar(&exitCode, "exit-code", false, "exit 1 when the snapshots differ")
 	return cmd
 }
 
@@ -36,7 +36,7 @@ func run(env *app.Env, before, after string, asJSON, exitCode bool) error {
 		return env.Fail(status.Impossible, "after: %v", err)
 	}
 	if !left.Observation.Complete || !right.Observation.Complete {
-		return env.Fail(status.Partial, "one or both manifests are incomplete")
+		return env.Fail(status.Partial, "one or both snapshots are incomplete")
 	}
 	delta := treestamp.DeltaBetween(left.AsReport(), right.AsReport())
 	doc := map[string]any{
@@ -65,28 +65,38 @@ func run(env *app.Env, before, after string, asJSON, exitCode bool) error {
 
 func writeHuman(env *app.Env, delta treestamp.ScanDelta) error {
 	pal := render.Detect(env.Out, "auto")
-	tone, title := "ok", "EQUAL"
+	card := render.Card{Status: "Equal", Detail: "The two snapshots match", Tone: "ok"}
 	if !delta.IsEmpty() {
-		tone, title = "warn", "DIFFER"
+		card.Status, card.Detail, card.Tone = "Differ", "The two snapshots differ", "warn"
+		card.Rows = []render.Row{
+			render.CountRow("Added", len(delta.Added)),
+			render.CountRow("Removed", len(delta.Removed)),
+			render.CountRow("Changed", len(delta.Modified)),
+			render.CountRow("Renamed", len(delta.Renamed)),
+		}
+		if delta.PolicyChanged {
+			card.Rows = append(card.Rows, render.Row{Key: "Policy", Value: "changed"})
+		}
+		card.Items = diffItems(delta)
 	}
-	notes := []string{}
-	if delta.SelectionInputsChanged {
-		notes = append(notes, "Selection inputs changed; this is not a plain file deletion.")
+	return render.WriteCard(env.Out, pal, card)
+}
+
+func diffItems(delta treestamp.ScanDelta) []string {
+	items := make([]string, 0, 8)
+	for _, f := range delta.Added {
+		items = append(items, "+ "+f.Relative)
 	}
-	if delta.PolicyChanged {
-		notes = append(notes, "Effective policy changed.")
+	for _, f := range delta.Removed {
+		items = append(items, "- "+f.Relative)
 	}
-	return render.WriteCard(env.Out, pal, render.Card{
-		Status: title, Detail: "manifest comparison only", Tone: tone,
-		Rows: []render.Row{
-			{Key: "Added", Value: render.Comma(len(delta.Added))},
-			{Key: "Removed", Value: render.Comma(len(delta.Removed))},
-			{Key: "Changed", Value: render.Comma(len(delta.Modified))},
-			{Key: "Renamed", Value: render.Comma(len(delta.Renamed))},
-			{Key: "Unchanged", Value: render.Comma(int(delta.Unchanged))},
-		},
-		Notes: notes,
-	})
+	for _, item := range delta.Modified {
+		items = append(items, "~ "+item.Current.Relative)
+	}
+	for _, item := range delta.Renamed {
+		items = append(items, item.Previous.Relative+" → "+item.Current.Relative)
+	}
+	return render.Preview(items, 8)
 }
 
 func names(files []treestamp.ScannedFile) []string {

@@ -53,18 +53,18 @@ type fileConfig struct {
 }
 
 func (s *Select) Bind(cmd *cobra.Command) {
-	cmd.Flags().StringSliceVar(&s.Exts, "ext", nil, "keep files with these extensions")
-	cmd.Flags().StringSliceVar(&s.Scope, "scope", nil, "narrow selection; does not override ignore rules")
-	cmd.Flags().StringSliceVar(&s.Exclude, "exclude", nil, "subtract matching relative paths")
-	cmd.Flags().BoolVar(&s.NoIgnore, "no-ignore", false, "disable ignore files; keeps standard skips and limits")
-	cmd.Flags().BoolVar(&s.MetadataOnly, "metadata-only", false, "do not hash file contents")
-	cmd.Flags().IntVar(&s.Jobs, "jobs", 0, "traversal workers (0 = library default)")
-	cmd.Flags().StringVar(&s.Config, "config", "", "explicit versioned JSON policy file")
-	cmd.Flags().StringVar(&s.Format, "format", "text", "text|json|ndjson")
-	cmd.Flags().BoolVar(&s.JSON, "json", false, "same as --format json")
-	cmd.Flags().StringVar(&s.Output, "output", "", "write the result document outside the scan root")
-	cmd.Flags().StringVar(&s.Color, "color", "auto", "auto|always|never")
-	cmd.Flags().BoolVar(&s.Quiet, "quiet", false, "hide human-only extras")
+	cmd.Flags().StringSliceVar(&s.Exts, "ext", nil, "only these extensions (go, md; dots optional)")
+	cmd.Flags().StringSliceVar(&s.Scope, "scope", nil, "only this part of the tree (.gitignore still applies)")
+	cmd.Flags().StringSliceVar(&s.Exclude, "exclude", nil, "drop relative paths that contain this text")
+	cmd.Flags().BoolVar(&s.NoIgnore, "no-ignore", false, "do not read gitignore files")
+	cmd.Flags().BoolVar(&s.MetadataOnly, "metadata-only", false, "names and sizes only; verify will refuse")
+	cmd.Flags().IntVar(&s.Jobs, "jobs", 0, "parallel walkers (0 = default)")
+	cmd.Flags().StringVar(&s.Config, "config", "", "shared policy file (treestamp.policy/v1)")
+	cmd.Flags().StringVar(&s.Format, "format", "text", "text, json, or ndjson")
+	cmd.Flags().BoolVar(&s.JSON, "json", false, "print JSON instead of the human summary")
+	cmd.Flags().StringVar(&s.Output, "output", "", "write the snapshot here; must be outside the scan folder")
+	cmd.Flags().StringVar(&s.Color, "color", "auto", "auto, always, or never")
+	cmd.Flags().BoolVar(&s.Quiet, "quiet", false, "skip next-step hints")
 }
 
 func (s *Select) ApplyConfig() error {

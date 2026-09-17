@@ -112,7 +112,7 @@ question; it did not fail the build. For a script, `--json` prints
 ```
 
 ```text
-treestamp config show --config policy.json
+treestamp config --config policy.json
 treestamp scan . --config policy.json --json --output ../cli.tstamp.json
 treestamp paths . --config policy.json
 treestamp explain cmd/treestamp/main.go --root . --config policy.json

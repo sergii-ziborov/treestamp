@@ -14,7 +14,8 @@ type Card struct {
 	Status, Detail string
 	Tone           string
 	Rows           []Row
-	Notes          []string
+	Items          []string
+	Next           []string
 }
 
 type errWriter struct {
@@ -40,29 +41,64 @@ func WriteCard(w io.Writer, pal Palette, card Card) error {
 	case "bad":
 		tone = pal.Red
 	}
-	fmt.Fprintln(ew)
-	fmt.Fprintf(ew, "  %s\n", pal.Paint(tone+pal.Bold, card.Status))
+	fmt.Fprintf(ew, "%s\n", pal.Paint(tone+pal.Bold, card.Status))
 	if card.Detail != "" {
-		fmt.Fprintf(ew, "  %s\n", pal.Paint(pal.Dim, card.Detail))
+		fmt.Fprintf(ew, "%s\n", pal.Paint(pal.Dim, card.Detail))
 	}
-	fmt.Fprintln(ew)
-	width := 0
-	for _, row := range card.Rows {
-		if n := len(row.Key); n > width {
-			width = n
-		}
-	}
-	for _, row := range card.Rows {
-		fmt.Fprintf(ew, "  %s  %s\n", pal.Paint(pal.Cyan, pad(row.Key, width)), row.Value)
-	}
-	if len(card.Notes) > 0 {
+	rows := filledRows(card.Rows)
+	if len(rows) > 0 {
 		fmt.Fprintln(ew)
-		for _, note := range card.Notes {
-			fmt.Fprintf(ew, "  %s\n", pal.Paint(pal.Dim, note))
+		width := 0
+		for _, row := range rows {
+			if n := len(row.Key); n > width {
+				width = n
+			}
+		}
+		for _, row := range rows {
+			fmt.Fprintf(ew, "%s  %s\n", pal.Paint(pal.Cyan, pad(row.Key, width)), row.Value)
 		}
 	}
-	fmt.Fprintln(ew)
+	for _, item := range card.Items {
+		if item != "" {
+			fmt.Fprintf(ew, "  %s\n", item)
+		}
+	}
+	if len(card.Next) > 0 {
+		fmt.Fprintln(ew)
+		for _, line := range card.Next {
+			fmt.Fprintf(ew, "%s\n", pal.Paint(pal.Dim, line))
+		}
+	}
 	return ew.err
+}
+
+func filledRows(rows []Row) []Row {
+	out := make([]Row, 0, len(rows))
+	for _, row := range rows {
+		if strings.TrimSpace(row.Key) == "" || strings.TrimSpace(row.Value) == "" {
+			continue
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
+func CountRow(key string, n int) Row {
+	if n <= 0 {
+		return Row{}
+	}
+	return Row{Key: key, Value: Comma(n)}
+}
+
+func Preview(names []string, limit int) []string {
+	if limit <= 0 || len(names) == 0 {
+		return nil
+	}
+	if len(names) <= limit {
+		return append([]string(nil), names...)
+	}
+	shown := append([]string(nil), names[:limit]...)
+	return append(shown, fmt.Sprintf("… %d more", len(names)-limit))
 }
 
 func pad(s string, n int) string {

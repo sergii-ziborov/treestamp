@@ -5,8 +5,16 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   test:
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -39,6 +47,7 @@ jobs:
         run: go test ./...
 
   go-minors:
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -63,6 +72,7 @@ jobs:
         run: go test ./...
 
   docs:
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     env:
       CGO_ENABLED: "0"
@@ -90,6 +100,7 @@ jobs:
         run: python tools/consumer_check.py --mode source
 
   consumer:
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     env:
       CGO_ENABLED: "0"
@@ -104,6 +115,7 @@ jobs:
         run: go test .
 
   cli:
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -125,6 +137,7 @@ jobs:
         run: go run . version --json
 
   watch:
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -144,6 +157,7 @@ jobs:
         run: go test ./...
 
   parity:
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:

@@ -16,9 +16,9 @@ func New(env *app.Env) *cobra.Command {
 	var root string
 	cmd := &cobra.Command{
 		Use:   "explain PATH",
-		Short: "Explain why a path is selected or excluded",
+		Short: "Say why a path was kept or dropped",
 		Example: "  treestamp explain skip.txt --root . --ext go\n" +
-			"  treestamp explain cmd/treestamp/main.go --root . --config policy.json --json",
+			"  treestamp explain cmd/treestamp/main.go --root . --json",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return run(env, sel, root, args[0])
@@ -50,23 +50,44 @@ func run(env *app.Env, sel policy.Select, root, rel string) error {
 		return render.JSON(env.Out, doc)
 	}
 	pal := render.Detect(env.Out, sel.Color)
-	tone := "ok"
-	if why.Outcome != "included" && why.Outcome != "include" {
-		tone = "warn"
-	}
+	title, tone := explainTitle(why.Outcome)
 	if err := render.WriteCard(env.Out, pal, render.Card{
-		Status: why.Outcome, Detail: why.Relative, Tone: tone,
-		Rows: []render.Row{
-			{Key: "Reason", Value: why.Reason},
-			{Key: "Source", Value: formatSource(why)},
-			{Key: "Rule", Value: why.Pattern},
-			{Key: "Checked", Value: "selection rules"},
-			{Key: "Not checked", Value: "content bytes, binary detection"},
-		},
+		Status: title, Detail: why.Relative, Tone: tone, Rows: explainRows(why),
 	}); err != nil {
 		return env.Fail(status.Publish, "stdout: %v", err)
 	}
 	return nil
+}
+
+func explainTitle(outcome string) (string, string) {
+	switch outcome {
+	case "excluded":
+		return "Dropped", "warn"
+	case "traverse":
+		return "Directory", "ok"
+	default:
+		return "Kept", "ok"
+	}
+}
+
+func explainRows(why treestamp.PathExplanation) []render.Row {
+	rows := []render.Row{
+		{Key: "Rule", Value: why.Pattern},
+		{Key: "File", Value: formatSource(why)},
+	}
+	if why.Reason != "" && why.Reason != "ignore_rule" {
+		rows = append(rows, render.Row{Key: "Why", Value: explainWhy(why.Reason)})
+	}
+	return rows
+}
+
+func explainWhy(reason string) string {
+	switch reason {
+	case "unselected":
+		return "outside --scope or --ext"
+	default:
+		return reason
+	}
 }
 
 func formatSource(why treestamp.PathExplanation) string {

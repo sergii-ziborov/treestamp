@@ -22,8 +22,8 @@ type request struct {
 func New(env *app.Env) *cobra.Command {
 	req := request{}
 	cmd := &cobra.Command{
-		Use:   "verify MANIFEST",
-		Short: "Re-scan the selected tree against a saved baseline",
+		Use:   "verify SNAPSHOT",
+		Short: "Re-scan a tree and compare it to a saved snapshot",
 		Example: "  treestamp verify ./baselines/cli.tstamp.json --root ./cmd/treestamp\n" +
 			"  treestamp verify ./baselines/cli.tstamp.json --root ./cmd/treestamp --json",
 		Args: cobra.ExactArgs(1),
@@ -32,24 +32,24 @@ func New(env *app.Env) *cobra.Command {
 			return run(cmd.Context(), env, req)
 		},
 	}
-	cmd.Flags().StringVar(&req.Root, "root", "", "tree to read; required, never taken from the manifest")
-	cmd.Flags().BoolVar(&req.JSON, "json", false, "machine-readable verification")
+	cmd.Flags().StringVar(&req.Root, "root", "", "folder to read (required; not taken from the snapshot)")
+	cmd.Flags().BoolVar(&req.JSON, "json", false, "print JSON instead of the human summary")
 	return cmd
 }
 
 func run(ctx context.Context, env *app.Env, req request) error {
 	if req.Root == "" {
-		return env.Fail(status.Usage, "verify requires --root")
+		return env.Fail(status.Usage, "verify needs --root (the folder to read)")
 	}
 	base, err := store.Load(req.Manifest)
 	if err != nil {
 		return env.Fail(status.Impossible, "baseline: %v", err)
 	}
 	if !base.Observation.Complete {
-		return env.Fail(status.Impossible, "incomplete baseline cannot be verified")
+		return env.Fail(status.Impossible, "snapshot is incomplete; scan again")
 	}
 	if base.Observation.Evidence != "sha256" {
-		return env.Fail(status.Impossible, "baseline lacks content hashes; refusing to call metadata a content verify")
+		return env.Fail(status.Impossible, "snapshot has no content hashes; scan again without --metadata-only")
 	}
 	opts, err := policy.OptionsFrom(base.Policy)
 	if err != nil {
@@ -98,27 +98,44 @@ func finish(env *app.Env, current *treestamp.ScanReport, delta treestamp.ScanDel
 
 func writeHuman(env *app.Env, delta treestamp.ScanDelta, current *treestamp.ScanReport) error {
 	pal := render.Detect(env.Out, "auto")
-	tone, title := "ok", "MATCH"
+	card := render.Card{Status: "Match", Detail: "Selected files match the snapshot", Tone: "ok"}
 	if env.Code == status.Partial {
-		tone, title = "warn", "PARTIAL"
+		card.Status, card.Detail, card.Tone = "Partial", "Walk did not finish", "warn"
 	} else if !delta.IsEmpty() {
-		tone, title = "bad", "DIFFER"
+		card.Status, card.Detail, card.Tone = "Differ", "Selected files changed", "bad"
+		card.Rows = deltaRows(delta)
+		card.Items = deltaItems(delta)
 	}
-	notes := []string{"Fast cache was not used as content proof."}
+	if card.Status == "Match" {
+		card.Rows = []render.Row{{Key: "Selected", Value: render.Comma(len(current.Files))}}
+	}
+	return render.WriteCard(env.Out, pal, card)
+}
+
+func deltaRows(delta treestamp.ScanDelta) []render.Row {
+	return []render.Row{
+		render.CountRow("Added", len(delta.Added)),
+		render.CountRow("Removed", len(delta.Removed)),
+		render.CountRow("Changed", len(delta.Modified)),
+		render.CountRow("Renamed", len(delta.Renamed)),
+	}
+}
+
+func deltaItems(delta treestamp.ScanDelta) []string {
+	items := make([]string, 0, 8)
+	for _, f := range delta.Added {
+		items = append(items, "+ "+f.Relative)
+	}
+	for _, f := range delta.Removed {
+		items = append(items, "- "+f.Relative)
+	}
+	for _, item := range delta.Modified {
+		items = append(items, "~ "+item.Current.Relative)
+	}
 	for _, item := range delta.Renamed {
-		notes = append(notes, item.Previous.Relative+" -> "+item.Current.Relative)
+		items = append(items, item.Previous.Relative+" → "+item.Current.Relative)
 	}
-	return render.WriteCard(env.Out, pal, render.Card{
-		Status: title, Detail: "selected-content-and-policy · tree", Tone: tone,
-		Rows: []render.Row{
-			{Key: "Added", Value: render.Comma(len(delta.Added))},
-			{Key: "Removed", Value: render.Comma(len(delta.Removed))},
-			{Key: "Changed", Value: render.Comma(len(delta.Modified))},
-			{Key: "Renamed", Value: render.Comma(len(delta.Renamed))},
-			{Key: "Selected now", Value: render.Comma(len(current.Files))},
-		},
-		Notes: notes,
-	})
+	return render.Preview(items, 8)
 }
 
 func names(files []treestamp.ScannedFile) []string {

@@ -20,34 +20,34 @@ import (
 func New(env *app.Env) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "treestamp",
-		Short: "Verifiable repository scanning",
-		Long: `Treestamp selects a tree by policy, writes a portable manifest,
-explains the decision, and verifies the selected files later.
+		Short: "Select files, save a snapshot, explain a skip, verify later",
+		Long: `Select files in a tree, hash them, and verify that set later.
 
-Write --output outside the scan root. Scan a subtree if the manifest
-must live in the same Git repository. verify re-reads --root; diff
-only compares two already-written documents.
-
-This is not find, ripgrep, Git, or a backup tool.`,
-		SilenceErrors: true,
-		SilenceUsage:  true,
+scan writes a snapshot. verify re-reads --root with the saved policy.
+diff only compares two snapshot files. --output must sit outside the
+folder you scan.`,
+		SilenceErrors:     true,
+		SilenceUsage:      true,
+		DisableAutoGenTag: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
 	}
 	root.SetOut(env.Out)
 	root.SetErr(env.Err)
-	root.CompletionOptions.HiddenDefaultCmd = false
+	root.CompletionOptions.DisableDefaultCmd = true
+	doctor, schema := cmdmeta.Doctor(env), cmdmeta.Schema(env)
+	doctor.Hidden, schema.Hidden = true, true
 	root.AddCommand(
 		cmdscan.New(env),
 		cmdpaths.New(env),
 		cmdexplain.New(env),
 		cmddiff.New(env),
 		cmdverify.New(env),
+		cmdmeta.Config(env),
 		cmdmeta.Version(env),
-		cmdmeta.Doctor(env),
-		cmdmeta.ConfigShow(env),
-		cmdmeta.Schema(env),
+		doctor,
+		schema,
 	)
 	return root
 }

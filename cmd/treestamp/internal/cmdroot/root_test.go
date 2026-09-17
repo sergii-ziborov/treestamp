@@ -17,8 +17,14 @@ func TestHelpAndVersionDoNotScan(t *testing.T) {
 	if code := Run(context.Background(), nil, bytes.NewReader(nil), &out, &err); code != 0 {
 		t.Fatalf("help %d %s", code, err.String())
 	}
-	if !strings.Contains(out.String(), "scan") || !strings.Contains(out.String(), "verify") {
-		t.Fatalf("help %q", out.String())
+	help := out.String()
+	if !strings.Contains(help, "scan") || !strings.Contains(help, "verify") {
+		t.Fatalf("help %q", help)
+	}
+	for _, junk := range []string{"completion", "This is not find", "DOCTOR", "repo-v1"} {
+		if strings.Contains(help, junk) {
+			t.Fatalf("help leaked %q: %s", junk, help)
+		}
 	}
 	out.Reset()
 	if code := Run(context.Background(), []string{"version", "--json"}, bytes.NewReader(nil), &out, &err); code != 0 {
@@ -133,6 +139,44 @@ func TestPathsEmptyIsSuccess(t *testing.T) {
 	}
 	if out.Len() != 0 {
 		t.Fatalf("expected empty listing %q", out.String())
+	}
+}
+
+func TestExplainSelectedOmitsEmptyRows(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "keep.go"), "package keep\n")
+	var out, errb bytes.Buffer
+	code := Run(context.Background(), []string{"explain", "keep.go", "--root", root, "--ext", "go"}, bytes.NewReader(nil), &out, &errb)
+	if code != 0 {
+		t.Fatalf("explain %d %s", code, errb.String())
+	}
+	text := out.String()
+	if !strings.Contains(text, "Kept") || !strings.Contains(text, "keep.go") {
+		t.Fatalf("%s", text)
+	}
+	for _, junk := range []string{"Reason", "Not checked", "content bytes", "selected"} {
+		if strings.Contains(text, junk) {
+			t.Fatalf("leaked %q: %s", junk, text)
+		}
+	}
+}
+
+func TestScanHumanOmitsLecture(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "a.go"), "package a\n")
+	var out, errb bytes.Buffer
+	code := Run(context.Background(), []string{"scan", root, "--ext", "go"}, bytes.NewReader(nil), &out, &errb)
+	if code != 0 {
+		t.Fatalf("scan %d %s", code, errb.String())
+	}
+	text := out.String()
+	if !strings.Contains(text, "Complete") {
+		t.Fatalf("%s", text)
+	}
+	for _, junk := range []string{"within selected scope", "Policy exclusions", "repo-v1", "Failures"} {
+		if strings.Contains(text, junk) {
+			t.Fatalf("leaked %q: %s", junk, text)
+		}
 	}
 }
 

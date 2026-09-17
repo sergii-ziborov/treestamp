@@ -81,7 +81,7 @@ checked.
 Schema `treestamp.policy/v1`. Flags override empty slices from the file.
 
 ```text
-treestamp config show --config policy.json
+treestamp config --config policy.json
 treestamp scan . --config policy.json --json --output ../out.tstamp.json
 ```
 

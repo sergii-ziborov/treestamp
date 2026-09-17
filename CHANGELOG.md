@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+CLI human output drops empty rows, jargon cards, and the leftover
+`completion` command. `config` prints the policy without a `show`
+subcommand. CI cancels stale runs and tags `cmd/treestamp/v*` publish
+binaries.
+
 ## Library 0.1.3 / CLI 0.1.3 (2026-09-17)
 
 Minimum Go is **1.21.0** again, so every toolchain from 1.21 through

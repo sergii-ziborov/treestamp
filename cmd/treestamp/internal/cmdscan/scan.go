@@ -20,9 +20,10 @@ func New(env *app.Env) *cobra.Command {
 	var sel policy.Select
 	cmd := &cobra.Command{
 		Use:   "scan [ROOT]",
-		Short: "Scan the selected tree and print a summary or manifest",
-		Example: "  treestamp scan ./cmd/treestamp --ext go --json --output ./baselines/cli.tstamp.json\n" +
-			"  treestamp scan . --ext go --json --output ../repo.tstamp.json",
+		Short: "Hash selected files and print a summary",
+		Long:  "Scan ROOT (default .) and print what was selected. --output must be outside ROOT.",
+		Example: "  treestamp scan ./cmd/treestamp --ext go --output ./baselines/cli.tstamp.json\n" +
+			"  treestamp scan . --ext go --output ../repo.tstamp.json",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root := "."
@@ -101,25 +102,46 @@ func publish(env *app.Env, sel policy.Select, man store.Manifest, scanErr error)
 
 func writeHuman(env *app.Env, sel policy.Select, man store.Manifest) error {
 	pal := render.Detect(env.Out, firstNonEmpty(env.Color, sel.Color))
-	tone, title := "ok", "COMPLETE"
+	tone, title := "ok", "Complete"
 	if !man.Observation.Complete || man.Summary.Failures > 0 {
-		tone, title = "warn", "PARTIAL"
+		tone, title = "warn", "Partial"
 		if env.Code == 0 {
 			env.Set(status.Partial)
 		}
 	}
-	return render.WriteCard(env.Out, pal, render.Card{
-		Status: title, Detail: "within selected scope", Tone: tone,
-		Rows: []render.Row{
-			{Key: "Selected", Value: render.Comma(man.Summary.Selected) + " files"},
-			{Key: "Hashed", Value: render.Comma(man.Summary.Hashed) + " files"},
-			{Key: "Excluded", Value: render.Comma(man.Summary.Excluded)},
-			{Key: "Failures", Value: render.Comma(man.Summary.Failures)},
-			{Key: "Profile", Value: man.Policy.Profile},
-			{Key: "Revision", Value: man.Revisions.Legacy},
-		},
-		Notes: []string{"Policy exclusions are not operational failures."},
-	})
+	card := render.Card{Status: title, Detail: scanDetail(man), Tone: tone, Rows: scanRows(sel, man)}
+	if !sel.Quiet && sel.Output == "" {
+		card.Next = []string{"Save a baseline:  treestamp scan <root> --output FILE"}
+	}
+	return render.WriteCard(env.Out, pal, card)
+}
+
+func scanDetail(man store.Manifest) string {
+	n := render.Comma(man.Summary.Selected)
+	if man.Summary.Selected == 0 {
+		return "no files selected"
+	}
+	if man.Summary.Hashed == man.Summary.Selected {
+		return n + " files selected and hashed"
+	}
+	if man.Summary.Hashed == 0 {
+		return n + " files selected (not hashed)"
+	}
+	return n + " selected, " + render.Comma(man.Summary.Hashed) + " hashed"
+}
+
+func scanRows(sel policy.Select, man store.Manifest) []render.Row {
+	rows := []render.Row{{Key: "Revision", Value: man.Revisions.Legacy}}
+	if sel.Output != "" && man.Observation.Complete && man.Summary.Failures == 0 {
+		rows = append(rows, render.Row{Key: "Wrote", Value: sel.Output})
+	}
+	if man.Summary.Excluded > 0 {
+		rows = append(rows, render.Row{Key: "Dropped", Value: render.Comma(man.Summary.Excluded)})
+	}
+	if man.Summary.Failures > 0 {
+		rows = append(rows, render.Row{Key: "Failed", Value: render.Comma(man.Summary.Failures)})
+	}
+	return rows
 }
 
 func writeNDJSON(env *app.Env, man store.Manifest) error {

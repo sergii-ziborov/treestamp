@@ -2,6 +2,7 @@ package cmdmeta
 
 import (
 	"runtime"
+	"strings"
 
 	"github.com/sergii-ziborov/treestamp"
 	"github.com/sergii-ziborov/treestamp/cmd/treestamp/internal/app"
@@ -25,10 +26,13 @@ func Version(env *app.Env) *cobra.Command {
 			if asJSON {
 				return render.JSON(env.Out, doc)
 			}
-			return render.Line(env.Out, "treestamp "+policy.CLIVersion+" (core "+treestamp.Version+")")
+			return render.WriteCard(env.Out, render.Detect(env.Out, "auto"), render.Card{
+				Status: "treestamp " + policy.CLIVersion,
+				Rows:   []render.Row{{Key: "Library", Value: treestamp.Version}},
+			})
 		},
 	}
-	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable versions")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "print JSON instead of the human summary")
 	return cmd
 }
 
@@ -58,29 +62,52 @@ func Doctor(env *app.Env) *cobra.Command {
 	}
 }
 
-func ConfigShow(env *app.Env) *cobra.Command {
+func Config(env *app.Env) *cobra.Command {
 	var sel policy.Select
 	cmd := &cobra.Command{
 		Use:   "config",
-		Short: "Inspect effective policy without scanning",
+		Short: "Show the effective scan policy without walking the tree",
+		RunE:  func(cmd *cobra.Command, args []string) error { return runConfig(env, sel) },
 	}
+	sel.Bind(cmd)
 	show := &cobra.Command{
-		Use:   "show",
-		Short: "Print the effective scan policy",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := sel.ApplyConfig(); err != nil {
-				return env.Fail(status.Usage, "config: %v", err)
-			}
-			opts, err := sel.Options()
-			if err != nil {
-				return env.Fail(status.Usage, "%v", err)
-			}
-			return render.JSON(env.Out, sel.Snapshot(opts))
-		},
+		Use:    "show",
+		Hidden: true,
+		RunE:   func(cmd *cobra.Command, args []string) error { return runConfig(env, sel) },
 	}
-	sel.Bind(show)
 	cmd.AddCommand(show)
 	return cmd
+}
+
+func runConfig(env *app.Env, sel policy.Select) error {
+	if err := sel.ApplyConfig(); err != nil {
+		return env.Fail(status.Usage, "config: %v", err)
+	}
+	opts, err := sel.Options()
+	if err != nil {
+		return env.Fail(status.Usage, "%v", err)
+	}
+	snap := sel.Snapshot(opts)
+	if sel.FormatName() == "json" {
+		return render.JSON(env.Out, snap)
+	}
+	return render.WriteCard(env.Out, render.Detect(env.Out, sel.Color), render.Card{
+		Status: "Policy",
+		Rows: []render.Row{
+			{Key: "Extensions", Value: strings.Join(snap.Extensions, ", ")},
+			{Key: "Scope", Value: strings.Join(snap.Scope, ", ")},
+			{Key: "Exclude", Value: strings.Join(snap.Exclude, ", ")},
+			{Key: "Ignore files", Value: strings.Join(snap.IgnoreFiles, ", ")},
+			{Key: "Hash contents", Value: yesNo(snap.HashContents)},
+		},
+	})
+}
+
+func yesNo(v bool) string {
+	if v {
+		return "yes"
+	}
+	return "no"
 }
 
 func Schema(env *app.Env) *cobra.Command {

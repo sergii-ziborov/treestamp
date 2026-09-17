@@ -17,8 +17,8 @@ func New(env *app.Env) *cobra.Command {
 	var nul, absolute bool
 	cmd := &cobra.Command{
 		Use:   "paths [ROOT]",
-		Short: "List selected paths without hashing contents",
-		Example: "  treestamp paths . --ext go --null | xargs -0 gofmt -l\n" +
+		Short: "List selected paths without reading file bytes",
+		Example: "  treestamp paths . --ext go\n" +
 			"  treestamp paths . --ext go --json",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -30,7 +30,7 @@ func New(env *app.Env) *cobra.Command {
 		},
 	}
 	sel.Bind(cmd)
-	cmd.Flags().BoolVar(&nul, "null", false, "separate paths with NUL")
+	cmd.Flags().BoolVar(&nul, "null", false, "separate names with a NUL (safe for spaces)")
 	cmd.Flags().BoolVar(&absolute, "absolute", false, "print absolute paths")
 	return cmd
 }
