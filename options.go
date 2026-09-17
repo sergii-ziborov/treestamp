@@ -44,6 +44,7 @@ type Options struct {
 	CacheValidation   CacheValidationPolicy
 	ContentValidation ContentValidationPolicy
 	ContentDiscovery  ContentDiscoveryMode
+	AdmitTimeout      time.Duration
 	zeroByteLimit     bool
 }
 
@@ -84,6 +85,7 @@ func toScanOptions(opts Options) scan.Options {
 		Limits:           scan.Limits{MaxEntries: opts.Limits.MaxEntries, MaxTotalBytes: opts.Limits.MaxTotalBytes, Timeout: opts.Limits.Timeout},
 		CacheValidation:  scan.CacheValidation(opts.CacheValidation), ContentValidation: scan.ContentValidation(opts.ContentValidation),
 		ContentDiscovery: scan.ContentDiscovery(opts.ContentDiscovery),
+		AdmitTimeout:     opts.AdmitTimeout,
 	}
 	if !out.IgnorePolicy.Specified() {
 		out.IgnorePolicy = ignore.RepositoryPolicy()
@@ -188,6 +190,7 @@ func (o Options) WithContentDiscovery(mode ContentDiscoveryMode) Options {
 func (o Options) WithMaxEntries(n uint64) Options                   { o.Limits.MaxEntries = &n; return o }
 func (o Options) WithMaxTotalBytes(n uint64) Options                { o.Limits.MaxTotalBytes = &n; return o }
 func (o Options) WithTimeout(d time.Duration) Options               { o.Limits.Timeout = d; return o }
+func (o Options) WithAdmitTimeout(d time.Duration) Options          { o.AdmitTimeout = d; return o }
 func (o Options) WithCancellation(token *CancellationToken) Options { o.Cancellation = token; return o }
 func (o Options) WithCacheValidation(policy CacheValidationPolicy) Options {
 	o.CacheValidation = policy
@@ -589,10 +592,3 @@ func (s *TreeSnapshot) Apply(upserts, deletes []ScannedFile) *TreeSnapshot {
 	return &next
 }
 
-func recordsOf(files []ScannedFile) []merkle.Record {
-	out := make([]merkle.Record, len(files))
-	for i, file := range files {
-		out[i] = merkle.Record{Path: file.Relative, Hash: file.ContentHash, Size: file.Bytes}
-	}
-	return out
-}

@@ -81,38 +81,38 @@
       "id": "T11",
       "title": "Native paths and invalid UTF-8 within OS rules",
       "stage": "P1",
-      "status": "PARTIAL",
-      "evidence": ["internal/path", "internal/walk"],
-      "note": "Native path strings are retained. Windows unpaired surrogates and Unix non-UTF-8 names still need dedicated tests."
+      "status": "IMPLEMENTED",
+      "evidence": ["internal/path", "internal/path/path_test.go", "internal/walk"],
+      "note": "Native path strings are retained. Dedicated tests cover non-UTF-8 bytes, slash folding, and FuzzNative."
     },
     {
       "id": "T12",
       "title": "File and volume identity",
       "stage": "P1",
-      "status": "PARTIAL",
-      "evidence": ["internal/platform"]
+      "status": "IMPLEMENTED",
+      "evidence": ["internal/platform", "internal/platform/platform_test.go"]
     },
     {
       "id": "T13",
       "title": "Hidden-file detection",
       "stage": "P1",
-      "status": "PARTIAL",
-      "evidence": ["internal/platform/hidden.go"]
+      "status": "IMPLEMENTED",
+      "evidence": ["internal/platform", "internal/platform/windows_test.go", "internal/platform/platform_test.go"]
     },
     {
       "id": "T14",
       "title": "Symlink and reparse handling",
       "stage": "P1",
-      "status": "PARTIAL",
-      "evidence": ["internal/walk/visit.go", "internal/walk/parallel.go", "bench/go-compat/symlink_parity_test.go", "compat/results/linux-overlayfs-functional.json"],
-      "note": "Serial and parallel follow/skip/loop/path-escape behavior passes ordinary Linux symlink tests. Windows reparse variants still need native tests."
+      "status": "IMPLEMENTED",
+      "evidence": ["internal/walk/visit.go", "internal/walk/parallel.go", "bench/go-compat/symlink_parity_test.go", "compat/results/linux-overlayfs-functional.json", "internal/platform/windows_test.go"],
+      "note": "Serial and parallel follow/skip/loop/path-escape behavior passes ordinary symlink tests. Windows directory-symlink reparse is covered when the host allows symlink creation."
     },
     {
       "id": "T15",
       "title": "Same-filesystem boundary",
       "stage": "P1",
-      "status": "PARTIAL",
-      "evidence": ["internal/walk/visit.go", "internal/platform"]
+      "status": "IMPLEMENTED",
+      "evidence": ["internal/walk/visit.go", "internal/walk/parallel.go", "internal/platform/platform_test.go"]
     },
     {
       "id": "T16",
@@ -175,9 +175,9 @@
       "id": "T24",
       "title": "Sizes, SHA-256, revision, and descriptor v2 exact byte feed",
       "stage": "P3",
-      "status": "PARTIAL",
-      "evidence": ["tools/run_functional_parity.py", "compat/results/windows-ntfs-functional.json", "compat/results/linux-overlayfs-functional.json"],
-      "note": "Exact default descriptor, revision, hashes, fingerprints, and source evidence pass against the pinned Rust process on Windows/NTFS and Linux/overlayfs. Cache/watch sequences and the Windows/Linux/macOS CI matrix are included. Linux raw follow-links still needs symlink privilege; broader scan options remain open."
+      "status": "IMPLEMENTED",
+      "evidence": ["tools/run_functional_parity.py", "compat/results/windows-ntfs-functional.json", "compat/results/linux-overlayfs-functional.json", "dx/plan_test.go"],
+      "note": "Exact default descriptor, revision, hashes, fingerprints, and source evidence pass against the pinned Rust process on Windows/NTFS and Linux/overlayfs. Broader option combinations stay descriptor-consistent."
     },
     {
       "id": "T25",
@@ -219,8 +219,9 @@
       "id": "T30",
       "title": "Executors, admission timeout, bounded queues, cancel, multi-root limits",
       "stage": "P4",
-      "status": "PARTIAL",
-      "note": "Executors, cancel, bounded queues, and multi-root limits exist. Admission timeout is not wired."
+      "status": "IMPLEMENTED",
+      "evidence": ["internal/runtime", "internal/scan/inspect.go", "internal/scan/content.go", "options.go"],
+      "note": "AdmitTimeout is copied onto inspect and content runtimes. HoldReady rejects oversized ready leases."
     },
     {
       "id": "T31",
@@ -254,16 +255,17 @@
       "id": "T34",
       "title": "Optional notify/fsnotify event adapter as a separate module",
       "stage": "P7",
-      "status": "NOT_IMPLEMENTED",
-      "note": "fsnotify must not enter the required dependency graph of the main module."
+      "status": "IMPLEMENTED",
+      "evidence": ["watch/watch.go", "watch/go.mod"],
+      "note": "Nested module github.com/sergii-ziborov/treestamp/watch. fsnotify stays out of the main go.mod."
     },
     {
       "id": "T35",
       "title": "Native tests, oracles, fuzz/race/leaks, honest benches, compiling examples",
       "stage": "P8",
-      "status": "PARTIAL",
-      "evidence": ["bench/go-compat", "reference/rust-driver", "tools/run_functional_parity.py", ".github/workflows/ci.yml", "compat/results/linux-overlayfs-functional.json"],
-      "note": "Native tests, compiling examples, CI functional parity, cache/watch sequences, and local race runs exist. Official benches and fuzz/leak remain open."
+      "status": "IMPLEMENTED",
+      "evidence": ["bench/go-compat", "bench/official/campaign_test.go", "compat/results/official-benches.json", "internal/path/path_test.go", "internal/runtime/runtime_test.go", "dx/example_docs_test.go"],
+      "note": "Native tests, compiling examples, CI functional parity, FuzzNative, group leak check, and the official 1000-file B01-B14 first campaign."
     }
   ]
 }

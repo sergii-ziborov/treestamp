@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/sergii-ziborov/treestamp/blob/main/docs/index.md
+    about: Task recipes, CLI guide, and troubleshooting.
+  - name: pkg.go.dev
+    url: https://pkg.go.dev/github.com/sergii-ziborov/treestamp
+    about: Published library docs.

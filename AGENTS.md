@@ -57,18 +57,17 @@ ordered-parallel directory pull, and a persistent Merkle `TreeSnapshot`.
 The recommended facade is `ScanWith` / `EachFile` / `Compile` without
 changing the two-argument `Scan` / `ScanPaths` signatures. The user CLI
 is `cmd/treestamp` (separate Go module). `cmd/treestamp-driver` stays the
-fixture driver. Task docs live in `docs/`. P7 fsnotify module and P8
-official benches remain open.
+fixture driver. Task docs live in `docs/`. Optional `watch/` is a nested
+module (never a main-module fsnotify require). Official B01–B14
+first-campaign receipts live in `compat/results/official-benches.json`.
 Functional parity, including cache/watch sequences, is in the
 Windows/Linux/macOS CI matrix. Ledger: `compat/ledger.json`.
 
 ## Next implementation work
 
-1. Drive remaining inspect/content paths through the ready count+byte budget.
-2. Optional `watch` module with fsnotify (never a main-module require).
-3. Official B01–B14 campaign against fastwalk, gocodewalker, and the rust oracle.
-   Informal go-compat benches are not that campaign.
-4. Library tag is `v0.1.0`. CLI tag is `cmd/treestamp/v0.1.1` and must
+1. Larger official sizes (10k / 100k / 1M) against fastwalk, gocodewalker,
+   and the rust oracle when a dedicated host is available.
+2. Library tag is `v0.1.0`. CLI tag is `cmd/treestamp/v0.1.1` and must
    require that published library. Do not retag an immutable version.
 
 ## Local checks
@@ -83,7 +82,8 @@ cd cmd/treestamp && go test ./...
 cd bench/go-compat && go test ./...
 ```
 
-`--require-full` must fail until the port is actually complete.
+`--require-full` must pass while T01–T35 are implemented, B01–B14 first-campaign
+rows are MEASURED, and `inventory_complete` is true.
 
 ## GitHub
 

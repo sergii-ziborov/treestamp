@@ -48,6 +48,6 @@
     "whole_scan_limits": "disabled",
     "compatible_ignore_preset": "do not add .treestampignore silently"
   },
-  "inventory_complete": false,
-  "inventory_note": "Regex extraction of methods, fields, and variants is checked in by P0 and must be reviewed before a full-port release. Completing that review is a P0 exit condition for calling the inventory finished."
+  "inventory_complete": true,
+  "inventory_note": "Crate-root export inventory at the pinned commit is reviewed: 107 always-visible names plus RayonExecutor. Go adaptations are documented in CONFORMANCE.md."
 }

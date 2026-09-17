@@ -1,5 +1,12 @@
 # Changelog
 
+## Full-port gate (2026-09-17)
+
+T01–T35 closed. Official B01–B14 first campaign recorded on a 1000-file
+tree (`compat/results/official-benches.json`). Optional `watch/` module
+uses fsnotify outside the main `go.mod`. GitHub can render `docs/cli/*.svg`
+(no unescaped `&`). README and `--require-full` match that state.
+
 ## CLI 0.1.1 (2026-09-17)
 
 CLI tag `cmd/treestamp/v0.1.1` requires published library `v0.1.0`.

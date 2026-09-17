@@ -15,7 +15,7 @@ Do not:
 
 - import `internal/` from an application
 - treat `internal/selection.Compile` as `treestamp.Compile`
-- promise official B01–B14 numbers (`NOT_RUN`)
+- invent official 10k/100k/1M rankings; first-campaign `MEASURED` rows live in `compat/results/official-benches.json`
 - log file contents or absolute paths
 - invent `.treestampignore` as a default
 - call `ScanPaths` a hashed scan

@@ -19,4 +19,5 @@ Cost: this walks the tree and hashes selected files up to 1.5 MiB. Use
 `ScanPathsWith` if you only need names.
 
 Limits: parent ignore files are off unless you enable them. `.treestampignore`
-is not in the first preset. Official benches stay `NOT_RUN`.
+is not in the first preset. Official first-campaign benches are `MEASURED`
+on a 1000-file tree.

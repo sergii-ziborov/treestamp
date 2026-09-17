@@ -4,4 +4,5 @@
 `testdata/generated/` and are gitignored.
 
 `json/` holds public `encoding/json` goldens for `ScannedFile` and `ScanCache`.
-Official B01–B14 benches remain `NOT_RUN`.
+Official first-campaign benches are `MEASURED` in
+`compat/results/official-benches.json`.

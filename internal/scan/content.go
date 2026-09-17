@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/sergii-ziborov/treestamp/internal/hashx"
 	"github.com/sergii-ziborov/treestamp/internal/runtime"
@@ -450,8 +451,8 @@ func readOwned(ctx context.Context, c candidate, opts Options, _ map[string]Cach
 
 const inspectLeaseBytes int64 = 64 * 1024
 
-func inspectBudgeted(ctx context.Context, files []candidate, workers int, runOne func(candidate) inspectResult) ([]ScannedFile, []Skipped, CacheStats, error) {
-	rt := runtime.Dedicated(workers)
+func inspectBudgeted(ctx context.Context, files []candidate, workers int, admit time.Duration, runOne func(candidate) inspectResult) ([]ScannedFile, []Skipped, CacheStats, error) {
+	rt := runtime.Dedicated(workers).WithAdmitTimeout(admit)
 	budget := runtime.NewBudget(runtime.DefaultLimits(workers))
 	defer budget.Close()
 	ch := make(chan candidate)

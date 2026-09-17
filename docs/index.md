@@ -35,5 +35,7 @@ Existing design notes stay where they are:
 [THREAT_MODEL.md](../THREAT_MODEL.md),
 [COMPETITORS.md](../COMPETITORS.md).
 
-Official B01–B14 benches remain `NOT_RUN`. Informal Windows medians are
-reproducible from [guides/performance.md](guides/performance.md).
+Official B01–B14 first-campaign rows are `MEASURED` in
+[`compat/results/official-benches.json`](../compat/results/official-benches.json)
+(1000-file tree). Informal Windows medians stay in
+[guides/performance.md](guides/performance.md).

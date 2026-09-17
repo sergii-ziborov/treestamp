@@ -370,7 +370,11 @@ func (m *MultiScanner) Scan(ctx context.Context) (*MultiScanReport, error) {
 	jobs, results := make(chan int), make(chan item, len(m.roots))
 	var wg sync.WaitGroup
 	wg.Add(workers)
-	rt := runtime.Dedicated(workers).WithAdmitTimeout(m.admitTimeout)
+	timeout := m.admitTimeout
+	if timeout == 0 {
+		timeout = m.options.AdmitTimeout
+	}
+	rt := runtime.Dedicated(workers).WithAdmitTimeout(timeout)
 	for i := 0; i < workers; i++ {
 		if err := rt.AdmitWait(func() {
 			defer wg.Done()

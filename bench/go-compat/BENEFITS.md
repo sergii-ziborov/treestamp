@@ -1,13 +1,14 @@
 # Informal competitor benches
 
 These are developer benches in `bench/go-compat`. They are **not** official
-B01–B14 rows. Official B01–B14 stay `NOT_RUN`.
+B01–B14 rows. Official first-campaign `MEASURED` receipts live in
+`compat/results/official-benches.json`.
 
 ## Toolchain and comparator versions
 
 Recorded 16 September 2026 on Windows/amd64, Intel Core Ultra 7 255U.
 The 17 September R0 refresh did not edit these raw paths; a loaded-host
-re-run is not used as a claimed ranking. Official B01–B14 stay `NOT_RUN`.
+re-run is not used as a claimed ranking.
 
 | Item | Version |
 | --- | --- |

@@ -1,6 +1,8 @@
 # Informal performance notes
 
-Official B01–B14 remain `NOT_RUN`. Do not treat this page as that campaign.
+Official B01–B14 first-campaign receipts are `MEASURED` in
+`compat/results/official-benches.json`. This page is the informal Windows
+listing campaign only.
 
 ## Versions used on this receipt
 

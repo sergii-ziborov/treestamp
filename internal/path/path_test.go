@@ -103,6 +103,25 @@ func TestCollapsePathPrefixes(t *testing.T) {
 	}
 }
 
+func FuzzNative(f *testing.F) {
+	f.Add(`\\?\C:\temp`)
+	f.Add(`/tmp/root`)
+	f.Fuzz(func(t *testing.T, path string) {
+		_ = Native(path)
+		_ = Slash(path)
+	})
+}
+
+func TestNativeKeepsNonUTF8Bytes(t *testing.T) {
+	raw := string([]byte{'a', 0xff, 0xfe, 'z'})
+	if Native(raw) != raw {
+		t.Fatalf("native lost bytes: %q", Native(raw))
+	}
+	if Slash(raw) == "" {
+		t.Fatal("slash empty")
+	}
+}
+
 func TestSafeRelative(t *testing.T) {
 	if got, ok := SafeRelative("src/a.go"); !ok || got != "src/a.go" {
 		t.Fatal(got, ok)

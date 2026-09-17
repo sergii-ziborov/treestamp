@@ -39,6 +39,7 @@ type Options struct {
 	CacheValidation   CacheValidation
 	ContentValidation ContentValidation
 	ContentDiscovery  ContentDiscovery
+	AdmitTimeout      time.Duration
 	Cache             *Cache
 	Started           time.Time
 	Root              string

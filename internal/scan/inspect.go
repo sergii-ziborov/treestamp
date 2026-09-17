@@ -13,6 +13,7 @@ import (
 	stdlib "runtime"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/sergii-ziborov/treestamp/internal/fileread"
 	"github.com/sergii-ziborov/treestamp/internal/filetypes"
@@ -51,7 +52,7 @@ func inspect(ctx context.Context, files []candidate, opts Options) ([]ScannedFil
 	if workers == 1 {
 		return inspectSerial(ctx, files, runOne)
 	}
-	return inspectParallel(ctx, files, workers, runOne)
+	return inspectParallel(ctx, files, workers, opts.AdmitTimeout, runOne)
 }
 
 func inspectSerial(ctx context.Context, files []candidate, runOne func(candidate) inspectResult) ([]ScannedFile, []Skipped, CacheStats, error) {
@@ -71,8 +72,8 @@ func inspectSerial(ctx context.Context, files []candidate, runOne func(candidate
 	return out, skipped, stats, nil
 }
 
-func inspectParallel(ctx context.Context, files []candidate, workers int, runOne func(candidate) inspectResult) ([]ScannedFile, []Skipped, CacheStats, error) {
-	return inspectBudgeted(ctx, files, workers, runOne)
+func inspectParallel(ctx context.Context, files []candidate, workers int, admit time.Duration, runOne func(candidate) inspectResult) ([]ScannedFile, []Skipped, CacheStats, error) {
+	return inspectBudgeted(ctx, files, workers, admit, runOne)
 }
 
 func inspectCompact(ctx context.Context, files []candidate, opts Options) ([]CompactFile, []Skipped, CacheStats, error) {

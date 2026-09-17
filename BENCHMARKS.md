@@ -1,13 +1,14 @@
 # Benchmarks
 
-**Status: `NOT_RUN`.** This file is the measurement policy. It does not contain
-Treestamp timings. Do not copy weavatrix-scan percentages or millisecond
+**Status: first campaign `MEASURED`.** Receipt:
+`compat/results/official-benches.json` (1000-file tree). This file is the
+measurement policy. Do not copy weavatrix-scan percentages or millisecond
 figures into README or release notes as if they were measured here.
 
 Separate functional fixture campaigns pass on Windows/NTFS and Linux/overlayfs;
 see `compat/results/windows-ntfs-functional.json` and
-`compat/results/linux-overlayfs-functional.json`. They record no timing and do
-not mark any B01–B14 row as measured.
+`compat/results/linux-overlayfs-functional.json`. They record no timing.
+The 10k/100k/1M sizes remain a later host campaign.
 
 ## Cases
 

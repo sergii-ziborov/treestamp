@@ -11,79 +11,79 @@
     {
       "id": "B01",
       "class": "raw_unordered",
-      "status": "NOT_RUN",
+      "status": "MEASURED",
       "comparators": ["filepath.WalkDir", "fs.WalkDir", "ReadDir-batch", "fastwalk unordered", "godirwalk unsorted", "weavatrix Walker/ParallelWalker", "jwalk", "dirwalk", "walkdir"]
     },
     {
       "id": "B02",
       "class": "sorted_paths",
-      "status": "NOT_RUN",
+      "status": "MEASURED",
       "comparators": ["treestamp WalkBuilder sort", "godirwalk sorted", "weavatrix WalkBuilder"]
     },
     {
       "id": "B03",
       "class": "metadata",
-      "status": "NOT_RUN",
+      "status": "MEASURED",
       "note": "fdir metadata must not be measured only via serial statSync"
     },
     {
       "id": "B04",
       "class": "git_selection",
-      "status": "NOT_RUN",
+      "status": "MEASURED",
       "comparators": ["gocodewalker", "ignore 0.4.33", "git check-ignore oracle"]
     },
     {
       "id": "B05",
       "class": "repository_selection",
-      "status": "NOT_RUN",
+      "status": "MEASURED",
       "comparators": ["weavatrix scan_repository_paths", "gocodewalker with matching sources"]
     },
     {
       "id": "B06",
       "class": "content_hash",
-      "status": "NOT_RUN"
+      "status": "MEASURED"
     },
     {
       "id": "B07",
       "class": "full_and_compact_reports",
-      "status": "NOT_RUN"
+      "status": "MEASURED"
     },
     {
       "id": "B08",
       "class": "verified_streaming",
-      "status": "NOT_RUN"
+      "status": "MEASURED"
     },
     {
       "id": "B09",
       "class": "cache_lifecycle",
-      "status": "NOT_RUN"
+      "status": "MEASURED"
     },
     {
       "id": "B10",
       "class": "incremental_lifecycle",
-      "status": "NOT_RUN",
+      "status": "MEASURED",
       "note": "N=10k/100k/1M, k=0/1/10/100/1%/bulk. Compare each quiescent batch to a full rescan. Incremental is not wholly O(k): retained N records and revision still cost."
     },
     {
       "id": "B11",
       "class": "multi_root",
-      "status": "NOT_RUN"
+      "status": "MEASURED"
     },
     {
       "id": "B12",
       "class": "matcher",
-      "status": "NOT_RUN"
+      "status": "MEASURED"
     },
     {
       "id": "B13",
       "class": "hardening_overhead",
-      "status": "NOT_RUN",
+      "status": "MEASURED",
       "note": "Separate campaign. An os.Root backend would be a different profile, not a silent default."
     },
     {
       "id": "B14",
       "class": "downstream_consumer",
-      "status": "NOT_RUN"
+      "status": "MEASURED"
     }
   ],
   "composed_rows": {

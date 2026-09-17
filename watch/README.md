@@ -1,7 +1,12 @@
-# watch
+# treestamp/watch
 
-Optional later Go module for an fsnotify event adapter.
+Optional fsnotify adapter. It is a separate module so the main Treestamp
+library never requires fsnotify.
 
-It must not become a required dependency of `github.com/sergii-ziborov/treestamp`.
-fsnotify is an event source, not a scanner, and its public API does not
-recursively watch a whole tree by itself.
+```text
+w, err := watch.Open(root, []string{".gitignore"})
+plan, err := w.Plan(ctx)
+```
+
+`Plan` maps native create/remove/rename/modify events onto
+`treestamp.WatchPlan`. Apply that plan with the library session APIs.

@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"errors"
+	stdlib "runtime"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -170,5 +171,24 @@ func TestOverflowCallerRuns(t *testing.T) {
 	busy.Run(func() { ran.Store(true) })
 	if !ran.Load() {
 		t.Fatal("caller runs")
+	}
+}
+
+func TestGroupDoesNotLeakAfterWait(t *testing.T) {
+	before := stdlib.NumGoroutine()
+	rt := Dedicated(2)
+	grp := rt.Group()
+	for i := 0; i < 4; i++ {
+		grp.Go(func() error { return nil })
+	}
+	if err := grp.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for stdlib.NumGoroutine() > before+8 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if stdlib.NumGoroutine() > before+16 {
+		t.Fatalf("goroutines %d before %d", stdlib.NumGoroutine(), before)
 	}
 }

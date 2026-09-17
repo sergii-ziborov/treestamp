@@ -1,7 +1,8 @@
 # Migrating from Go walkers
 
 These are method-matched listing notes, not a claim that Treestamp is a
-drop-in speed replacement. Official B01–B14 stay `NOT_RUN`.
+drop-in speed replacement. Official first-campaign rows are `MEASURED` in
+`compat/results/official-benches.json`; they are not a 1M ranking.
 
 ## fastwalk
 

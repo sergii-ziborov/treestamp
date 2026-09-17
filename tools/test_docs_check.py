@@ -58,9 +58,10 @@ class DocsCheckTests(unittest.TestCase):
         text = (docs_check.ROOT / "docs" / "agent-guide.md").read_text(encoding="utf-8")
         self.assertIn("internal/", text)
 
-    def test_readme_keeps_official_not_run(self):
+    def test_readme_mentions_official_measured(self):
         text = (docs_check.ROOT / "README.md").read_text(encoding="utf-8")
-        self.assertIn("NOT_RUN", text)
+        self.assertIn("MEASURED", text)
+        self.assertIn("official", text.lower())
 
 
 if __name__ == "__main__":

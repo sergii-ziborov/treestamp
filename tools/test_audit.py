@@ -24,7 +24,7 @@ class AuditTests(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
 
-    def test_require_full_fails_while_port_is_open(self) -> None:
+    def test_require_full_passes_when_port_is_closed(self) -> None:
         completed = subprocess.run(
             [sys.executable, str(AUDIT), "--require-full"],
             cwd=ROOT,
@@ -32,8 +32,8 @@ class AuditTests(unittest.TestCase):
             capture_output=True,
             text=True,
         )
-        self.assertNotEqual(completed.returncode, 0)
-        self.assertIn("full port required", completed.stderr)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("FULL PORT CHECK PASSED", completed.stdout)
 
     def test_pin_and_contracts_are_complete(self) -> None:
         pin = json.loads((ROOT / "compat" / "pin.json").read_text(encoding="utf-8"))

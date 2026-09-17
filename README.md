@@ -1,21 +1,20 @@
 # Treestamp
 
 Deterministic repository scanning for Go.
-Select files, verify content, and produce manifests with explainable decisions.
+Select files, hash what you chose, explain the rule, and verify the next tree.
 
-Native Go scanner, first non-alpha library release. Pinned Weavatrix Scan
-0.5.2 remains the port oracle. This is **not a full port**. Official
-B01–B14 benches stay **`NOT_RUN`**. Informal listing medians below are a
-small Windows temp-tree campaign, not a 10k/100k/1M ranking.
+Native Go library. Pinned Weavatrix Scan **0.5.2** is the port oracle.
+T01–T35 are implemented. Official B01–B14 first-campaign rows are
+**`MEASURED`** on a 1000-file tree
+([receipt](compat/results/official-benches.json)). That is not a 10k/100k/1M
+ranking. Informal 16 September Windows listing medians stay below.
 
 ```text
-git clone https://github.com/sergii-ziborov/treestamp.git
-cd treestamp
-go test .
+go get github.com/sergii-ziborov/treestamp@v0.1.0
 ```
 
 Library tag: `v0.1.0`. CLI tag: `cmd/treestamp/v0.1.1`.
-Go 1.23.0+, `CGO_ENABLED=0`. Still not a full port.
+Go 1.23.0+, `CGO_ENABLED=0`.
 
 ```go
 ctx := context.Background()
@@ -57,6 +56,8 @@ The same scanner, as a nested module. Not a second engine.
 ```text
 go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.1
 treestamp scan . --ext go --json --output ../baseline.tstamp.json
+treestamp explain generated/model.go --root .
+treestamp verify ../baseline.tstamp.json --root .
 ```
 
 ![treestamp scan](docs/cli/scan.svg)
@@ -66,15 +67,28 @@ treestamp scan . --ext go --json --output ../baseline.tstamp.json
 CLI README: [cmd/treestamp/README.md](cmd/treestamp/README.md).
 Guide: [docs/guides/cli.md](docs/guides/cli.md).
 
+## Official first campaign
+
+1000-file tree, one process, `TREESTAMP_OFFICIAL=1`. Receipt:
+[`compat/results/official-benches.json`](compat/results/official-benches.json).
+Policy: [BENCHMARKS.md](BENCHMARKS.md). Reproduce:
+
+```text
+set CGO_ENABLED=0
+python tools/run_official_benches.py
+```
+
+These nanoseconds are host-local. Do not publish them as a cross-machine
+ranking or as Rust oracle percentages.
+
 ## Informal benches (reproducible, not official)
 
 Windows/amd64, Intel Core Ultra 7 255U, 16 September 2026.
 Go **1.26.5** (`go env GOVERSION`), module line **1.23.0**, `CGO_ENABLED=0`,
 `GOTOOLCHAIN=local`. Comparators pinned in `bench/go-compat`:
 **fastwalk v1.0.14**, **gocodewalker v1.5.1**, **godirwalk v1.17.0**.
-Medians of three runs. Official B01–B14 stay **`NOT_RUN`**.
-R0 did not change these raw walk/stat/selection paths. A 17 September
-refresh ran on a loaded host and is not used as a claimed ranking.
+Medians of three runs. A 17 September refresh ran on a loaded host and is
+not used as a claimed ranking.
 
 | Case | Treestamp | Comparator |
 | --- | --- | --- |
@@ -87,8 +101,7 @@ refresh ran on a loaded host and is not used as a claimed ranking.
 
 `WalkFS` is `fs.WalkDir` (same allocs). Compiled test-binary peak working set
 **54.2 MiB**, process CPU **93.9 s** on `-test.count=1`. Per-op memory is
-`B/op`, not that RSS. `ScanWith` added about 4 allocs / 2 KiB versus `Scan`
-on a one-file tree. Parallel raw walk is still slower than fastwalk on this
+`B/op`, not that RSS. Parallel raw walk is still slower than fastwalk on this
 small tree.
 
 ```text
@@ -97,16 +110,15 @@ set GOTOOLCHAIN=local
 python tools/run_informal_benches.py
 ```
 
-Receipt: [`bench/go-compat/INFORMAL_RUN.json`](bench/go-compat/INFORMAL_RUN.json)
-(`modules` lists the exact `go list -m` versions).
+Receipt: [`bench/go-compat/INFORMAL_RUN.json`](bench/go-compat/INFORMAL_RUN.json).
 Method notes: [`bench/go-compat/BENEFITS.md`](bench/go-compat/BENEFITS.md).
-Policy: [BENCHMARKS.md](BENCHMARKS.md).
 
 ## What this is not
 
 Not a parser, search engine, graph, embedder, secret scanner, MCP server,
 web service, or daemon. No CGO, WASM, or Rust in the runtime library.
 `.treestampignore` is not a default ignore file.
+Optional `watch/` uses fsnotify and is never a main-module require.
 
 ## Authorship and license
 

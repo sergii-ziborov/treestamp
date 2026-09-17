@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/sergii-ziborov/treestamp/internal/merkle"
 	pathx "github.com/sergii-ziborov/treestamp/internal/path"
 	"github.com/sergii-ziborov/treestamp/internal/report"
 	"github.com/sergii-ziborov/treestamp/internal/scan"
@@ -589,4 +590,12 @@ func (s *Scanner) Explain(rel string) (PathExplanation, error) {
 	info, statErr := os.Lstat(filepath.Join(m.Root(), filepath.FromSlash(rel)))
 	x := m.Explain(rel, statErr == nil && info.IsDir())
 	return PathExplanation{x.Relative, x.Outcome, x.Reason, x.Source, x.Pattern, x.Line}, nil
+}
+
+func recordsOf(files []ScannedFile) []merkle.Record {
+	out := make([]merkle.Record, len(files))
+	for i, file := range files {
+		out[i] = merkle.Record{Path: file.Relative, Hash: file.ContentHash, Size: file.Bytes}
+	}
+	return out
 }

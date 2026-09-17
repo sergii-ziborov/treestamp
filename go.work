@@ -5,4 +5,5 @@ use (
 	./cmd/treestamp
 	./bench/go-compat
 	./consumer
+	./watch
 )

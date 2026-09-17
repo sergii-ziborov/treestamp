@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/sergii-ziborov/treestamp"
 )
@@ -92,6 +93,25 @@ func TestEachFileOwnedBytesAndStop(t *testing.T) {
 	}
 	if string(held[:8]) != "Xackage " && !bytes.HasPrefix(held, []byte("X")) {
 		t.Fatalf("owned bytes were not transferred: %q", held)
+	}
+}
+
+func TestBroaderScanOptionsStayConsistent(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "a.go"), "package a\n")
+	mustWrite(t, filepath.Join(root, ".hidden.go"), "package h\n")
+	opts := treestamp.DefaultOptions().WithExtensions("go").WithSkipHidden(true).WithMaxFileBytes(50).WithAdmitTimeout(time.Second)
+	rep, err := treestamp.ScanWith(context.Background(), root, treestamp.Using(opts))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rep.Descriptor.Matches(opts) {
+		t.Fatal("descriptor")
+	}
+	for _, file := range rep.Files {
+		if file.Relative == ".hidden.go" {
+			t.Fatal("hidden selected")
+		}
 	}
 }
 

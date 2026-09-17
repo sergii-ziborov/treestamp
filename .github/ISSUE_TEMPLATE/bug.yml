@@ -1,0 +1,37 @@
+name: Bug
+description: Something selected, hashed, explained, or verified incorrectly.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for a wrong scan, explain, cache, or CLI result.
+        Feature requests that add a parser, search, MCP, or daemon will be closed.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Library tag, CLI tag, or commit.
+      placeholder: v0.1.0 / cmd/treestamp/v0.1.1
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options: [Windows, Linux, macOS]
+    validations:
+      required: true
+  - type: textarea
+    id: expect
+    attributes:
+      label: What should have happened
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+    validations:
+      required: true

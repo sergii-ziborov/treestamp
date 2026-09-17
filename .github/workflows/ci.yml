@@ -26,13 +26,8 @@ jobs:
         run: python tools/audit.py
       - name: Audit unit tests
         run: python -m unittest discover -s tools -p "test_*.py"
-      - name: Full-port gate must still fail
-        shell: bash
-        run: |
-          if python tools/audit.py --require-full; then
-            echo "require-full unexpectedly passed"
-            exit 1
-          fi
+      - name: Full-port gate
+        run: python tools/audit.py --require-full
       - name: Go tests
         run: go test ./...
       - name: Go-compat functional tests
@@ -101,6 +96,24 @@ jobs:
       - name: CLI help smoke
         working-directory: cmd/treestamp
         run: go run . version --json
+
+  watch:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      CGO_ENABLED: "0"
+      GOWORK: "off"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.2"
+      - name: Optional watch module
+        working-directory: watch
+        run: go test ./...
 
   parity:
     strategy:

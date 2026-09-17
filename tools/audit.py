@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -107,10 +108,36 @@ def main() -> int:
     ):
         if forbidden in readme:
             errors.append(f"README must not reuse Rust marketing or timings ({forbidden})")
-    if "NOT_RUN" not in readme:
-        errors.append("README must say benchmarks are NOT_RUN")
-    if "full port" in readme.lower() and "not a full port" not in readme.lower() and "not a finished" not in readme.lower():
-        errors.append("README must not claim a full port while later stages remain open")
+    closed = (
+        all(item.get("status") == "IMPLEMENTED" for item in contracts["contracts"])
+        and all(benches.get(bench_id) == "MEASURED" for bench_id in BENCH_IDS)
+        and pin.get("inventory_complete") is True
+    )
+    if not closed:
+        if "NOT_RUN" not in readme:
+            errors.append("README must say benchmarks are NOT_RUN")
+        if (
+            "full port" in readme.lower()
+            and "not a full port" not in readme.lower()
+            and "not a finished" not in readme.lower()
+        ):
+            errors.append("README must not claim a full port while later stages remain open")
+    else:
+        receipt = ROOT / "compat" / "results" / "official-benches.json"
+        if not receipt.is_file():
+            errors.append("official first-campaign receipt is missing")
+        else:
+            official = load_json("compat/results/official-benches.json")
+            for bench_id in BENCH_IDS:
+                case = official.get("cases", {}).get(bench_id, {})
+                if case.get("status") != "MEASURED":
+                    errors.append(f"official receipt missing MEASURED {bench_id}")
+        if "MEASURED" not in readme:
+            errors.append("README must mention official MEASURED benches")
+        svg = (ROOT / "docs" / "cli" / "scan.svg").read_text(encoding="utf-8")
+        if "&" in svg and "&amp;" not in svg and "&#" not in svg:
+            if re.search(r"&(?!amp;|lt;|gt;|quot;|#)", svg):
+                errors.append("docs/cli/scan.svg has an unescaped ampersand")
 
     go_mod = (ROOT / "go.mod").read_text(encoding="utf-8")
     if "module github.com/sergii-ziborov/treestamp" not in go_mod:
@@ -153,7 +180,10 @@ def main() -> int:
     print("BOOTSTRAP AUDIT PASSED")
     print(f"pinned {PINNED_COMMIT}")
     print(f"contracts {len(ids)}; implemented {len(implemented)}")
-    print("require-full would still fail: partial contracts and benchmarks remain open")
+    if closed:
+        print("require-full is available: inventory, T01-T35, and B01-B14 first campaign are closed")
+    else:
+        print("require-full would still fail: partial contracts and benchmarks remain open")
     return 0
 
 

@@ -6,23 +6,13 @@ Pinned source: weavatrix-scan 0.5.2 at
 
 Crate-root exports: 108 names in `src/lib.rs` (107 always visible, plus
 `RayonExecutor` behind `feature = "rayon"`). See `compat/inventory.json`.
-That file is a regex extraction. Finishing a reviewed member list is still a
-P0 condition for calling the inventory complete.
+`compat/pin.json` marks that inventory complete.
 
 ## Contracts
 
-`compat/contracts.json` lists T01–T35. After P2–P6 method work:
+`compat/contracts.json` lists T01–T35. All rows are `IMPLEMENTED`.
 
-| IDs | Status |
-| --- | --- |
-| T01–T10, T16–T29, T31–T33 | Implemented or partial with method surface present |
-| T11–T15 | Partial platform/path/symlink/reparse |
-| T24 | Default scan, cache/watch sequences, and competitor checks run in CI; Linux follow-links walk still needs symlink privilege |
-| T30 | Executors present; admission timeout not wired |
-| T34 | Optional fsnotify module not started |
-| T35 | Native tests, CI functional parity, and cache/watch sequences exist; official benches/fuzz remain open |
-
-`python3 tools/audit.py --require-full` must fail while any contract is open.
+`python3 tools/audit.py --require-full` must pass.
 
 ## Language adaptation
 
@@ -74,11 +64,12 @@ filepath, and gocodewalker behavior through the isolated `bench/go-compat`
 module. Results are `compat/results/windows-ntfs-functional.json` and
 `compat/results/linux-overlayfs-functional.json`.
 
-The same campaign now also compares cache reuse and watch-plan apply
-sequences, and `.github/workflows/ci.yml` runs it on Ubuntu, Windows, and
-macOS. Local NTFS/overlayfs JSON records remain developer evidence. This
-does not close mutation-race, fuzz/leak, or official B01–B14 work.
-B01–B14 remain `NOT_RUN`.
+The same campaign also compares cache reuse and watch-plan apply sequences,
+and `.github/workflows/ci.yml` runs it on Ubuntu, Windows, and macOS.
+
+Official B01–B14 first-campaign timings are in
+`compat/results/official-benches.json` (1000-file tree). That is not a
+10k/100k/1M ranking.
 
 Controlled clocks and fake filesystems belong to deterministic cancel and
 mutation cases. A live writer racing two engines cannot be required to match

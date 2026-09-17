@@ -118,7 +118,8 @@ records, not timing results.
 | Report / hash / cache / watch | yes | no | no | no |
 
 Informal timing for the walk/select rows lives in
-`bench/go-compat/BENEFITS.md`. Official B01–B14 remain `NOT_RUN`.
+`bench/go-compat/BENEFITS.md`. Official first-campaign rows are `MEASURED`
+in `compat/results/official-benches.json`.
 
 ## Headline policy
 

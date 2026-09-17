@@ -4,6 +4,7 @@ package platform
 
 import (
 	"os"
+	"syscall"
 
 	"golang.org/x/sys/windows"
 )
@@ -62,14 +63,24 @@ func handleIdentity(h windows.Handle) (Identity, error) {
 }
 
 func nativeHidden(info os.FileInfo) bool {
+	if info == nil {
+		return false
+	}
+	switch d := info.Sys().(type) {
+	case *windows.Win32FileAttributeData:
+		return d.FileAttributes&windows.FILE_ATTRIBUTE_HIDDEN != 0
+	case *syscall.Win32FileAttributeData:
+		return d.FileAttributes&windows.FILE_ATTRIBUTE_HIDDEN != 0
+	case windows.Win32FileAttributeData:
+		return d.FileAttributes&windows.FILE_ATTRIBUTE_HIDDEN != 0
+	case syscall.Win32FileAttributeData:
+		return d.FileAttributes&windows.FILE_ATTRIBUTE_HIDDEN != 0
+	}
 	type attr interface {
 		FileAttributes() uint32
 	}
 	if a, ok := info.Sys().(attr); ok {
 		return a.FileAttributes()&windows.FILE_ATTRIBUTE_HIDDEN != 0
-	}
-	if d, ok := info.Sys().(*windows.Win32FileAttributeData); ok {
-		return d.FileAttributes&windows.FILE_ATTRIBUTE_HIDDEN != 0
 	}
 	return false
 }

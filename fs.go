@@ -3,8 +3,7 @@
 // Select files, verify content, and produce manifests with explainable
 // decisions. Start with [ScanPathsWith], [ScanWith], [EachFile], or [Compile].
 // [Explain] reports the winning selection rule; it does not re-verify content.
-// Official B01–B14 benches are NOT_RUN. This is not a full port of the pinned
-// Weavatrix Scan oracle.
+// Official B01–B14 first-campaign receipts live in compat/results.
 //
 // The repository is the personal public project of Sergii Ziborov
 // (github.com/sergii-ziborov/treestamp). It is not published from the
@@ -20,6 +19,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/sergii-ziborov/treestamp/internal/dirread"
 	"github.com/sergii-ziborov/treestamp/internal/dx"
@@ -432,6 +432,13 @@ func WithProgress(fn func(Progress)) Option {
 
 func WithRequireCache() Option {
 	return func(b *planBuilder) error { b.requireCache = true; return nil }
+}
+
+func WithAdmitTimeout(d time.Duration) Option {
+	return func(b *planBuilder) error {
+		b.opts.AdmitTimeout = d
+		return nil
+	}
 }
 
 func WithReadLimit(lim ByteLimit) Option {

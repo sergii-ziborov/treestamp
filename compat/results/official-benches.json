@@ -1,0 +1,67 @@
+{
+  "schema": 1,
+  "campaign": "official-first",
+  "size": 1000,
+  "host": "Windows/AMD64",
+  "go": "go1.26.5",
+  "date": "2026-09-17",
+  "note": "First official B01-B14 campaign on a 1000-file tree. Not a 10k/100k/1M ranking. Informal 16 Sep Windows listing medians stay in bench/go-compat/INFORMAL_RUN.json.",
+  "cases": {
+    "B01": {
+      "status": "MEASURED",
+      "ns": 3514300
+    },
+    "B02": {
+      "status": "MEASURED",
+      "ns": 2523400
+    },
+    "B03": {
+      "status": "MEASURED",
+      "ns": 4110100
+    },
+    "B04": {
+      "status": "MEASURED",
+      "ns": 3309500
+    },
+    "B05": {
+      "status": "MEASURED",
+      "ns": 3031100
+    },
+    "B06": {
+      "status": "MEASURED",
+      "ns": 174999600
+    },
+    "B07": {
+      "status": "MEASURED",
+      "ns": 140463400
+    },
+    "B08": {
+      "status": "MEASURED",
+      "ns": 242162800
+    },
+    "B09": {
+      "status": "MEASURED",
+      "ns": 166054500
+    },
+    "B10": {
+      "status": "MEASURED",
+      "ns": 44991500
+    },
+    "B11": {
+      "status": "MEASURED",
+      "ns": 125364500
+    },
+    "B12": {
+      "status": "MEASURED",
+      "ns": 534200
+    },
+    "B13": {
+      "status": "MEASURED",
+      "ns": 120361500
+    },
+    "B14": {
+      "status": "MEASURED",
+      "ns": 539500
+    }
+  }
+}

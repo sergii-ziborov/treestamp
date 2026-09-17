@@ -51,3 +51,63 @@ func TestHiddenNameAndIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestIdentityDistinguishesFilesAndHardlinks(t *testing.T) {
+	root := t.TempDir()
+	a := filepath.Join(root, "a.txt")
+	b := filepath.Join(root, "b.txt")
+	if err := os.WriteFile(a, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(b, []byte("y"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ia, err := PathIdentity(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ib, err := PathIdentity(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ia.Equal(ib) {
+		t.Fatal("distinct files must not share identity")
+	}
+	infoA, err := DirectoryInfo(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if infoA.FileSystem == 0 && infoA.Identity.File == 0 {
+		t.Fatal("directory identity")
+	}
+	link := filepath.Join(root, "link.txt")
+	if err := os.Link(a, link); err != nil {
+		t.Skip(err)
+	}
+	il, err := PathIdentity(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ia.Equal(il) {
+		t.Fatal("hardlink must share identity")
+	}
+}
+
+func TestSameVolumeKeepsFileSystemID(t *testing.T) {
+	root := t.TempDir()
+	child := filepath.Join(root, "nested")
+	if err := os.Mkdir(child, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rootInfo, err := DirectoryInfo(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	childInfo, err := DirectoryInfo(child)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rootInfo.FileSystem != childInfo.FileSystem {
+		t.Fatal("same volume must share filesystem id")
+	}
+}

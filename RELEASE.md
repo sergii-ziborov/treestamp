@@ -7,13 +7,11 @@ Do not publish this project from the Weavatrix or EdgeHawk organizations.
 
 ## Current
 
-Still not a full port:
-
 - Library: `v0.1.0` → `go get github.com/sergii-ziborov/treestamp@v0.1.0`
 - CLI: `cmd/treestamp/v0.1.1` → `go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.1`
 
-Do not tag `v1` or write “full port” in a release title. The published CLI
-`go.mod` must not contain a `replace` of the library.
+Those tags stay immutable. A later library bump is a new tag. The published
+CLI `go.mod` must not contain a `replace` of the library.
 
 ## Full-port gate
 
