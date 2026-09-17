@@ -69,4 +69,5 @@ No `watch`, `--exec`, TUI, server, MCP, hidden cache, or plugin loader.
 
 `treestamp version --json` prints CLI, core, and manifest schema. Nested
 module tags use the `cmd/treestamp/v…` Git prefix. `go install` still
-takes `@v0.1.0`.
+takes `@v0.1.0` for the current CLI tag. The library import is
+`github.com/sergii-ziborov/treestamp@v0.1.0`.

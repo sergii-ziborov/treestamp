@@ -52,7 +52,11 @@ func run(ctx context.Context, env *app.Env, sel policy.Select, root string, nul,
 		return env.Fail(status.Impossible, "%v", err)
 	}
 	if absolute {
-		paths = absPaths(root, paths)
+		var absErr error
+		paths, absErr = absPaths(root, paths)
+		if absErr != nil {
+			return env.Fail(status.Impossible, "%v", absErr)
+		}
 	}
 	if sel.FormatName() == "json" {
 		return render.JSON(env.Out, map[string]any{"schema": "treestamp.paths/v1", "paths": paths})
@@ -60,12 +64,16 @@ func run(ctx context.Context, env *app.Env, sel policy.Select, root string, nul,
 	return writeLines(env, paths, nul)
 }
 
-func absPaths(root string, paths []string) []string {
+func absPaths(root string, paths []string) ([]string, error) {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]string, len(paths))
 	for i, p := range paths {
-		out[i] = filepath.Join(root, filepath.FromSlash(p))
+		out[i] = filepath.Join(absRoot, filepath.FromSlash(p))
 	}
-	return out
+	return out, nil
 }
 
 func writeLines(env *app.Env, paths []string, nul bool) error {

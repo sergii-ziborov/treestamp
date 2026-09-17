@@ -247,4 +247,5 @@ func (t *Token) Cancelled() bool {
 var (
 	ErrBusy         = errors.New("executor rejected job")
 	ErrAdmitTimeout = errors.New("executor admission timed out")
+	ErrReadyLimit   = errors.New("ready-byte limit exceeded")
 )

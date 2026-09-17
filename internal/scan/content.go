@@ -439,17 +439,16 @@ func ownedOne(ctx context.Context, c candidate, opts Options, index map[string]C
 	return file, skip, stat, consume(file, data)
 }
 
-func readOwned(ctx context.Context, c candidate, opts Options, index map[string]CacheEntry, memo *contentMemo) (ScannedFile, []byte, *Skipped, CacheStats, error) {
-	file, skip, stat, err := inspectOne(ctx, c, opts, index, memo)
-	if err != nil || skip != nil {
-		return file, nil, skip, stat, err
+func readOwned(ctx context.Context, c candidate, opts Options, _ map[string]CacheEntry, memo *contentMemo) (ScannedFile, []byte, *Skipped, CacheStats, error) {
+	file := ScannedFile{Absolute: c.abs, Relative: c.rel, Bytes: c.size, Version: c.version}
+	file, data, skip, stat, err := hashOpened(ctx, c, opts, file, true)
+	if err == nil && skip == nil {
+		memo.store(file)
 	}
-	data, readErr := os.ReadFile(file.Absolute)
-	if readErr != nil {
-		return file, nil, &Skipped{Relative: c.rel, Kind: selection.SkipIOError, Detail: readErr.Error()}, stat, nil
-	}
-	return file, data, nil, stat, nil
+	return file, data, skip, stat, err
 }
+
+const inspectLeaseBytes int64 = 64 * 1024
 
 func inspectBudgeted(ctx context.Context, files []candidate, workers int, runOne func(candidate) inspectResult) ([]ScannedFile, []Skipped, CacheStats, error) {
 	rt := runtime.Dedicated(workers)
@@ -459,43 +458,69 @@ func inspectBudgeted(ctx context.Context, files []candidate, workers int, runOne
 	res := make(chan inspectResult, workers)
 	grp := rt.Group()
 	for i := 0; i < workers; i++ {
-		grp.Go(func() error {
-			for c := range ch {
-				if err := budget.HoldReady(ctx, int64(c.size)); err != nil {
-					return err
-				}
-				res <- runOne(c)
-			}
-			return nil
-		})
+		grp.Go(inspectWorker(ctx, ch, res, budget, runOne))
 	}
+	go feedInspect(ctx, ch, files)
+	waitErr := make(chan error, 1)
 	go func() {
-		defer close(ch)
-		for _, c := range files {
-			select {
-			case <-ctx.Done():
-				return
-			case ch <- c:
-			}
-		}
+		waitErr <- grp.Wait()
+		close(res)
 	}()
-	go func() { _ = grp.Wait(); close(res) }()
-	return collectInspect(ctx, budget, res)
+	out, skipped, stats, err := collectInspect(ctx, budget, res)
+	if werr := <-waitErr; err == nil {
+		err = werr
+	}
+	return out, skipped, stats, err
+}
+
+func inspectWorker(ctx context.Context, ch <-chan candidate, res chan<- inspectResult, budget *runtime.Budget, runOne func(candidate) inspectResult) func() error {
+	return func() error {
+		for c := range ch {
+			if err := budget.HoldReady(ctx, inspectLeaseBytes); err != nil {
+				return err
+			}
+			item := runOne(c)
+			item.lease = inspectLeaseBytes
+			res <- item
+		}
+		return nil
+	}
+}
+
+func feedInspect(ctx context.Context, ch chan<- candidate, files []candidate) {
+	defer close(ch)
+	for _, c := range files {
+		select {
+		case <-ctx.Done():
+			return
+		case ch <- c:
+		}
+	}
 }
 
 func collectInspect(ctx context.Context, budget *runtime.Budget, res <-chan inspectResult) ([]ScannedFile, []Skipped, CacheStats, error) {
 	var out []ScannedFile
 	var skipped []Skipped
 	var stats CacheStats
+	var first error
 	for item := range res {
-		budget.DropReady(int64(item.file.Bytes))
+		budget.DropReady(item.lease)
 		if item.err != nil {
-			return nil, nil, stats, item.err
+			if first == nil {
+				first = item.err
+			}
+			continue
+		}
+		if first != nil {
+			continue
 		}
 		applyInspectResult(inspectOut{files: &out, skipped: &skipped, stats: &stats}, item, false)
 	}
+	if first != nil {
+		return out, skipped, stats, first
+	}
 	if err := ctx.Err(); err != nil {
-		return nil, nil, stats, err
+		return out, skipped, stats, err
 	}
 	return out, skipped, stats, nil
 }

@@ -2,8 +2,11 @@ package store
 
 import (
 	"bytes"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +15,8 @@ import (
 	"github.com/sergii-ziborov/treestamp"
 	"github.com/sergii-ziborov/treestamp/cmd/treestamp/internal/policy"
 )
+
+const maxManifestBytes = 64 << 20
 
 const Schema = "treestamp.manifest/v1"
 
@@ -70,7 +75,7 @@ func FromReport(rep *treestamp.ScanReport, snap policy.Snapshot) Manifest {
 		Policy:   snap,
 		Observation: Observation{
 			Complete: rep.Complete, Termination: rep.Termination.String(),
-			Portable: rep.Portable, Evidence: evidenceOf(rep),
+			Portable: rep.Portable, Evidence: evidenceOf(snap),
 		},
 		Revisions: Revisions{Legacy: rep.Revision},
 	}
@@ -93,29 +98,39 @@ func FromReport(rep *treestamp.ScanReport, snap policy.Snapshot) Manifest {
 }
 
 func encodeFile(file treestamp.ScannedFile) File {
-	item := File{Bytes: file.Bytes, Hash: file.ContentHash}
+	item := File{Relative: file.Relative, Bytes: file.Bytes, Hash: file.ContentHash}
 	if utf8.ValidString(file.Relative) {
-		item.Relative = file.Relative
 		return item
 	}
-	item.RawB64 = file.Relative
+	item.RawB64 = base64.StdEncoding.EncodeToString([]byte(file.Relative))
 	item.Relative = strings.ToValidUTF8(file.Relative, "\uFFFD")
 	return item
 }
 
-func evidenceOf(rep *treestamp.ScanReport) string {
-	if rep.Summary().HashedFiles > 0 {
+func evidenceOf(snap policy.Snapshot) string {
+	if snap.HashContents {
 		return "sha256"
 	}
 	return "metadata"
 }
 
+func decodeRelative(file File) (string, error) {
+	if file.RawB64 == "" {
+		return file.Relative, nil
+	}
+	raw, err := base64.StdEncoding.DecodeString(file.RawB64)
+	if err != nil {
+		return "", fmt.Errorf("raw_b64: %w", err)
+	}
+	return string(raw), nil
+}
+
 func (m Manifest) AsReport() *treestamp.ScanReport {
 	files := make([]treestamp.ScannedFile, 0, len(m.Files))
 	for _, file := range m.Files {
-		rel := file.Relative
-		if file.RawB64 != "" {
-			rel = file.RawB64
+		rel, err := decodeRelative(file)
+		if err != nil {
+			rel = file.Relative
 		}
 		files = append(files, treestamp.ScannedFile{Relative: rel, Bytes: file.Bytes, ContentHash: file.Hash})
 	}
@@ -135,11 +150,23 @@ func (m Manifest) AsReport() *treestamp.ScanReport {
 }
 
 func Load(path string) (Manifest, error) {
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return Manifest{}, err
 	}
-	if len(data) > 64<<20 {
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return Manifest{}, err
+	}
+	if info.Size() > maxManifestBytes {
+		return Manifest{}, fmt.Errorf("manifest exceeds 64MiB read limit")
+	}
+	data, err := io.ReadAll(io.LimitReader(f, maxManifestBytes+1))
+	if err != nil {
+		return Manifest{}, err
+	}
+	if int64(len(data)) > maxManifestBytes {
 		return Manifest{}, fmt.Errorf("manifest exceeds 64MiB read limit")
 	}
 	dec := json.NewDecoder(bytes.NewReader(data))
@@ -147,6 +174,9 @@ func Load(path string) (Manifest, error) {
 	var m Manifest
 	if err := dec.Decode(&m); err != nil {
 		return Manifest{}, err
+	}
+	if dec.More() {
+		return Manifest{}, fmt.Errorf("trailing data after manifest document")
 	}
 	if err := m.validate(); err != nil {
 		return Manifest{}, err
@@ -159,8 +189,12 @@ func (m Manifest) validate() error {
 		return fmt.Errorf("unsupported manifest schema %q", m.Schema)
 	}
 	seen := map[string]struct{}{}
+	hashed := 0
 	for _, file := range m.Files {
-		rel := file.Relative
+		rel, err := decodeRelative(file)
+		if err != nil {
+			return err
+		}
 		if unsafePath(rel) {
 			return fmt.Errorf("unsafe path %q", rel)
 		}
@@ -168,8 +202,34 @@ func (m Manifest) validate() error {
 			return fmt.Errorf("duplicate path %q", rel)
 		}
 		seen[rel] = struct{}{}
+		if file.Hash == "" {
+			if m.Observation.Evidence == "sha256" {
+				return fmt.Errorf("missing sha256 for %q", rel)
+			}
+			continue
+		}
+		if !validContentHash(file.Hash) {
+			return fmt.Errorf("invalid sha256 for %q", rel)
+		}
+		hashed++
+	}
+	if m.Observation.Evidence == "sha256" && m.Summary.Hashed != hashed {
+		return fmt.Errorf("hashed count %d does not match %d file hashes", m.Summary.Hashed, hashed)
 	}
 	return nil
+}
+
+func validContentHash(h string) bool {
+	const prefix = "sha256:"
+	if !strings.HasPrefix(h, prefix) {
+		return false
+	}
+	sum := h[len(prefix):]
+	if len(sum) != 64 {
+		return false
+	}
+	_, err := hex.DecodeString(sum)
+	return err == nil
 }
 
 func unsafePath(rel string) bool {

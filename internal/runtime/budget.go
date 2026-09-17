@@ -80,6 +80,9 @@ func (b *Budget) HoldReady(ctx context.Context, bytes int64) error {
 	if bytes < 0 {
 		bytes = 0
 	}
+	if b != nil && b.lim.ReadyBytes > 0 && bytes > b.lim.ReadyBytes {
+		return ErrReadyLimit
+	}
 	return b.wait(ctx, func() bool { return b.readyOK(bytes) }, func() {
 		b.readyN++
 		b.readyB += bytes

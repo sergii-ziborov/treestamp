@@ -3,6 +3,8 @@ package treestamp_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"log/slog"
 	"os"
@@ -91,6 +93,32 @@ func TestEachFileOwnedBytesAndStop(t *testing.T) {
 	if string(held[:8]) != "Xackage " && !bytes.HasPrefix(held, []byte("X")) {
 		t.Fatalf("owned bytes were not transferred: %q", held)
 	}
+}
+
+func TestEachFileHashMatchesOwnedBytes(t *testing.T) {
+	root := t.TempDir()
+	body := []byte("package a\n")
+	mustWrite(t, filepath.Join(root, "a.go"), string(body))
+	want := "sha256:" + hex.EncodeToString(sha256Sum(body))
+	var seen int
+	_, err := treestamp.EachFile(context.Background(), root, func(file treestamp.ScannedFile, data []byte) error {
+		seen++
+		if !bytes.Equal(data, body) {
+			t.Fatalf("bytes %q", data)
+		}
+		if file.ContentHash != want {
+			t.Fatalf("hash %s want %s", file.ContentHash, want)
+		}
+		return nil
+	}, treestamp.WithExtensions("go"))
+	if err != nil || seen != 1 {
+		t.Fatalf("seen=%d err=%v", seen, err)
+	}
+}
+
+func sha256Sum(data []byte) []byte {
+	sum := sha256.Sum256(data)
+	return sum[:]
 }
 
 func TestEachFileCallbackError(t *testing.T) {

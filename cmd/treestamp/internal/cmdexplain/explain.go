@@ -52,7 +52,7 @@ func run(env *app.Env, sel policy.Select, root, rel string) error {
 	if why.Outcome != "included" && why.Outcome != "include" {
 		tone = "warn"
 	}
-	render.WriteCard(env.Out, pal, render.Card{
+	if err := render.WriteCard(env.Out, pal, render.Card{
 		Status: why.Outcome, Detail: why.Relative, Tone: tone,
 		Rows: []render.Row{
 			{Key: "Reason", Value: why.Reason},
@@ -61,7 +61,9 @@ func run(env *app.Env, sel policy.Select, root, rel string) error {
 			{Key: "Checked", Value: "selection rules"},
 			{Key: "Not checked", Value: "content bytes, binary detection"},
 		},
-	})
+	}); err != nil {
+		return env.Fail(status.Publish, "stdout: %v", err)
+	}
 	return nil
 }
 

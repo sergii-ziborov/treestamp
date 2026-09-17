@@ -38,7 +38,7 @@ func Doctor(env *app.Env) *cobra.Command {
 		Short: "Report local CLI capabilities without scanning or networking",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pal := render.Detect(env.Out, "auto")
-			render.WriteCard(env.Out, pal, render.Card{
+			if err := render.WriteCard(env.Out, pal, render.Card{
 				Status: "DOCTOR", Detail: "no network, no source mutation", Tone: "ok",
 				Rows: []render.Row{
 					{Key: "CLI", Value: policy.CLIVersion},
@@ -50,7 +50,9 @@ func Doctor(env *app.Env) *cobra.Command {
 					{Key: "Commands", Value: "scan paths explain diff verify"},
 					{Key: "Watch", Value: "not in this release"},
 				},
-			})
+			}); err != nil {
+				return env.Fail(status.Publish, "stdout: %v", err)
+			}
 			return nil
 		},
 	}

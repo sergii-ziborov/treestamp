@@ -3,9 +3,10 @@
 Deterministic repository scanning for Go.
 Select files, verify content, and produce manifests with explainable decisions.
 
-Alpha native port of pinned Weavatrix Scan 0.5.2. This is **not a full port**.
-Official B01–B14 benches stay **`NOT_RUN`**. Informal listing medians below
-are a small Windows temp-tree campaign, not a 10k/100k/1M ranking.
+Native Go scanner, first non-alpha library release. Pinned Weavatrix Scan
+0.5.2 remains the port oracle. This is **not a full port**. Official
+B01–B14 benches stay **`NOT_RUN`**. Informal listing medians below are a
+small Windows temp-tree campaign, not a 10k/100k/1M ranking.
 
 ```text
 git clone https://github.com/sergii-ziborov/treestamp.git
@@ -13,8 +14,8 @@ cd treestamp
 go test .
 ```
 
-Library tag: `v0.1.0-alpha.1`. CLI tag: `cmd/treestamp/v0.1.0`.
-Go 1.23.0+, `CGO_ENABLED=0`. This is still not a full port.
+Library tag: `v0.1.0`. CLI tag: `cmd/treestamp/v0.1.0` (pin follows the
+published library). Go 1.23.0+, `CGO_ENABLED=0`. Still not a full port.
 
 ```go
 ctx := context.Background()
@@ -72,6 +73,8 @@ Go **1.26.5** (`go env GOVERSION`), module line **1.23.0**, `CGO_ENABLED=0`,
 `GOTOOLCHAIN=local`. Comparators pinned in `bench/go-compat`:
 **fastwalk v1.0.14**, **gocodewalker v1.5.1**, **godirwalk v1.17.0**.
 Medians of three runs. Official B01–B14 stay **`NOT_RUN`**.
+R0 did not change these raw walk/stat/selection paths. A 17 September
+refresh ran on a loaded host and is not used as a claimed ranking.
 
 | Case | Treestamp | Comparator |
 | --- | --- | --- |

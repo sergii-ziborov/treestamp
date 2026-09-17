@@ -84,8 +84,12 @@ func publish(env *app.Env, sel policy.Select, man store.Manifest, scanErr error)
 		}
 	case "ndjson":
 		return writeNDJSON(env, man)
+	case "text":
+		if err := writeHuman(env, sel, man); err != nil {
+			return env.Fail(status.Publish, "stdout: %v", err)
+		}
 	default:
-		writeHuman(env, sel, man)
+		return env.Fail(status.Usage, "unknown format %q", sel.FormatName())
 	}
 	if scanErr != nil && env.Code == 0 {
 		env.Set(status.Partial)
@@ -93,7 +97,7 @@ func publish(env *app.Env, sel policy.Select, man store.Manifest, scanErr error)
 	return nil
 }
 
-func writeHuman(env *app.Env, sel policy.Select, man store.Manifest) {
+func writeHuman(env *app.Env, sel policy.Select, man store.Manifest) error {
 	pal := render.Detect(env.Out, firstNonEmpty(env.Color, sel.Color))
 	tone, title := "ok", "COMPLETE"
 	if !man.Observation.Complete || man.Summary.Failures > 0 {
@@ -102,7 +106,7 @@ func writeHuman(env *app.Env, sel policy.Select, man store.Manifest) {
 			env.Set(status.Partial)
 		}
 	}
-	render.WriteCard(env.Out, pal, render.Card{
+	return render.WriteCard(env.Out, pal, render.Card{
 		Status: title, Detail: "within selected scope", Tone: tone,
 		Rows: []render.Row{
 			{Key: "Selected", Value: render.Comma(man.Summary.Selected) + " files"},

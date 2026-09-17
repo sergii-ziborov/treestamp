@@ -27,6 +27,7 @@ type Select struct {
 	Output               string
 	Color                string
 	Quiet                bool
+	maxFileBytes         *uint64
 }
 
 type Snapshot struct {
@@ -68,7 +69,7 @@ func (s *Select) Bind(cmd *cobra.Command) {
 
 func (s *Select) ApplyConfig() error {
 	if s.Config == "" {
-		return nil
+		return s.validate()
 	}
 	data, err := os.ReadFile(s.Config)
 	if err != nil {
@@ -93,12 +94,32 @@ func (s *Select) ApplyConfig() error {
 		s.Exclude = cfg.Exclude
 	}
 	s.NoIgnore = s.NoIgnore || cfg.NoIgnore
+	if cfg.MaxFileBytes != nil {
+		s.maxFileBytes = cfg.MaxFileBytes
+	}
+	return s.validate()
+}
+
+func (s Select) validate() error {
+	switch s.FormatName() {
+	case "", "text", "json", "ndjson":
+	default:
+		return fmt.Errorf("unknown format %q", s.Format)
+	}
+	switch strings.ToLower(s.Color) {
+	case "", "auto", "always", "never":
+	default:
+		return fmt.Errorf("unknown color mode %q", s.Color)
+	}
 	return nil
 }
 
 func (s Select) FormatName() string {
 	if s.JSON || strings.EqualFold(s.Format, "json") {
 		return "json"
+	}
+	if s.Format == "" {
+		return "text"
 	}
 	return strings.ToLower(s.Format)
 }
@@ -116,6 +137,9 @@ func (s Select) Options() (treestamp.Options, error) {
 	}
 	if s.Jobs > 0 {
 		opts.TraversalWorkers = s.Jobs
+	}
+	if s.maxFileBytes != nil {
+		opts.MaxFileBytes = *s.maxFileBytes
 	}
 	return opts, nil
 }

@@ -17,7 +17,22 @@ type Card struct {
 	Notes          []string
 }
 
-func WriteCard(w io.Writer, pal Palette, card Card) {
+type errWriter struct {
+	w   io.Writer
+	err error
+}
+
+func (e *errWriter) Write(p []byte) (int, error) {
+	if e.err != nil {
+		return 0, e.err
+	}
+	n, err := e.w.Write(p)
+	e.err = err
+	return n, err
+}
+
+func WriteCard(w io.Writer, pal Palette, card Card) error {
+	ew := &errWriter{w: w}
 	tone := pal.Green
 	switch card.Tone {
 	case "warn":
@@ -25,12 +40,12 @@ func WriteCard(w io.Writer, pal Palette, card Card) {
 	case "bad":
 		tone = pal.Red
 	}
-	fmt.Fprintln(w)
-	fmt.Fprintf(w, "  %s\n", pal.Paint(tone+pal.Bold, card.Status))
+	fmt.Fprintln(ew)
+	fmt.Fprintf(ew, "  %s\n", pal.Paint(tone+pal.Bold, card.Status))
 	if card.Detail != "" {
-		fmt.Fprintf(w, "  %s\n", pal.Paint(pal.Dim, card.Detail))
+		fmt.Fprintf(ew, "  %s\n", pal.Paint(pal.Dim, card.Detail))
 	}
-	fmt.Fprintln(w)
+	fmt.Fprintln(ew)
 	width := 0
 	for _, row := range card.Rows {
 		if n := len(row.Key); n > width {
@@ -38,15 +53,16 @@ func WriteCard(w io.Writer, pal Palette, card Card) {
 		}
 	}
 	for _, row := range card.Rows {
-		fmt.Fprintf(w, "  %s  %s\n", pal.Paint(pal.Cyan, pad(row.Key, width)), row.Value)
+		fmt.Fprintf(ew, "  %s  %s\n", pal.Paint(pal.Cyan, pad(row.Key, width)), row.Value)
 	}
 	if len(card.Notes) > 0 {
-		fmt.Fprintln(w)
+		fmt.Fprintln(ew)
 		for _, note := range card.Notes {
-			fmt.Fprintf(w, "  %s\n", pal.Paint(pal.Dim, note))
+			fmt.Fprintf(ew, "  %s\n", pal.Paint(pal.Dim, note))
 		}
 	}
-	fmt.Fprintln(w)
+	fmt.Fprintln(ew)
+	return ew.err
 }
 
 func pad(s string, n int) string {

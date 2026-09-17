@@ -75,15 +75,15 @@ func finish(env *app.Env, current *treestamp.ScanReport, delta treestamp.ScanDel
 	doc := map[string]any{
 		"schema": "treestamp.verify/v1", "target": "selected-content-and-policy", "scope": "tree",
 		"added": names(delta.Added), "removed": names(delta.Removed), "changed": changed(delta.Modified),
-		"selection_inputs_changed": delta.SelectionInputsChanged, "policy_changed": delta.PolicyChanged,
-		"complete": current.Complete, "cache_not_used": true,
+		"renamed": renamed(delta.Renamed), "selection_inputs_changed": delta.SelectionInputsChanged,
+		"policy_changed": delta.PolicyChanged, "complete": current.Complete, "cache_not_used": true,
 	}
 	if asJSON {
 		if err := render.JSON(env.Out, doc); err != nil {
 			return env.Fail(status.Publish, "stdout: %v", err)
 		}
-	} else {
-		writeHuman(env, delta, current)
+	} else if err := writeHuman(env, delta, current); err != nil {
+		return env.Fail(status.Publish, "stdout: %v", err)
 	}
 	if env.Code == status.Partial {
 		return nil
@@ -94,7 +94,7 @@ func finish(env *app.Env, current *treestamp.ScanReport, delta treestamp.ScanDel
 	return nil
 }
 
-func writeHuman(env *app.Env, delta treestamp.ScanDelta, current *treestamp.ScanReport) {
+func writeHuman(env *app.Env, delta treestamp.ScanDelta, current *treestamp.ScanReport) error {
 	pal := render.Detect(env.Out, "auto")
 	tone, title := "ok", "MATCH"
 	if env.Code == status.Partial {
@@ -102,15 +102,20 @@ func writeHuman(env *app.Env, delta treestamp.ScanDelta, current *treestamp.Scan
 	} else if !delta.IsEmpty() {
 		tone, title = "bad", "DIFFER"
 	}
-	render.WriteCard(env.Out, pal, render.Card{
+	notes := []string{"Fast cache was not used as content proof."}
+	for _, item := range delta.Renamed {
+		notes = append(notes, item.Previous.Relative+" -> "+item.Current.Relative)
+	}
+	return render.WriteCard(env.Out, pal, render.Card{
 		Status: title, Detail: "selected-content-and-policy · tree", Tone: tone,
 		Rows: []render.Row{
 			{Key: "Added", Value: render.Comma(len(delta.Added))},
 			{Key: "Removed", Value: render.Comma(len(delta.Removed))},
 			{Key: "Changed", Value: render.Comma(len(delta.Modified))},
+			{Key: "Renamed", Value: render.Comma(len(delta.Renamed))},
 			{Key: "Selected now", Value: render.Comma(len(current.Files))},
 		},
-		Notes: []string{"Fast cache was not used as content proof."},
+		Notes: notes,
 	})
 }
 
@@ -126,6 +131,16 @@ func changed(items []treestamp.ModifiedFile) []string {
 	out := make([]string, 0, len(items))
 	for _, item := range items {
 		out = append(out, item.Current.Relative)
+	}
+	return out
+}
+
+func renamed(items []treestamp.RenamedFile) []map[string]string {
+	out := make([]map[string]string, 0, len(items))
+	for _, item := range items {
+		out = append(out, map[string]string{
+			"from": item.Previous.Relative, "to": item.Current.Relative, "evidence": "inferred_by_content",
+		})
 	}
 	return out
 }

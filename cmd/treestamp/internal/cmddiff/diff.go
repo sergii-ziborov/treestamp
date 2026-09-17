@@ -52,8 +52,8 @@ func run(env *app.Env, before, after string, asJSON, exitCode bool) error {
 		if err := render.JSON(env.Out, doc); err != nil {
 			return env.Fail(status.Publish, "stdout: %v", err)
 		}
-	} else {
-		writeHuman(env, delta)
+	} else if err := writeHuman(env, delta); err != nil {
+		return env.Fail(status.Publish, "stdout: %v", err)
 	}
 	if exitCode && !delta.IsEmpty() {
 		env.Set(status.Differ)
@@ -61,7 +61,7 @@ func run(env *app.Env, before, after string, asJSON, exitCode bool) error {
 	return nil
 }
 
-func writeHuman(env *app.Env, delta treestamp.ScanDelta) {
+func writeHuman(env *app.Env, delta treestamp.ScanDelta) error {
 	pal := render.Detect(env.Out, "auto")
 	tone, title := "ok", "EQUAL"
 	if !delta.IsEmpty() {
@@ -74,7 +74,7 @@ func writeHuman(env *app.Env, delta treestamp.ScanDelta) {
 	if delta.PolicyChanged {
 		notes = append(notes, "Effective policy changed.")
 	}
-	render.WriteCard(env.Out, pal, render.Card{
+	return render.WriteCard(env.Out, pal, render.Card{
 		Status: title, Detail: "manifest comparison only", Tone: tone,
 		Rows: []render.Row{
 			{Key: "Added", Value: render.Comma(len(delta.Added))},

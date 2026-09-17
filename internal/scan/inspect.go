@@ -24,10 +24,11 @@ import (
 )
 
 type inspectResult struct {
-	file ScannedFile
-	skip *Skipped
-	stat CacheStats
-	err  error
+	file  ScannedFile
+	skip  *Skipped
+	stat  CacheStats
+	err   error
+	lease int64
 }
 
 func inspect(ctx context.Context, files []candidate, opts Options) ([]ScannedFile, []Skipped, CacheStats, error) {
@@ -138,7 +139,7 @@ func inspectOne(ctx context.Context, c candidate, opts Options, index map[string
 		applyMemo(&file, hit, opts)
 		return file, nil, CacheStats{ReusedHashes: 1}, nil
 	}
-	file, skip, stat, err := hashOpened(ctx, c, opts, file)
+	file, _, skip, stat, err := hashOpened(ctx, c, opts, file, false)
 	if err == nil && skip == nil {
 		memo.store(file)
 	}
@@ -254,23 +255,23 @@ func confineCandidate(c candidate, opts Options) (string, *Skipped) {
 	return "", &Skipped{Relative: c.rel, Kind: kind, Detail: err.Error()}
 }
 
-func hashOpened(ctx context.Context, c candidate, opts Options, file ScannedFile) (ScannedFile, *Skipped, CacheStats, error) {
+func hashOpened(ctx context.Context, c candidate, opts Options, file ScannedFile, keep bool) (ScannedFile, []byte, *Skipped, CacheStats, error) {
 	path, skip := confineCandidate(c, opts)
 	if skip != nil {
-		return file, skip, CacheStats{}, nil
+		return file, nil, skip, CacheStats{}, nil
 	}
 	f, err := os.Open(path)
 	if err != nil {
-		return file, &Skipped{Relative: c.rel, Kind: selection.SkipIOError, Detail: err.Error()}, CacheStats{}, nil
+		return file, nil, &Skipped{Relative: c.rel, Kind: selection.SkipIOError, Detail: err.Error()}, CacheStats{}, nil
 	}
 	defer f.Close()
 	if skip := checkContentSize(f, c, opts); skip != nil {
-		return file, skip, CacheStats{}, nil
+		return file, nil, skip, CacheStats{}, nil
 	}
-	return hashChunks(ctx, f, c, opts, file)
+	return hashChunks(ctx, f, c, opts, file, keep)
 }
 
-func hashChunks(ctx context.Context, f *os.File, c candidate, opts Options, file ScannedFile) (ScannedFile, *Skipped, CacheStats, error) {
+func hashChunks(ctx context.Context, f *os.File, c candidate, opts Options, file ScannedFile, keep bool) (ScannedFile, []byte, *Skipped, CacheStats, error) {
 	var h hash.Hash
 	if opts.HashFileContents {
 		h = sha256.New()
@@ -278,18 +279,19 @@ func hashChunks(ctx context.Context, f *os.File, c candidate, opts Options, file
 	fp := hashx.NewContentFingerprint()
 	needFP := opts.HashFileContents || opts.CacheValidation == CacheStrict
 	buf := make([]byte, 64*1024)
+	var owned []byte
 	var read uint64
 	for {
 		if ctx != nil {
 			if err := ctx.Err(); err != nil {
-				return file, nil, CacheStats{ContentReads: 1}, err
+				return file, owned, nil, CacheStats{ContentReads: 1}, err
 			}
 		}
 		n, readErr := f.Read(buf)
 		if n > 0 {
 			chunk := buf[:n]
 			if opts.DetectBinary && bytes.IndexByte(chunk, 0) >= 0 {
-				return file, &Skipped{Relative: c.rel, Kind: selection.SkipBinary}, CacheStats{ContentReads: 1}, nil
+				return file, nil, &Skipped{Relative: c.rel, Kind: selection.SkipBinary}, CacheStats{ContentReads: 1}, nil
 			}
 			if h != nil {
 				_, _ = h.Write(chunk)
@@ -297,8 +299,11 @@ func hashChunks(ctx context.Context, f *os.File, c candidate, opts Options, file
 			if needFP {
 				fp.Write(chunk)
 			}
+			if keep {
+				owned = append(owned, chunk...)
+			}
 			read += uint64(n)
-			if !opts.HashFileContents && read >= 8*1024 {
+			if !keep && !opts.HashFileContents && read >= 8*1024 {
 				break
 			}
 		}
@@ -306,11 +311,11 @@ func hashChunks(ctx context.Context, f *os.File, c candidate, opts Options, file
 			break
 		}
 		if readErr != nil {
-			return file, &Skipped{Relative: c.rel, Kind: selection.SkipIOError, Detail: readErr.Error()}, CacheStats{ContentReads: 1}, nil
+			return file, nil, &Skipped{Relative: c.rel, Kind: selection.SkipIOError, Detail: readErr.Error()}, CacheStats{ContentReads: 1}, nil
 		}
 	}
 	if skip := checkContentSize(f, c, opts); skip != nil {
-		return file, skip, CacheStats{ContentReads: 1}, nil
+		return file, owned, skip, CacheStats{ContentReads: 1}, nil
 	}
 	if h != nil {
 		file.ContentHash = hashx.Finish(h)
@@ -319,7 +324,10 @@ func hashChunks(ctx context.Context, f *os.File, c candidate, opts Options, file
 		file.ContentFingerprint = fp.Finish()
 	}
 	file.BinaryChecked = opts.DetectBinary
-	return file, nil, CacheStats{ContentReads: 1}, nil
+	if keep && owned == nil {
+		owned = []byte{}
+	}
+	return file, owned, nil, CacheStats{ContentReads: 1}, nil
 }
 
 func checkContentSize(f *os.File, c candidate, opts Options) *Skipped {

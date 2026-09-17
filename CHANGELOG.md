@@ -1,11 +1,27 @@
 # Changelog
 
+## Library 0.1.0 (2026-09-17)
+
+First non-alpha library tag: `v0.1.0`. Still not a full Weavatrix Scan port.
+
+- `EachFile` / owned content now hash and copy bytes from one open. A
+  successful callback has `hash(data) == file.ContentHash`.
+- Parallel inspect reserves a 64KiB ready lease, not the whole file size.
+  A single item larger than the ready-byte cap fails immediately instead
+  of waiting. `Group.Wait` errors are returned; reserved bytes are dropped
+  on every path.
+- CLI baseline: `raw_b64` is real base64; empty hashed trees stay
+  `evidence=sha256`; manifest size is checked before allocating the body;
+  declared hashes and trailing data are validated. `max_file_bytes` from
+  config is applied. `paths --absolute` resolves the root first. `verify`
+  reports inferred renames. Human stdout errors are no longer dropped.
+
 ## CLI 0.1.0 (2026-09-16)
 
-First non-alpha CLI tag: `cmd/treestamp/v0.1.0`. The library it requires
-is still `v0.1.0-alpha.1`. Install with `@v0.1.0`, not `@cmd/treestamp/v0.1.0`.
+First non-alpha CLI tag: `cmd/treestamp/v0.1.0`. That tag still required
+library `v0.1.0-alpha.1`. Install with `@v0.1.0`, not `@cmd/treestamp/v0.1.0`.
 
-## Unreleased — library 0.1.0-alpha.1 (2026-09-16)
+## Library 0.1.0-alpha.1 (2026-09-16)
 
 Method-complete native scanner surfaces plus a nested CLI module.
 Still not a full port.

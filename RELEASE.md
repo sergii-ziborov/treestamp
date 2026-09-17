@@ -9,7 +9,7 @@ Do not publish this project from the Weavatrix or EdgeHawk organizations.
 
 Still not a full port:
 
-- Library: `v0.1.0-alpha.1` → `go get github.com/sergii-ziborov/treestamp@v0.1.0-alpha.1`
+- Library: `v0.1.0` → `go get github.com/sergii-ziborov/treestamp@v0.1.0`
 - CLI: `cmd/treestamp/v0.1.0` → `go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.0`
 
 Do not tag `v1` or write “full port” in a release title. The published CLI

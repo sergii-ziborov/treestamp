@@ -44,6 +44,23 @@ func TestBudgetAdmitsAndBoundsReady(t *testing.T) {
 	}
 }
 
+func TestHoldReadyRejectsOversizedItem(t *testing.T) {
+	b := NewBudget(Limits{Ready: 4, ReadyBytes: 8})
+	ctx := context.Background()
+	if err := b.HoldReady(ctx, 16); err != ErrReadyLimit {
+		t.Fatalf("%v", err)
+	}
+	if err := b.HoldReady(ctx, 4); err != nil {
+		t.Fatal(err)
+	}
+	n, bytes := b.Ready()
+	if n != 1 || bytes != 4 {
+		t.Fatalf("%d %d", n, bytes)
+	}
+	b.DropReady(4)
+	b.Close()
+}
+
 func TestBudgetUnlimitedZero(t *testing.T) {
 	b := NewBudget(Limits{})
 	ctx := context.Background()
