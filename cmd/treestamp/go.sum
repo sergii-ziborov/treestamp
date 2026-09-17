@@ -4,6 +4,8 @@ github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLf
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
 github.com/sergii-ziborov/treestamp v0.1.0 h1:4gBhiCBXgF5WM5fKVB/+l5U9fHe2gvcfRp606kBCx+w=
 github.com/sergii-ziborov/treestamp v0.1.0/go.mod h1:LMBFOQ/X1cx7QH1u5JXPM8x1nkprZK7dcRuxgBPmUnI=
+github.com/sergii-ziborov/treestamp v0.1.2 h1:gijHhKXZcsvMsAn5+F6Sj4/Edd8MuVVKDTobVcpA6cA=
+github.com/sergii-ziborov/treestamp v0.1.2/go.mod h1:/sUP4EzgS7224EWgbchZVNRxFKRy+6YvAxhhC4WRg38=
 github.com/spf13/cobra v1.10.1 h1:lJeBwCfmrnXthfAupyUTzJ/J4Nc1RsHC/mSRU2dll/s=
 github.com/spf13/cobra v1.10.1/go.mod h1:7SmJGaTHFVBY0jW4NXGluQoLvhqFQM+6XSKD+P4XaB0=
 github.com/spf13/pflag v1.0.9 h1:9exaQaMOCwffKiiiYk6/BndUBv+iRViNW+4lEMi0PvY=
