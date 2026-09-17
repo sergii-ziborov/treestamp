@@ -87,11 +87,14 @@ func TestDedicatedZeroUsesAvailable(t *testing.T) {
 
 func TestAdmitWaitsWithoutCallerRun(t *testing.T) {
 	busy := Dedicated(1)
+	hold := make(chan struct{})
 	started := make(chan struct{})
-	_ = busy.TryExecute(func() {
+	if err := busy.TryExecute(func() {
 		close(started)
-		time.Sleep(40 * time.Millisecond)
-	})
+		<-hold
+	}); err != nil {
+		t.Fatal(err)
+	}
 	<-started
 	var ran atomic.Bool
 	done := make(chan struct{})
@@ -99,11 +102,20 @@ func TestAdmitWaitsWithoutCallerRun(t *testing.T) {
 		busy.Run(func() { ran.Store(true) })
 		close(done)
 	}()
-	time.Sleep(10 * time.Millisecond)
+	select {
+	case <-done:
+		t.Fatal("caller-ran while the slot was held")
+	case <-time.After(50 * time.Millisecond):
+	}
 	if ran.Load() {
 		t.Fatal("caller-ran while the slot was held")
 	}
-	<-done
+	close(hold)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("admit hung")
+	}
 	for i := 0; i < 50 && !ran.Load(); i++ {
 		time.Sleep(time.Millisecond)
 	}

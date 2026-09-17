@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"iter"
 	"log/slog"
 	"regexp"
 	"time"
@@ -90,7 +89,7 @@ func (p *Plan) finishLogged(ctx context.Context, op, root string, rep *ScanRepor
 	return rep, err
 }
 
-func (p *Plan) Files(ctx context.Context, root string) iter.Seq2[ScannedFile, error] {
+func (p *Plan) Files(ctx context.Context, root string) func(func(ScannedFile, error) bool) {
 	return func(yield func(ScannedFile, error) bool) {
 		s, err := p.scanner(root)
 		if err != nil {

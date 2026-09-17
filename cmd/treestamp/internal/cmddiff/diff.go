@@ -14,7 +14,9 @@ func New(env *app.Env) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "diff BEFORE AFTER",
 		Short: "Compare two saved manifests without opening the tree",
-		Args:  cobra.ExactArgs(2),
+		Example: "  treestamp diff ./baselines/before.tstamp.json ./baselines/after.tstamp.json --exit-code\n" +
+			"  treestamp diff ./baselines/before.tstamp.json ./baselines/after.tstamp.json --json",
+		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return run(env, args[0], args[1], asJSON, exitCode)
 		},

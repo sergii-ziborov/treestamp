@@ -18,7 +18,7 @@ import (
 )
 
 // Version is the library module version published with this tree.
-const Version = "0.1.2"
+const Version = "0.1.3"
 
 type Options struct {
 	MaxFileBytes      uint64

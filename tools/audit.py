@@ -66,8 +66,8 @@ def main() -> int:
         errors.append("descriptor_version must be 2")
     if upstream.get("cache_format") != 2:
         errors.append("cache_format must be 2")
-    if pin.get("go_minimum") != "1.23.2":
-        errors.append("go_minimum must be 1.23.2")
+    if pin.get("go_minimum") != "1.21.0":
+        errors.append("go_minimum must be 1.21.0")
     exports = pin.get("crate_root_exports", {})
     if exports.get("total_named") != 108:
         errors.append("crate-root export total must be 108")
@@ -142,10 +142,16 @@ def main() -> int:
     go_mod = (ROOT / "go.mod").read_text(encoding="utf-8")
     if "module github.com/sergii-ziborov/treestamp" not in go_mod:
         errors.append("go.mod module path is wrong")
-    if "go 1.23.2" not in go_mod:
-        errors.append("go.mod must declare go 1.23.2")
+    if "go 1.21.0" not in go_mod:
+        errors.append("go.mod must declare go 1.21.0")
+    if "golang.org/x/sys v0.30.0" not in go_mod:
+        errors.append("go.mod must pin golang.org/x/sys v0.30.0 for Go 1.21")
     if "github.com/fsnotify/fsnotify" in go_mod:
         errors.append("fsnotify must not be a main-module dependency")
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    for version in ('"1.21.x"', '"1.22.x"', '"1.23.x"', '"1.24.x"', '"1.25.x"', '"1.26.x"'):
+        if version not in ci:
+            errors.append(f"CI must compile Go {version.strip(chr(34))}")
 
     implemented = [
         item["id"]

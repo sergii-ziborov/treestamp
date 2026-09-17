@@ -21,7 +21,9 @@ func New(env *app.Env) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "scan [ROOT]",
 		Short: "Scan the selected tree and print a summary or manifest",
-		Args:  cobra.MaximumNArgs(1),
+		Example: "  treestamp scan ./cmd/treestamp --ext go --json --output ./baselines/cli.tstamp.json\n" +
+			"  treestamp scan . --ext go --json --output ../repo.tstamp.json",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root := "."
 			if len(args) == 1 {

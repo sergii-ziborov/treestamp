@@ -1,11 +1,11 @@
 module github.com/sergii-ziborov/treestamp/cmd/treestamp
 
-go 1.23.2
+go 1.21.0
 
 require (
 	github.com/sergii-ziborov/treestamp v0.1.2
 	github.com/spf13/cobra v1.10.1
-	golang.org/x/sys v0.34.0
+	golang.org/x/sys v0.30.0
 )
 
 require (

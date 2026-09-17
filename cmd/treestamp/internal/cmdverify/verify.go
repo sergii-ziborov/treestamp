@@ -24,7 +24,9 @@ func New(env *app.Env) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "verify MANIFEST",
 		Short: "Re-scan the selected tree against a saved baseline",
-		Args:  cobra.ExactArgs(1),
+		Example: "  treestamp verify ./baselines/cli.tstamp.json --root ./cmd/treestamp\n" +
+			"  treestamp verify ./baselines/cli.tstamp.json --root ./cmd/treestamp --json",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			req.Manifest = args[0]
 			return run(cmd.Context(), env, req)

@@ -3,7 +3,7 @@
 Task: list Go files in a checkout, print a summary, and explain the first
 selected path.
 
-Minimum Go: 1.23.2.
+Minimum Go: 1.21.0.
 
 Full program: [`examples/docquickstart/main.go`](../../examples/docquickstart/main.go).
 

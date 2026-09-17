@@ -29,6 +29,20 @@ func TestHelpAndVersionDoNotScan(t *testing.T) {
 	}
 }
 
+func TestScanHelpShowsCommittedBaseline(t *testing.T) {
+	var out, err bytes.Buffer
+	if code := Run(context.Background(), []string{"scan", "--help"}, bytes.NewReader(nil), &out, &err); code != 0 {
+		t.Fatalf("help %d %s", code, err.String())
+	}
+	text := out.String()
+	if !strings.Contains(text, "--output ./baselines/cli.tstamp.json") {
+		t.Fatalf("missing committed-baseline example %q", text)
+	}
+	if !strings.Contains(text, "../repo.tstamp.json") {
+		t.Fatalf("missing sibling-baseline example %q", text)
+	}
+}
+
 func TestUnknownCommandIsUsage(t *testing.T) {
 	var out, err bytes.Buffer
 	if code := Run(context.Background(), []string{"not-a-command"}, bytes.NewReader(nil), &out, &err); code != 2 {

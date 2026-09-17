@@ -1,9 +1,18 @@
 # Changelog
 
+## Library 0.1.3 / CLI 0.1.3 (2026-09-17)
+
+Minimum Go is **1.21.0** again, so every toolchain from 1.21 through
+current can compile. `Plan.Files` no longer imports `iter` (1.23+ can
+still range over the yield func). `golang.org/x/sys` is pinned to
+v0.30.0, the last line that does not require Go 1.23. CI compiles
+1.21.x–1.26.x. The CLI README shows committed-subtree baselines,
+`verify` vs `diff`, and `paths --null` into another tool.
+
 ## Library 0.1.2 / CLI 0.1.2 (2026-09-17)
 
-pkg.go.dev pages now describe the product first. Minimum Go is **1.23.2**,
-the version CI already compiles. Tags `v0.1.0` and `cmd/treestamp/v0.1.1`
+pkg.go.dev pages describe the product first. That tag declared Go 1.23.2;
+use `@v0.1.3` for the 1.21 floor. Tags `v0.1.0` and `cmd/treestamp/v0.1.1`
 stay immutable.
 
 ## Full-port gate (2026-09-17)

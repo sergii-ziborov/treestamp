@@ -237,6 +237,26 @@ func TestConcurrentPlanScans(t *testing.T) {
 	}
 }
 
+func TestPlanFilesYieldsSelected(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "a.go"), "package a\n")
+	plan, err := treestamp.Compile(treestamp.WithExtensions("go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	plan.Files(context.Background(), root)(func(file treestamp.ScannedFile, yieldErr error) bool {
+		if yieldErr != nil {
+			t.Fatal(yieldErr)
+		}
+		n++
+		return true
+	})
+	if n != 1 {
+		t.Fatalf("got %d", n)
+	}
+}
+
 func rels(r *treestamp.ScanReport) []string {
 	var out []string
 	for _, f := range r.Files {

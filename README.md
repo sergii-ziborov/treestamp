@@ -8,13 +8,13 @@ explains why a path was kept or dropped, and verifies the next tree.
 Docs: [pkg.go.dev/github.com/sergii-ziborov/treestamp](https://pkg.go.dev/github.com/sergii-ziborov/treestamp)
 
 ```text
-go get github.com/sergii-ziborov/treestamp@v0.1.2
+go get github.com/sergii-ziborov/treestamp@v0.1.3
 ```
 
-Requires **Go 1.23.2** or newer. `CGO_ENABLED=0`. The CLI is a nested module:
+Requires **Go 1.21** or newer (CI compiles 1.21 through 1.26). `CGO_ENABLED=0`. The CLI is a nested module:
 
 ```text
-go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.2
+go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.3
 ```
 
 ```go
@@ -70,10 +70,15 @@ service, or daemon.
 The same scanner. Not a second engine.
 
 ```text
-treestamp scan . --ext go --json --output ../baseline.tstamp.json
-treestamp explain generated/model.go --root .
-treestamp verify ../baseline.tstamp.json --root .
+treestamp scan ./cmd/treestamp --ext go --json --output ./baselines/cli.tstamp.json
+treestamp verify ./baselines/cli.tstamp.json --root ./cmd/treestamp
+treestamp paths . --ext go --null | xargs -0 gofmt -l
+treestamp explain skip.txt --root . --ext go
 ```
+
+`--output` cannot sit inside the scan root. Scan a subtree if the
+manifest must live in the same repository. `verify` re-applies the
+saved policy; `diff` only compares two already-written manifests.
 
 ![treestamp scan](docs/cli/scan.svg)
 ![treestamp explain](docs/cli/explain.svg)
@@ -101,7 +106,7 @@ Rust oracle percentages.
 ## Informal benches
 
 Windows/amd64, Intel Core Ultra 7 255U, 16 September 2026.
-Go **1.26.5** (`go env GOVERSION`), module line **1.23.2**, `CGO_ENABLED=0`,
+Go **1.26.5** (`go env GOVERSION`), module line **1.21.0**, `CGO_ENABLED=0`,
 `GOTOOLCHAIN=local`. Comparators in `bench/go-compat`:
 **fastwalk v1.0.14**, **gocodewalker v1.5.1**, **godirwalk v1.17.0**.
 Medians of three runs.

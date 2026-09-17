@@ -5,7 +5,7 @@
 // [ScanPathsWith], [EachFile], or [Compile]. [Explain] is selection only;
 // it does not re-read file bytes.
 //
-// Requires Go 1.23.2 or newer. The command-line app is the nested module
+// Requires Go 1.21 or newer. The command-line app is the nested module
 // github.com/sergii-ziborov/treestamp/cmd/treestamp.
 package treestamp
 

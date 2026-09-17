@@ -11,6 +11,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
+        go: ["1.21.x", "stable"]
     runs-on: ${{ matrix.os }}
     env:
       CGO_ENABLED: "0"
@@ -18,7 +19,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.23.2"
+          go-version: ${{ matrix.go }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -31,7 +32,32 @@ jobs:
       - name: Go tests
         run: go test ./...
       - name: Go-compat functional tests
+        if: matrix.go != '1.21.x'
         working-directory: bench/go-compat
+        env:
+          GOWORK: "off"
+        run: go test ./...
+
+  go-minors:
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ["1.21.x", "1.22.x", "1.23.x", "1.24.x", "1.25.x", "1.26.x"]
+    runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+      - name: Library on this Go
+        run: go test ./...
+      - name: CLI on this Go
+        working-directory: cmd/treestamp
+        run: go test ./...
+      - name: Watch on this Go
+        working-directory: watch
         env:
           GOWORK: "off"
         run: go test ./...
@@ -44,7 +70,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.23.2"
+          go-version: "stable"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -72,7 +98,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.23.2"
+          go-version: "1.21.x"
       - name: Nested consumer module
         working-directory: consumer
         run: go test .
@@ -82,6 +108,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
+        go: ["1.21.x", "stable"]
     runs-on: ${{ matrix.os }}
     env:
       CGO_ENABLED: "0"
@@ -89,7 +116,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.23.2"
+          go-version: ${{ matrix.go }}
       - name: CLI module tests
         working-directory: cmd/treestamp
         run: go test ./...
@@ -102,6 +129,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
+        go: ["1.21.x", "stable"]
     runs-on: ${{ matrix.os }}
     env:
       CGO_ENABLED: "0"
@@ -110,7 +138,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.23.2"
+          go-version: ${{ matrix.go }}
       - name: Optional watch module
         working-directory: watch
         run: go test ./...
@@ -127,7 +155,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.23.2"
+          go-version: "stable"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"

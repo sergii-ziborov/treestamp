@@ -1,5 +1,5 @@
 module github.com/sergii-ziborov/treestamp
 
-go 1.23.2
+go 1.21.0
 
-require golang.org/x/sys v0.34.0
+require golang.org/x/sys v0.30.0

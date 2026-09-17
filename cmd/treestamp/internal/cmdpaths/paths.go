@@ -18,7 +18,9 @@ func New(env *app.Env) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "paths [ROOT]",
 		Short: "List selected paths without hashing contents",
-		Args:  cobra.MaximumNArgs(1),
+		Example: "  treestamp paths . --ext go --null | xargs -0 gofmt -l\n" +
+			"  treestamp paths . --ext go --json",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root := "."
 			if len(args) == 1 {

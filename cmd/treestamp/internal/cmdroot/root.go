@@ -24,6 +24,10 @@ func New(env *app.Env) *cobra.Command {
 		Long: `Treestamp selects a tree by policy, writes a portable manifest,
 explains the decision, and verifies the selected files later.
 
+Write --output outside the scan root. Scan a subtree if the manifest
+must live in the same Git repository. verify re-reads --root; diff
+only compares two already-written documents.
+
 This is not find, ripgrep, Git, or a backup tool.`,
 		SilenceErrors: true,
 		SilenceUsage:  true,

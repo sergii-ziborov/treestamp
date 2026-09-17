@@ -17,7 +17,9 @@ func New(env *app.Env) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "explain PATH",
 		Short: "Explain why a path is selected or excluded",
-		Args:  cobra.ExactArgs(1),
+		Example: "  treestamp explain skip.txt --root . --ext go\n" +
+			"  treestamp explain cmd/treestamp/main.go --root . --config policy.json --json",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return run(env, sel, root, args[0])
 		},
