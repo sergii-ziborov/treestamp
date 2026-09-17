@@ -1,5 +1,11 @@
 # Changelog
 
+## CLI 0.1.1 (2026-09-17)
+
+CLI tag `cmd/treestamp/v0.1.1` requires published library `v0.1.0`.
+Install with `@v0.1.1`. The earlier `@v0.1.0` CLI still depends on
+library `v0.1.0-alpha.1`.
+
 ## Library 0.1.0 (2026-09-17)
 
 First non-alpha library tag: `v0.1.0`. Still not a full Weavatrix Scan port.

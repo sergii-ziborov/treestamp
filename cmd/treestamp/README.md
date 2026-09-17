@@ -7,12 +7,12 @@ The useful story is: select a tree by policy, save the rules with the result,
 explain a decision, then verify what changed.
 
 ```text
-go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.0
+go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.1
 ```
 
 Go 1.23.0+, `CGO_ENABLED=0`. The Git tag for this nested module is
-`cmd/treestamp/v0.1.0`. The version you pass to `go install` is
-`v0.1.0`. The library this CLI checkout builds against is `v0.1.0`.
+`cmd/treestamp/v0.1.1`. The version you pass to `go install` is
+`v0.1.1`. The published CLI requires library `v0.1.0`.
 
 People without Go should use a release binary. The library import path is
 separate: `github.com/sergii-ziborov/treestamp`.

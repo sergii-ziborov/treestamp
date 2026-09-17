@@ -14,8 +14,8 @@ cd treestamp
 go test .
 ```
 
-Library tag: `v0.1.0`. CLI tag: `cmd/treestamp/v0.1.0` (pin follows the
-published library). Go 1.23.0+, `CGO_ENABLED=0`. Still not a full port.
+Library tag: `v0.1.0`. CLI tag: `cmd/treestamp/v0.1.1`.
+Go 1.23.0+, `CGO_ENABLED=0`. Still not a full port.
 
 ```go
 ctx := context.Background()
@@ -55,7 +55,7 @@ under the chosen policy. Full program:
 The same scanner, as a nested module. Not a second engine.
 
 ```text
-go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.0
+go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.1
 treestamp scan . --ext go --json --output ../baseline.tstamp.json
 ```
 

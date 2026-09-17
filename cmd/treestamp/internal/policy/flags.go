@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	CLIVersion = "0.1.0"
+	CLIVersion = "0.1.1"
 	Profile    = "repo-v1"
 )
 
