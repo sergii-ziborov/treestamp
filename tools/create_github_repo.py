@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_LOGIN = "sergii-ziborov"
 FORBIDDEN_ORGS = {"Weavatrix", "weavatrix", "EdgeHawk", "edgehawk", "EDGEHAWK"}
 REPO_NAME = "treestamp"
-DESCRIPTION = "Native Go port of Weavatrix Scan. Personal public repository of Sergii Ziborov."
+DESCRIPTION = "Native Go library to walk, select, hash, and verify a file tree. Import github.com/sergii-ziborov/treestamp. CLI: cmd/treestamp."
 
 
 def run(args: list[str], check: bool = True) -> subprocess.CompletedProcess[str]:

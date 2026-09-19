@@ -38,10 +38,33 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="${GITHUB_REF_NAME}"
+          version="${tag##*/}"
+          notes="This is the **user CLI** (\`treestamp\`). It is not the Go library and not \`cmd/treestamp-driver\`.
+
+## Install with Go
+
+\`\`\`
+go install github.com/sergii-ziborov/treestamp/cmd/treestamp@${version}
+\`\`\`
+
+Requires Go 1.21 or newer. \`CGO_ENABLED=0\`.
+
+## Install without Go
+
+Download a \`treestamp-*\` binary attached to this release. Checksums are in \`SHA256SUMS.txt\`.
+
+## Library
+
+- Import: https://pkg.go.dev/github.com/sergii-ziborov/treestamp
+- Matching library tag: \`v${version#v}\` when the numbers match; confirm in cmd/treestamp/go.mod
+- CLI docs: https://github.com/sergii-ziborov/treestamp/blob/main/cmd/treestamp/README.md
+
+\`cmd/treestamp-driver\` is a fixture protocol binary for tests. Do not install it as the product CLI."
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" dist/treestamp-windows-amd64.exe dist/treestamp-linux-amd64 dist/treestamp-darwin-amd64 dist/treestamp-darwin-arm64 dist/SHA256SUMS.txt --clobber
+            gh release edit "$tag" --notes "$notes"
           else
-            gh release create "$tag" --title "CLI ${tag##*/}" --generate-notes \
+            gh release create "$tag" --title "CLI ${version}" --notes "$notes" \
               dist/treestamp-windows-amd64.exe dist/treestamp-linux-amd64 \
               dist/treestamp-darwin-amd64 dist/treestamp-darwin-arm64 dist/SHA256SUMS.txt
           fi

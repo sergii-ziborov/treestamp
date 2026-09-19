@@ -8,10 +8,14 @@ Do not publish this project from the Weavatrix or EdgeHawk organizations.
 ## Current
 
 - Library: `v0.1.4` → `go get github.com/sergii-ziborov/treestamp@v0.1.4`
+  ([pkg.go.dev](https://pkg.go.dev/github.com/sergii-ziborov/treestamp))
 - CLI: `cmd/treestamp/v0.1.4` → `go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.4`
+- Driver: `cmd/treestamp-driver` is not tagged and not installed
 
 Those tags stay immutable. A later library bump is a new tag. The published
-CLI `go.mod` must not contain a `replace` of the library.
+CLI `go.mod` must not contain a `replace` of the library. GitHub “Latest
+release” is the CLI binary tag; the library is the `v0.1.4` release on the
+same repository.
 
 ## Full-port gate
 

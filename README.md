@@ -1,21 +1,58 @@
 # Treestamp
 
-Native Go library for deterministic repository scanning.
+[![Go Reference](https://pkg.go.dev/badge/github.com/sergii-ziborov/treestamp.svg)](https://pkg.go.dev/github.com/sergii-ziborov/treestamp)
 
-It selects files under ignore and filter rules, hashes what it selected,
-explains why a path was kept or dropped, and verifies the next tree.
+Native Go library for walking a tree, selecting files, hashing what you
+selected, explaining why a path was kept or dropped, and verifying the
+next tree. Same scanner from a CLI when you are not writing Go.
 
-Docs: [pkg.go.dev/github.com/sergii-ziborov/treestamp](https://pkg.go.dev/github.com/sergii-ziborov/treestamp)
+| What | Where | Open this |
+| --- | --- | --- |
+| **Library** | this repository root | [pkg.go.dev/github.com/sergii-ziborov/treestamp](https://pkg.go.dev/github.com/sergii-ziborov/treestamp) |
+| **CLI** | [`cmd/treestamp`](cmd/treestamp) | [cmd/treestamp/README.md](cmd/treestamp/README.md) |
+| **Driver** | [`cmd/treestamp-driver`](cmd/treestamp-driver) | [cmd/treestamp-driver/README.md](cmd/treestamp-driver/README.md) — fixture protocol only, not the product |
+
+Current tags: library [`v0.1.4`](https://github.com/sergii-ziborov/treestamp/releases/tag/v0.1.4),
+CLI [`cmd/treestamp/v0.1.4`](https://github.com/sergii-ziborov/treestamp/releases/tag/cmd/treestamp/v0.1.4).
+`go install` uses the CLI module version (`@v0.1.4`), not the Git tag prefix.
+
+## Install
+
+Requires **Go 1.21** or newer. `CGO_ENABLED=0`.
+
+### Library
 
 ```text
 go get github.com/sergii-ziborov/treestamp@v0.1.4
 ```
 
-Requires **Go 1.21** or newer (CI compiles 1.21 through 1.26). `CGO_ENABLED=0`. The CLI is a nested module:
+Import `github.com/sergii-ziborov/treestamp`. Docs and examples:
+[pkg.go.dev/github.com/sergii-ziborov/treestamp](https://pkg.go.dev/github.com/sergii-ziborov/treestamp).
+
+### CLI
 
 ```text
 go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.4
 ```
+
+Without Go, download a `treestamp-*` binary from the
+[CLI v0.1.4 release](https://github.com/sergii-ziborov/treestamp/releases/tag/cmd/treestamp/v0.1.4)
+and check `SHA256SUMS.txt`. That release is the user command `treestamp`.
+It is not `treestamp-driver`.
+
+```text
+treestamp
+treestamp scan --help
+```
+
+A bare `treestamp` prints help. It does not hash the current directory.
+
+### Not the CLI
+
+`cmd/treestamp-driver` speaks a JSON fixture protocol for parity tests.
+Do not `go install` it. Do not ship it as Treestamp.
+
+## Library example
 
 ```go
 package main
@@ -45,6 +82,43 @@ func main() {
 
 A nil error means selected work finished under the chosen policy.
 Runnable copy: [`examples/docquickstart`](examples/docquickstart).
+API pick: [docs/choose-an-api.md](docs/choose-an-api.md).
+
+`Scan(ctx, root)` and `ScanPaths(ctx, root)` keep two-argument signatures.
+`Options{}` is not `DefaultOptions()`. `Explain` is selection only.
+`TreeSnapshot` is an in-memory persistent structure, not a disk index.
+`ContentProvider.Open` returns loaded bytes, not an `io.Reader`.
+
+## CLI example
+
+Same scanner as the library. Use it from CI or a shell. Do not use it as
+`find`, a watcher, or a hashdeep replacement.
+
+```text
+# Pin the CLI package, not the whole checkout
+treestamp scan ./cmd/treestamp --ext go --json --output ./baselines/cli.tstamp.json
+treestamp verify ./baselines/cli.tstamp.json --root ./cmd/treestamp
+
+# Why generated code is absent from that baseline
+treestamp explain testdata/generated/model.go --root .
+
+# Names only; paths does not apply binary or size checks
+treestamp paths . --ext go --null | xargs -0 gofmt -l
+```
+
+`--output` cannot sit inside the scan root. `verify` re-applies the saved
+policy; it does not take the root from the file.
+
+```text
+treestamp scan ./examples/docquickstart --ext go
+```
+
+![treestamp scan](docs/cli/scan.svg)
+
+More commands: [cmd/treestamp/README.md](cmd/treestamp/README.md).
+Guide: [docs/guides/cli.md](docs/guides/cli.md).
+
+## Tasks
 
 | Task | Start here |
 | --- | --- |
@@ -57,80 +131,13 @@ Runnable copy: [`examples/docquickstart`](examples/docquickstart).
 | Cache, snapshot, tree2 | [docs/guides/snapshots.md](docs/guides/snapshots.md) |
 | Symptom → check | [docs/troubleshooting.md](docs/troubleshooting.md) |
 | Walker migration | [MIGRATING.md](MIGRATING.md) |
-
-`Scan(ctx, root)` and `ScanPaths(ctx, root)` keep two-argument signatures.
-`Options{}` is not `DefaultOptions()`. `Explain` is selection only.
-`TreeSnapshot` is an in-memory persistent structure, not a disk index.
-`ContentProvider.Open` returns loaded bytes, not an `io.Reader`.
+| CLI install and flags | [cmd/treestamp/README.md](cmd/treestamp/README.md) |
 
 The library is a native Go port of pinned Weavatrix Scan **0.5.2**, plus
 Go-side additions (`ScanFS`, a growing-file read budget,
-`MultiScanReport.Revision`, `WalkDirs` / `compat/godirwalk`). It is not a parser, search engine, graph,
-embedder, secret scanner, MCP server, web service, or daemon. Search, when
-ported, stays a consumer of this module.
-
-## Command line
-
-Same scanner as the library. Use the CLI when you are not writing Go,
-or when CI must gate on an exit code. Do not use it as `find`, a
-watcher, or a hashdeep replacement.
-
-| You need | Run |
-| --- | --- |
-| Pin selected sources and fail CI if they move | `scan --output` then `verify --root` |
-| Compare two already-written manifests; trees are gone | `diff --exit-code` |
-| Feed names to `gofmt` / another tool | `paths --null` |
-| Why a path never entered the baseline | `explain` |
-| Hash a release tree, including binaries | `scan --profile artifact` |
-| Log each hash as it finishes | `scan --format ndjson` |
-
-`--output` cannot sit inside the scan root. Scan a subtree if the
-manifest must live in the same repository. `verify` re-applies the
-saved policy; it does not take the root from the file.
-
-```text
-# Pin the CLI package, not the whole checkout
-treestamp scan ./cmd/treestamp --ext go --json --output ./baselines/cli.tstamp.json
-treestamp verify ./baselines/cli.tstamp.json --root ./cmd/treestamp
-
-# Why generated code is absent from that baseline
-treestamp explain testdata/generated/model.go --root .
-
-# Names only; paths does not apply binary or size checks
-treestamp paths . --ext go --null | xargs -0 gofmt -l
-
-# Whole-repo baseline lives beside the checkout
-treestamp scan . --ext go --json --output ../repo.tstamp.json
-
-# Dist / release tree
-treestamp scan ./dist --profile artifact --json --output ../dist.tstamp.json
-```
-
-```text
-treestamp scan ./examples/docquickstart --ext go
-```
-
-![treestamp scan](docs/cli/scan.svg)
-
-```text
-treestamp explain testdata/generated/model.go --root .
-```
-
-![treestamp explain](docs/cli/explain.svg)
-
-```text
-treestamp verify ./baselines/cli.tstamp.json --root ./cmd/treestamp
-```
-
-![treestamp verify](docs/cli/verify.svg)
-
-The verify card is the differ shape: every `+` / `-` / `~` / rename is
-listed. A clean job prints `Match`. Gate CI on the exit code, not the
-card.
-
-CLI README: [cmd/treestamp/README.md](cmd/treestamp/README.md).
-Guide: [docs/guides/cli.md](docs/guides/cli.md).
-CLI docs: [pkg.go.dev/github.com/sergii-ziborov/treestamp/cmd/treestamp](https://pkg.go.dev/github.com/sergii-ziborov/treestamp/cmd/treestamp).
+`MultiScanReport.Revision`, `WalkDirs` / `compat/godirwalk`). It is not a
+parser, search engine, graph, embedder, secret scanner, MCP server, web
+service, or daemon. Search, when ported, stays a consumer of this module.
 
 ## Official first campaign
 
@@ -183,9 +190,9 @@ they do not replace the table above.
 ## Authorship and license
 
 Personal public repository of [Sergii Ziborov](https://github.com/sergii-ziborov).
-Module: `github.com/sergii-ziborov/treestamp`. Not a Weavatrix or EdgeHawk
-organization repository. Oracle pin: weavatrix-scan **0.5.2**, commit
-`29c003a6ad541c9a10faf30505235375fa78b9d8`.
+Module: [`github.com/sergii-ziborov/treestamp`](https://pkg.go.dev/github.com/sergii-ziborov/treestamp).
+Not a Weavatrix or EdgeHawk organization repository. Oracle pin:
+weavatrix-scan **0.5.2**, commit `29c003a6ad541c9a10faf30505235375fa78b9d8`.
 
 `.treestampignore` is not a default ignore file.
 Optional `watch/` uses fsnotify and is never a main-module require.

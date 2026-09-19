@@ -1,17 +1,18 @@
 # treestamp
 
-Command-line app for the Treestamp library. Same scanner as
-`go get github.com/sergii-ziborov/treestamp` — not a second engine.
+This directory is the **user CLI**. The Go **library** is the repository
+root, not this folder.
 
-```text
-go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.4
-```
+| | |
+| --- | --- |
+| Library import | [`github.com/sergii-ziborov/treestamp`](https://pkg.go.dev/github.com/sergii-ziborov/treestamp) |
+| Library tag | [`v0.1.4`](https://github.com/sergii-ziborov/treestamp/releases/tag/v0.1.4) |
+| This CLI | `go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.4` |
+| Binaries | [CLI v0.1.4](https://github.com/sergii-ziborov/treestamp/releases/tag/cmd/treestamp/v0.1.4) |
+| Not this | [`../treestamp-driver`](../treestamp-driver) — fixture protocol, do not install |
 
-Requires **Go 1.21** or newer. `CGO_ENABLED=0`. People without Go should
-use a GitHub release binary.
-
-Library: [`github.com/sergii-ziborov/treestamp`](https://pkg.go.dev/github.com/sergii-ziborov/treestamp)
-(tag `v0.1.4`).
+Same scanner as `go get github.com/sergii-ziborov/treestamp@v0.1.4` — not
+a second engine. Requires **Go 1.21** or newer. `CGO_ENABLED=0`.
 
 A bare `treestamp` prints help and does not hash the current directory.
 

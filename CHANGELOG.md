@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+README, GitHub About, and the CLI release notes now name the library,
+`cmd/treestamp`, and `cmd/treestamp-driver` separately, with install
+commands and a pkg.go.dev link. The driver is documented as a fixture
+binary, not the product CLI.
+
 Library scan is a Weavatrix Scan port with Go-side additions. `ScanFS` /
 `ScanPathsFS` / `EachFileFS` apply the same ignore, filter, skip, hash,
 and binary rules over an `fs.FS` without OS identity or cache reuse.
