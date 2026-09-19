@@ -14,7 +14,7 @@ Minimum Go: 1.21.0. `CGO_ENABLED=0` for the intended runtime.
 | Combined multi-root digest | `MultiScanReport.Revision` | A merged file list across roots |
 | Raw directory walk | `Walk`, `WalkFS`, `DirScanner` | Repository ignore unless you add it |
 | Child names only | `ReadDirnames` | Types, metadata, or a `[]Record` on Linux |
-| godirwalk-shaped walk | `WalkDirs` | Treat `Unsorted` as parallel; a borrowed `DirEntry` |
+| godirwalk-shaped walk | `WalkDirs` | Treat `Unsorted` as parallel; a borrowed `DirEntry`; buffer a sorted directory |
 | godirwalk import alias | `compat/godirwalk` | A runtime dependency on karrick/godirwalk |
 | Incremental events | `ApplyWatchPlan` | Native watches (`watch.Open` is recursive; closed is `ErrClosed`) |
 | Path list with a cap | `ScanPathsWith` + `WithMaxEntries` | Silent truncation; the prefix returns with `ErrPartial` |
@@ -24,6 +24,13 @@ Minimum Go: 1.21.0. `CGO_ENABLED=0` for the intended runtime.
 `Options{}` is the legacy zero value and is not reinterpreted as
 `DefaultOptions()`. The facade (`ScanWith`, `Compile`) starts from
 `DefaultOptions()`.
+
+`WalkDirs` is the godirwalk-shaped walk: lexical DFS unless `Unsorted`,
+owned persistable `DirEntry` values, `SkipThis`, `ErrorCallback`,
+`ScratchBuffer`, `AllowNonDirectory`, optional `Context` / `MaxOpen`.
+`Unsorted` is not parallel. Import
+`github.com/sergii-ziborov/treestamp/compat/godirwalk` only to keep the
+old type names; prefer `WalkDirs` for new code.
 
 `internal/selection.Compile` is an ignore-prefix plan. It is not
 `treestamp.Compile` → `Plan`.

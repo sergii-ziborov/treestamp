@@ -14,6 +14,7 @@ not from remembered snippets.
 | Reuse a cache | [recipes/cache.md](recipes/cache.md) |
 | Reread snapshot bytes with a limit | [recipes/snapshot-read.md](recipes/snapshot-read.md) |
 | Walk an `fs.FS` | [recipes/walk-fs.md](recipes/walk-fs.md) |
+| Replace godirwalk | [recipes/walk-dirs.md](recipes/walk-dirs.md) |
 | Update a Merkle snapshot | [recipes/tree-snapshot.md](recipes/tree-snapshot.md) |
 | Export a portable report | [recipes/portable.md](recipes/portable.md) |
 | Handle a bad regex | [recipes/invalid-regex.md](recipes/invalid-regex.md) |

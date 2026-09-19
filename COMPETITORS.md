@@ -118,7 +118,9 @@ records, not timing results.
 | Report / hash / cache / watch | yes | no | no | no |
 
 Informal timing for the walk/select rows lives in
-`bench/go-compat/BENEFITS.md`. Official first-campaign rows are `MEASURED`
+`bench/go-compat/BENEFITS.md`. WalkDirs-matched godirwalk rows are
+`bench/go-compat/WALKDIRS_G05.md` and do not replace that table or
+official B01–B14. Official first-campaign rows are `MEASURED`
 in `compat/results/official-benches.json`.
 
 ## Headline policy

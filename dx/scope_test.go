@@ -65,3 +65,25 @@ func TestWalkDirsSkipThisAndErrorCallback(t *testing.T) {
 		t.Fatalf("%v %v", names, err)
 	}
 }
+
+func TestWalkDirsUnsortedStopsOnContext(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "a.go"), "package a\n")
+	mustWriteFile(t, filepath.Join(root, "b.go"), "package b\n")
+	ctx, cancel := context.WithCancel(context.Background())
+	err := WalkDirs(root, DirWalkOptions{
+		Unsorted: true,
+		Context:  ctx,
+		MaxOpen:  1,
+		Callback: func(_ string, d fs.DirEntry, err error) error {
+			if err != nil || d == nil || d.IsDir() {
+				return err
+			}
+			cancel()
+			return nil
+		},
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err=%v", err)
+	}
+}

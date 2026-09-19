@@ -52,6 +52,7 @@ Runnable copy: [`examples/docquickstart`](examples/docquickstart).
 | List paths | [docs/recipes/scan-paths.md](docs/recipes/scan-paths.md) |
 | Manifest / EachFile / Explain | [docs/index.md](docs/index.md) |
 | Scan an `fs.FS` | [docs/choose-an-api.md](docs/choose-an-api.md) |
+| Replace godirwalk | [docs/recipes/walk-dirs.md](docs/recipes/walk-dirs.md) |
 | Why a file was skipped | [docs/recipes/explain.md](docs/recipes/explain.md) |
 | Cache, snapshot, tree2 | [docs/guides/snapshots.md](docs/guides/snapshots.md) |
 | Symptom → check | [docs/troubleshooting.md](docs/troubleshooting.md) |
@@ -64,7 +65,7 @@ Runnable copy: [`examples/docquickstart`](examples/docquickstart).
 
 The library is a native Go port of pinned Weavatrix Scan **0.5.2**, plus
 Go-side additions (`ScanFS`, a growing-file read budget,
-`MultiScanReport.Revision`). It is not a parser, search engine, graph,
+`MultiScanReport.Revision`, `WalkDirs` / `compat/godirwalk`). It is not a parser, search engine, graph,
 embedder, secret scanner, MCP server, web service, or daemon. Search, when
 ported, stays a consumer of this module.
 
@@ -175,6 +176,9 @@ python tools/run_informal_benches.py
 ```
 
 Receipt: [`bench/go-compat/INFORMAL_RUN.json`](bench/go-compat/INFORMAL_RUN.json).
+WalkDirs and listing methods vs godirwalk v1.17.0 (19 September 2026)
+are [`bench/go-compat/WALKDIRS_G05.md`](bench/go-compat/WALKDIRS_G05.md);
+they do not replace the table above.
 
 ## Authorship and license
 

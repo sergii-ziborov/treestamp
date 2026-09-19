@@ -45,6 +45,19 @@ jobs:
         env:
           GOWORK: "off"
         run: go test ./...
+      - name: WalkDirs informal benches
+        if: matrix.go != '1.21.x'
+        working-directory: bench/go-compat
+        env:
+          GOWORK: "off"
+        shell: bash
+        run: go test -bench=BenchmarkWalkDirs -benchmem -count=1 -timeout 10m | tee walkdirs-g05.txt
+      - uses: actions/upload-artifact@v4
+        if: matrix.go != '1.21.x'
+        with:
+          name: walkdirs-g05-${{ matrix.os }}-${{ matrix.go }}
+          path: bench/go-compat/walkdirs-g05.txt
+          if-no-files-found: warn
 
   go-minors:
     timeout-minutes: 20

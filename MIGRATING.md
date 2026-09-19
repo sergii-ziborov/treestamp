@@ -18,8 +18,23 @@ Use `ScanPaths` or `ScanPathsWith` plus `Filters` / `WithExtensions` /
 
 ## godirwalk
 
-Use `DirScanner`, `ReadDirentsScratch`, and `WalkDirs`.
-`PostChildrenCallback` requires serial, non-follow walks.
+Use `WalkDirs` with `DirWalkOptions`. Default order is lexical DFS.
+`Unsorted` only drops that sort. `SkipThis` skips one node; on a file it
+does not drop siblings. `ErrorCallback` sees OS and callback errors
+(`nil` continues). Callback paths keep the cleaned root form. A file
+root needs `AllowNonDirectory`. Unsorted serial walk streams children
+from `DirScanner` so `SkipAll` / `Context` can close the listing early.
+
+```go
+import godirwalk "github.com/sergii-ziborov/treestamp/compat/godirwalk"
+```
+
+`Walk`, `Options`, `Dirent`, `Scanner`, `ReadDirents`, and `ReadDirnames`
+run on this engine. There is no runtime dependency on
+`karrick/godirwalk`. The alias allocates extra `Dirent` wrappers;
+`WalkDirs` is the faster native call. `PostChildrenCallback` works with
+`FollowSymbolicLinks` on the serial path. Parallel still needs explicit
+`NumWorkers`.
 
 ## Standard library
 

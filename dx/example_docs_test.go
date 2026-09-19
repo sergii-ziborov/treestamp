@@ -30,7 +30,7 @@ func exampleTree(files map[string]string) string {
 	return dir
 }
 
-//region example-scan-paths
+// region example-scan-paths
 func ExampleScanPaths() {
 	root := exampleTree(map[string]string{
 		"keep.go":    "package keep\n",
@@ -50,7 +50,7 @@ func ExampleScanPaths() {
 
 //endregion
 
-//region example-scan-with-extensions
+// region example-scan-with-extensions
 func ExampleNewScanner_withExtensions() {
 	root := exampleTree(map[string]string{
 		"keep.go":  "package keep\n",
@@ -75,7 +75,7 @@ func ExampleNewScanner_withExtensions() {
 
 //endregion
 
-//region example-explain
+// region example-explain
 func ExampleScanner_Explain() {
 	root := exampleTree(map[string]string{
 		".gitignore":         "# keep\ngenerated/**\n",
@@ -100,7 +100,7 @@ func ExampleScanner_Explain() {
 
 //endregion
 
-//region example-cache
+// region example-cache
 func ExampleScanReport_ToCache() {
 	root := exampleTree(map[string]string{"a.txt": "abc"})
 	defer os.RemoveAll(root)
@@ -127,7 +127,7 @@ func ExampleScanReport_ToCache() {
 
 //endregion
 
-//region example-read-bounded
+// region example-read-bounded
 func ExampleSnapshotContentProvider_ReadBounded() {
 	root := exampleTree(map[string]string{"a.txt": "abcdef"})
 	defer os.RemoveAll(root)
@@ -157,7 +157,7 @@ func ExampleSnapshotContentProvider_ReadBounded() {
 
 //endregion
 
-//region example-walk-fs
+// region example-walk-fs
 func ExampleWalkFS() {
 	fsys := fstest.MapFS{
 		"a.txt":     {Data: []byte("a")},
@@ -182,7 +182,38 @@ func ExampleWalkFS() {
 
 //endregion
 
-//region example-tree-snapshot
+// region example-walk-dirs
+func ExampleWalkDirs() {
+	root := exampleTree(map[string]string{
+		"keep.go": "package keep\n",
+		"skip.go": "package skip\n",
+	})
+	defer os.RemoveAll(root)
+	var names []string
+	err := treestamp.WalkDirs(root, treestamp.DirWalkOptions{
+		Callback: func(_ string, d fs.DirEntry, err error) error {
+			if err != nil || d == nil || d.IsDir() {
+				return err
+			}
+			if d.Name() == "skip.go" {
+				return treestamp.SkipThis
+			}
+			names = append(names, d.Name())
+			return nil
+		},
+	})
+	if err != nil {
+		fmt.Println("error")
+		return
+	}
+	fmt.Println(strings.Join(names, ","))
+	// Output:
+	// keep.go
+}
+
+//endregion
+
+// region example-tree-snapshot
 func ExampleTreeSnapshot_Apply() {
 	first := []treestamp.ScannedFile{
 		{Relative: "a.go", ContentHash: "ha", Bytes: 1},
@@ -199,7 +230,7 @@ func ExampleTreeSnapshot_Apply() {
 
 //endregion
 
-//region example-portable
+// region example-portable
 func ExampleScanReport_ToPortable() {
 	root := exampleTree(map[string]string{"a.txt": "abc"})
 	defer os.RemoveAll(root)
@@ -216,7 +247,7 @@ func ExampleScanReport_ToPortable() {
 
 //endregion
 
-//region example-invalid-regex
+// region example-invalid-regex
 func ExampleNewScanner_invalidRegex() {
 	opts := treestamp.DefaultOptions().WithIncludeFilenameRegex("[")
 	_, err := treestamp.NewScanner(".", treestamp.WithOptions(opts))
@@ -232,7 +263,7 @@ func ExampleNewScanner_invalidRegex() {
 
 //endregion
 
-//region example-scan-into-stop
+// region example-scan-into-stop
 func ExampleScanner_ScanInto_stop() {
 	root := exampleTree(map[string]string{"a.txt": "a", "b.txt": "b"})
 	defer os.RemoveAll(root)
@@ -255,7 +286,7 @@ func ExampleScanner_ScanInto_stop() {
 
 //endregion
 
-//region example-scan-with
+// region example-scan-with
 func ExampleScanWith() {
 	root := exampleTree(map[string]string{"keep.go": "package keep\n", "skip_test.go": "package keep\n"})
 	defer os.RemoveAll(root)
@@ -274,7 +305,7 @@ func ExampleScanWith() {
 
 //endregion
 
-//region example-each-file
+// region example-each-file
 func ExampleEachFile() {
 	root := exampleTree(map[string]string{"a.go": "package a\n"})
 	defer os.RemoveAll(root)
@@ -291,7 +322,7 @@ func ExampleEachFile() {
 
 //endregion
 
-//region example-compile-plan
+// region example-compile-plan
 func ExampleCompile() {
 	root := exampleTree(map[string]string{"keep.go": "package keep\n"})
 	defer os.RemoveAll(root)

@@ -9,6 +9,10 @@
 | Cache did not speed up | `ReusedHashes`, `ContentReads`, `Rebuilt` | Confirm the cache root/format and that files were unchanged. |
 | `tree2:` ≠ `sha256:` | Different structures | Compare within one format only. |
 | Consumer stopped, process waits | Channel / sink lifecycle | `FileWalker.Start` closes the queue; `Terminate` cancels. |
+| `WalkDirs` looks parallel after `Unsorted` | `Unsorted` only drops sort | Set `NumWorkers` for parallel callbacks. |
+| File root: `cannot Walk non-directory` | godirwalk default | Set `AllowNonDirectory`. |
+| `SkipDir` on a file dropped siblings | That is `SkipDir` | Use `SkipThis` to skip one node. |
+| `compat/godirwalk` slower than `WalkDirs` | Extra `Dirent` wrappers | Prefer `WalkDirs` unless you need the old types. |
 | What to attach to an issue | Versions, options, tiny fixture | No file contents, no absolute host paths. |
 
 `Explain` does not diagnose binary or oversize skips. Those appear as typed

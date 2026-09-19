@@ -196,6 +196,8 @@ type DirWalkOptions struct {
 	NumWorkers           int
 	ToSlash              bool
 	ScratchBuffer        []byte
+	MaxOpen              int
+	Context              context.Context
 }
 
 func WalkDirs(root string, opts DirWalkOptions) error {
@@ -216,7 +218,7 @@ func WalkDirs(root string, opts DirWalkOptions) error {
 	return walk.WalkCallbackHooks(root, fn, walk.CallbackOptions{
 		After: dirWalkAfter(opts), ToSlash: opts.ToSlash, ContentsFirst: opts.ContentsFirst,
 		Sort: !opts.Unsorted, Follow: opts.FollowSymbolicLinks, Scratch: opts.ScratchBuffer,
-		RequireDirectory: !opts.AllowNonDirectory,
+		RequireDirectory: !opts.AllowNonDirectory, MaxOpen: opts.MaxOpen, Context: opts.Context,
 	})
 }
 

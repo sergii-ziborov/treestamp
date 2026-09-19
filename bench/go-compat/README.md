@@ -23,7 +23,8 @@ The four current capability differentials are explicit:
 
 `Benchmark*` functions time those cases only. They are informal
 developer benches, not official B01–B14 rows. See `BENEFITS.md` for the
-latest informal Windows medians and the method-matched comparison.
+16 September informal Windows medians. WalkDirs-matched godirwalk rows
+are `WALKDIRS_G05.md` and must not be mixed into that ranking.
 
 Raw-walk benches now include Treestamp, fastwalk, and godirwalk.
 Selection benches compare Treestamp `Filters` with gocodewalker

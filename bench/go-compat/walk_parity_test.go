@@ -13,6 +13,7 @@ import (
 	"github.com/charlievieth/fastwalk"
 	"github.com/karrick/godirwalk"
 	"github.com/sergii-ziborov/treestamp"
+	tsgodirwalk "github.com/sergii-ziborov/treestamp/compat/godirwalk"
 )
 
 func TestRawWalkNodeSetParity(t *testing.T) {
@@ -79,6 +80,37 @@ func TestSortedDepthFirstParity(t *testing.T) {
 	if !equalStrings(std, godir) {
 		t.Errorf("godirwalk sequence differs\nwant: %#v\n got: %#v", std, godir)
 	}
+}
+
+func TestWalkDirsUnsortedNodeSet(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("godirwalk v1.17.0 Unsorted returns EOF on Windows")
+	}
+	root := makeTree(t)
+	tree, err := collectWalkDirs(root, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	godir, err := collectGodirwalk(root, "", false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertNodeSet(t, tree, map[string][]node{"godirwalk": godir})
+}
+
+func collectWalkDirs(root string, unsorted bool) ([]node, error) {
+	var out []node
+	err := treestamp.WalkDirs(root, treestamp.DirWalkOptions{
+		Unsorted: unsorted,
+		Callback: func(path string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			out = append(out, makeNode(root, path, entry))
+			return nil
+		},
+	})
+	return out, err
 }
 
 func TestCallbackStopParity(t *testing.T) {
@@ -322,6 +354,97 @@ func BenchmarkRawWalkGodirwalk(b *testing.B) {
 			Unsorted: runtime.GOOS != "windows",
 			Callback: func(string, *godirwalk.Dirent) error { return nil },
 		}); err != nil && !errors.Is(err, io.EOF) {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkWalkDirsUnsortedTreestamp(b *testing.B) {
+	root := makeWideDir(b, 400)
+	scratch := treestamp.NewScratchBuffer()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := treestamp.WalkDirs(root, treestamp.DirWalkOptions{
+			Unsorted:      true,
+			ScratchBuffer: scratch,
+			Callback:      func(string, fs.DirEntry, error) error { return nil },
+		}); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkWalkDirsSortedTreestamp(b *testing.B) {
+	root := makeWideDir(b, 400)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := treestamp.WalkDirs(root, treestamp.DirWalkOptions{
+			Callback: func(string, fs.DirEntry, error) error { return nil },
+		}); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkWalkDirsSortedGodirwalk(b *testing.B) {
+	root := makeWideDir(b, 400)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := godirwalk.Walk(root, &godirwalk.Options{
+			Callback: func(string, *godirwalk.Dirent) error { return nil },
+		}); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkWalkDirsUnsortedGodirwalk(b *testing.B) {
+	if runtime.GOOS == "windows" {
+		b.Skip("godirwalk v1.17.0 Unsorted returns EOF on Windows")
+	}
+	root := makeWideDir(b, 400)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := godirwalk.Walk(root, &godirwalk.Options{
+			Unsorted: true,
+			Callback: func(string, *godirwalk.Dirent) error { return nil },
+		}); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkWalkDirsSortedCompat(b *testing.B) {
+	root := makeWideDir(b, 400)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := tsgodirwalk.Walk(root, &tsgodirwalk.Options{
+			Callback: func(string, *tsgodirwalk.Dirent) error { return nil },
+		}); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkWalkDirsUnsortedStopTreestamp(b *testing.B) {
+	root := makeWideDir(b, 400)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := treestamp.WalkDirs(root, treestamp.DirWalkOptions{
+			Unsorted: true,
+			Callback: func(_ string, d fs.DirEntry, err error) error {
+				if err != nil || d == nil || d.IsDir() {
+					return err
+				}
+				return fs.SkipAll
+			},
+		}); err != nil {
 			b.Fatal(err)
 		}
 	}

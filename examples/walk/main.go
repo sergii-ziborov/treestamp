@@ -14,6 +14,8 @@ func main() {
 	if len(os.Args) > 1 {
 		root = os.Args[1]
 	}
+	// Pull walker. For a godirwalk-shaped callback use WalkDirs;
+	// see docs/recipes/walk-dirs.md.
 	walker, err := treestamp.NewWalker(root)
 	if err != nil {
 		log.Fatal(err)

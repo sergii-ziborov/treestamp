@@ -78,6 +78,14 @@ Remaining on this run: parallel raw walk is still slower than fastwalk on
 the ~400-file tree (633 µs vs 520 µs). Official 10k/100k/1M sizes stay
 `NOT_RUN`. Linux/macOS informal medians are not in this receipt.
 
+## WalkDirs G05 addendum (19 September 2026)
+
+Matched `WalkDirs` rows live in `WALKDIRS_G05.md`. They do **not**
+replace the table above. Sorted WalkDirs and sorted godirwalk v1.17.0
+were the same order of magnitude on this host; owned entries used more
+`B/op`. Unsorted godirwalk is not compared on Windows (`EOF`). Linux and
+macOS logs are CI artifacts, not a rewritten official campaign.
+
 ## Contract benefits these benches do not measure
 
 Treestamp still provides surfaces the walkers do not: normalized relatives,

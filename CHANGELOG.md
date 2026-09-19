@@ -41,7 +41,22 @@ a wrapper over karrick/godirwalk. Serial walk no longer treats a zero
 dirent type as missing metadata (that is a regular file) and only
 lstats `UnknownType`. `ReadDirnames` on Linux reads names from
 getdents without a `[]Record`. `WalkDirs` keeps owned records instead
-of a second `[]os.DirEntry` copy.
+of a second `[]os.DirEntry` copy. Unsorted serial walk streams children
+from `DirScanner` so the first callback can run before the rest of the
+directory is listed; `SkipAll`, `SkipDir` on a file, and `Context`
+close the listing without draining it. Nested lazy reads keep at most
+`MaxOpen` directory FDs (default 64). Sorted and contents-first walks
+still buffer a directory so they can reorder it. Informal WalkDirs
+benches against godirwalk v1.17.0 live in `bench/go-compat/WALKDIRS_G05.md`;
+they are not official B01–B14 rows and do not mix sorted with unsorted.
+CI on stable Go uploads `count=1` WalkDirs logs for Linux, Windows, and
+macOS. `python tools/run_informal_benches.py --walkdirs` refreshes the
+Windows receipt without rewriting `INFORMAL_RUN.json`. That receipt
+now covers Walk, SkipThis, PostChildren, ReadDirents, ReadDirnames,
+DirScanner, and NewDirent; `TestGodirwalkAllMethodsParity` checks
+those against godirwalk v1.17.0. Docs name `WalkDirs`, `SkipThis`,
+`ReadDirnames`, `DirScanner`, and `compat/godirwalk` from README,
+`MIGRATING.md`, and `docs/recipes/walk-dirs.md`.
 
 `verify` and `diff` print every changed path in the human card, not a
 preview of eight. `scan` lists selected names when there are 20 or

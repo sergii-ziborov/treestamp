@@ -41,4 +41,7 @@ Last Windows run after the listing fixes:
 - Official 10k/100k/1M sizes are not measured.
 - Linux/macOS informal medians are not in this receipt.
 
+WalkDirs-matched godirwalk rows (not this table):
+[`bench/go-compat/WALKDIRS_G05.md`](../../bench/go-compat/WALKDIRS_G05.md).
+
 Full table: [`bench/go-compat/BENEFITS.md`](../../bench/go-compat/BENEFITS.md).

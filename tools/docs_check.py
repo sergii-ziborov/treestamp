@@ -20,12 +20,18 @@ def example_source() -> str:
 
 
 def region(source: str, name: str) -> str:
-    start = f"//region {name}\n"
-    end = "//endregion"
-    i = source.find(start)
+    i = -1
+    for start in (f"//region {name}\n", f"// region {name}\n"):
+        i = source.find(start)
+        if i >= 0:
+            break
     if i < 0:
         raise SystemExit(f"missing region {name}")
-    j = source.find(end, i)
+    j = -1
+    for end in ("//endregion", "// endregion"):
+        j = source.find(end, i)
+        if j >= 0:
+            break
     if j < 0:
         raise SystemExit(f"unclosed region {name}")
     return source[i:j]

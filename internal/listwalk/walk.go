@@ -1,6 +1,7 @@
 package listwalk
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -19,6 +20,8 @@ type Config struct {
 	Sort, Follow            bool
 	RequireDirectory        bool
 	Scratch                 []byte
+	MaxOpen                 int
+	Context                 context.Context
 	OnLink                  func(path, name string, depth int, ancestors []string) (bool, error)
 }
 
@@ -28,13 +31,21 @@ type frame struct {
 	dents []dirread.Record
 	index int
 	ready bool
+	done  bool
+	scan  *dirread.Scanner
 }
 
 var errStop = errors.New("listwalk stop")
 
 // Walk visits root then descendants. Sort uses lexical names; ContentsFirst
-// keeps files before directories after that order.
+// keeps files before directories after that order. Without those, children
+// stream from a directory scanner so stop can close the listing early.
 func Walk(root string, fn fs.WalkDirFunc, cfg Config) error {
+	if cfg.Context != nil {
+		if err := cfg.Context.Err(); err != nil {
+			return err
+		}
+	}
 	start, descend, err := Prepare(root, fn, cfg)
 	if err != nil || !descend {
 		return err
@@ -84,33 +95,6 @@ func skipThis(cfg Config, err error) bool {
 }
 
 func walkChildren(root string, fn fs.WalkDirFunc, cfg Config) error {
-	frames := []frame{{path: root}}
-	skip := ""
-	for len(frames) > 0 {
-		top := &frames[len(frames)-1]
-		if err := fill(top, fn, cfg); err != nil {
-			if errors.Is(err, errStop) {
-				return nil
-			}
-			return err
-		}
-		if top.index >= len(top.dents) {
-			if err := finish(root, fn, cfg, top, &skip, &frames); err != nil {
-				if errors.Is(err, errStop) {
-					return nil
-				}
-				return err
-			}
-			continue
-		}
-		dent := top.dents[top.index]
-		top.index++
-		if err := visit(fn, cfg, top, dent, &frames, &skip); err != nil {
-			if errors.Is(err, errStop) {
-				return nil
-			}
-			return err
-		}
-	}
-	return nil
+	st := &state{root: root, fn: fn, cfg: cfg}
+	return st.run()
 }

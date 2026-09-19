@@ -17,14 +17,7 @@ func fill(top *frame, fn fs.WalkDirFunc, cfg Config) error {
 	top.ready = true
 	dents, err := dirread.ReadScratch(top.path, nil, cfg.Scratch)
 	if err != nil {
-		cbErr := fn(Show(top.path, cfg.ToSlash), nil, err)
-		if cbErr == nil || errors.Is(cbErr, fs.SkipDir) || skipThis(cfg, cbErr) {
-			return nil
-		}
-		if errors.Is(cbErr, fs.SkipAll) {
-			return errStop
-		}
-		return cbErr
+		return reportRead(fn, cfg, top.path, err)
 	}
 	if cfg.Sort {
 		sort.SliceStable(dents, func(i, j int) bool { return dents[i].Name < dents[j].Name })
@@ -37,6 +30,7 @@ func fill(top *frame, fn fs.WalkDirFunc, cfg Config) error {
 }
 
 func finish(root string, fn fs.WalkDirFunc, cfg Config, top *frame, skip *string, frames *[]frame) error {
+	top.exhaust()
 	if *skip == top.path {
 		*skip = ""
 	}
@@ -74,7 +68,7 @@ func control(cfg Config, cbErr error, entry *Entry, top *frame, frames *[]frame,
 		return nil
 	case errors.Is(cbErr, fs.SkipDir):
 		if !entry.typ.IsDir() {
-			top.index = len(top.dents)
+			top.exhaust()
 		}
 		return nil
 	case errors.Is(cbErr, fs.SkipAll):
@@ -123,6 +117,17 @@ func child(dir, name string) string {
 		return name
 	}
 	return dir + string(os.PathSeparator) + name
+}
+
+func reportRead(fn fs.WalkDirFunc, cfg Config, path string, err error) error {
+	cbErr := fn(Show(path, cfg.ToSlash), nil, err)
+	if cbErr == nil || errors.Is(cbErr, fs.SkipDir) || skipThis(cfg, cbErr) {
+		return nil
+	}
+	if errors.Is(cbErr, fs.SkipAll) {
+		return errStop
+	}
+	return cbErr
 }
 
 func filesFirst(dents []dirread.Record) []dirread.Record {

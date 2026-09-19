@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import platform
@@ -104,13 +105,34 @@ def parse_medians(text: str) -> list[dict]:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--walkdirs",
+        action="store_true",
+        help="WalkDirs-matched benches only. Writes WALKDIRS_G05.json, not INFORMAL_RUN.json.",
+    )
+    args = parser.parse_args()
     env = env_with_local()
     versions = module_versions(env)
     go = subprocess.check_output(["go", "env", "GOVERSION"], text=True, env=env).strip()
-    out, _ = run(["go", "test", "-bench", ".", "-benchmem", "-count", "3", "-timeout", "25m"], env, False)
-    exe = "compat.test.exe" if os.name == "nt" else "compat.test"
-    run(["go", "test", "-c", "-o", exe, "."], env, False)
-    _, peaks = run([str(COMPAT / exe), "-test.bench=.", "-test.benchmem", "-test.count=1", "-test.timeout=25m"], env, True)
+    bench = (
+        "BenchmarkWalkDirs|BenchmarkGodirwalk|BenchmarkTreestampReadDir|BenchmarkTreestampDirScanner|BenchmarkNewDirent"
+        if args.walkdirs
+        else "."
+    )
+    timeout = "15m" if args.walkdirs else "25m"
+    out, _ = run(["go", "test", "-bench", bench, "-benchmem", "-count", "3", "-timeout", timeout], env, False)
+    peaks: dict[str, float] = {}
+    command = f"go test -bench={bench} -benchmem -count=3"
+    if not args.walkdirs:
+        exe = "compat.test.exe" if os.name == "nt" else "compat.test"
+        run(["go", "test", "-c", "-o", exe, "."], env, False)
+        _, peaks = run(
+            [str(COMPAT / exe), "-test.bench=.", "-test.benchmem", "-test.count=1", "-test.timeout=25m"],
+            env,
+            True,
+        )
+        command = f"go test -c -o {exe} . && ./{exe} -test.bench=. -test.benchmem -test.count=1"
     result = {
         "output": out,
         "host": {
@@ -127,12 +149,13 @@ def main() -> int:
             "note": "RSS/CPU are from the compiled test binary, not go test",
             "compiled_test_peak_working_set_bytes": int(peaks.get("rss", 0)),
             "compiled_test_cpu_seconds": peaks.get("cpu", 0.0),
-            "compiled_test_command": f"go test -c -o {exe} . && ./{exe} -test.bench=. -test.benchmem -test.count=1",
+            "compiled_test_command": command,
         },
         "medians": parse_medians(out),
         "official_benches": "NOT_RUN",
+        "mixes_sorted_unsorted": False,
     }
-    dest = COMPAT / "INFORMAL_RUN.json"
+    dest = COMPAT / ("WALKDIRS_G05.json" if args.walkdirs else "INFORMAL_RUN.json")
     dest.write_text(json.dumps(result, indent=2), encoding="utf-8")
     print(dest)
     print(f"modules={versions}")

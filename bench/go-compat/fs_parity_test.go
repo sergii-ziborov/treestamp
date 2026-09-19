@@ -263,6 +263,20 @@ func TestDirScannerEmptyAndMissing(t *testing.T) {
 	}
 }
 
+func BenchmarkGodirwalkReadDirnames(b *testing.B) {
+	benchReadDirnames(b, func(dir string, scratch []byte) (int, error) {
+		names, err := godirwalk.ReadDirnames(dir, scratch)
+		return len(names), err
+	})
+}
+
+func BenchmarkTreestampReadDirnames(b *testing.B) {
+	benchReadDirnames(b, func(dir string, scratch []byte) (int, error) {
+		names, err := treestamp.ReadDirnames(dir, scratch)
+		return len(names), err
+	})
+}
+
 func BenchmarkGodirwalkReadDirents(b *testing.B) {
 	benchReadDirents(b, func(dir string, scratch []byte) (int, error) {
 		ents, err := godirwalk.ReadDirents(dir, scratch)
@@ -310,6 +324,12 @@ func BenchmarkTreestampDirScanner(b *testing.B) {
 }
 
 func benchReadDirents(b *testing.B, read func(string, []byte) (int, error)) {
+	root := makeWideDir(b, 4000)
+	scratch := make([]byte, sharedScratchSize())
+	benchRepeat(b, func() (int, error) { return read(root, scratch) })
+}
+
+func benchReadDirnames(b *testing.B, read func(string, []byte) (int, error)) {
 	root := makeWideDir(b, 4000)
 	scratch := make([]byte, sharedScratchSize())
 	benchRepeat(b, func() (int, error) { return read(root, scratch) })

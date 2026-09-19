@@ -1,6 +1,7 @@
 package listwalk
 
 import (
+	"context"
 	"errors"
 	"io/fs"
 	"os"
@@ -217,6 +218,85 @@ func TestWalkRegularTypeWithoutInfo(t *testing.T) {
 	}
 	if files != 1 {
 		t.Fatalf("files=%d", files)
+	}
+}
+
+func TestWalkUnsortedStopDoesNotYieldRest(t *testing.T) {
+	root := t.TempDir()
+	for i := 0; i < 8; i++ {
+		mustWrite(t, filepath.Join(root, "f"+strconv.Itoa(i)+".txt"), "x")
+	}
+	var yielded []string
+	testLazyChild = func(name string) { yielded = append(yielded, name) }
+	t.Cleanup(func() { testLazyChild = nil })
+	var seen int
+	err := Walk(root, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil || d == nil {
+			return err
+		}
+		seen++
+		if !d.IsDir() {
+			return fs.SkipAll
+		}
+		return nil
+	}, Config{})
+	if err != nil || seen != 2 || len(yielded) != 1 {
+		t.Fatalf("seen=%d yielded=%q err=%v", seen, yielded, err)
+	}
+}
+
+func TestWalkUnsortedSkipDirOnFile(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "a.txt"), "a")
+	mustWrite(t, filepath.Join(root, "b.txt"), "b")
+	var names []string
+	err := Walk(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d == nil {
+			return err
+		}
+		name := eventName(root, path)
+		if name == "." {
+			return nil
+		}
+		names = append(names, name)
+		return fs.SkipDir
+	}, Config{})
+	if err != nil || len(names) != 1 {
+		t.Fatalf("%q %v", names, err)
+	}
+}
+
+func TestWalkContextCancel(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "a.txt"), "a")
+	mustWrite(t, filepath.Join(root, "b.txt"), "b")
+	ctx, cancel := context.WithCancel(context.Background())
+	err := Walk(root, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil || d == nil || d.IsDir() {
+			return err
+		}
+		cancel()
+		return nil
+	}, Config{Context: ctx})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestWalkMaxOpenOneVisitsNested(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "a", "x.txt"), "x")
+	mustWrite(t, filepath.Join(root, "b", "y.txt"), "y")
+	var files int
+	err := Walk(root, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil || d == nil || d.IsDir() {
+			return err
+		}
+		files++
+		return nil
+	}, Config{MaxOpen: 1})
+	if err != nil || files != 2 {
+		t.Fatalf("files=%d err=%v", files, err)
 	}
 }
 

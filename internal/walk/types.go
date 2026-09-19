@@ -1,6 +1,7 @@
 package walk
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -389,6 +390,8 @@ type CallbackOptions struct {
 	Follow           bool
 	Scratch          []byte
 	RequireDirectory bool
+	MaxOpen          int
+	Context          context.Context
 }
 
 type WalkEvent struct {
@@ -421,8 +424,8 @@ func WalkCallbackHooks(root string, fn fs.WalkDirFunc, opts CallbackOptions) err
 	return listwalk.Walk(root, fn, listwalk.Config{
 		After: opts.After, ToSlash: opts.ToSlash, ContentsFirst: opts.ContentsFirst,
 		Sort: opts.Sort, Follow: opts.Follow, Scratch: opts.Scratch,
-		RequireDirectory: opts.RequireDirectory,
-		SkipFiles:        ErrSkipFiles, TraverseLink: ErrTraverseLink, SkipThis: ErrSkipThis,
+		RequireDirectory: opts.RequireDirectory, MaxOpen: opts.MaxOpen, Context: opts.Context,
+		SkipFiles: ErrSkipFiles, TraverseLink: ErrTraverseLink, SkipThis: ErrSkipThis,
 		OnLink: func(path, name string, depth int, ancestors []string) (bool, error) {
 			return traverseListed(root, path, name, depth, ancestors)
 		},

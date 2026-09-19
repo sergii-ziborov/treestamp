@@ -6,6 +6,7 @@
     {"name": "ExampleScanReport_ToCache", "recipe": "docs/recipes/cache.md", "region": "example-cache"},
     {"name": "ExampleSnapshotContentProvider_ReadBounded", "recipe": "docs/recipes/snapshot-read.md", "region": "example-read-bounded"},
     {"name": "ExampleWalkFS", "recipe": "docs/recipes/walk-fs.md", "region": "example-walk-fs"},
+    {"name": "ExampleWalkDirs", "recipe": "docs/recipes/walk-dirs.md", "region": "example-walk-dirs"},
     {"name": "ExampleTreeSnapshot_Apply", "recipe": "docs/recipes/tree-snapshot.md", "region": "example-tree-snapshot"},
     {"name": "ExampleScanReport_ToPortable", "recipe": "docs/recipes/portable.md", "region": "example-portable"},
     {"name": "ExampleNewScanner_invalidRegex", "recipe": "docs/recipes/invalid-regex.md", "region": "example-invalid-regex"},

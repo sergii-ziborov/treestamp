@@ -103,10 +103,13 @@ A file root is a single yielded file, matching the Rust walker.
 
 `WalkBuilder` adds serial multi-root, name sort, filters, contents-first, and
 stdout-skip. `ParallelWalker` adds unordered visit, collect, and a bounded
-pull iterator. `Walk` / `WalkUnsorted` / `ReadDirents` / `DirScanner` are the Go-market
-callback surfaces. Their callback entries cache target `Stat` results and
-depth. `WalkFS` and `NewFSWalker` provide lexical, no-follow traversal for
-arbitrary `fs.FS` implementations without OS identity claims.
+pull iterator. `Walk` / `WalkUnsorted` / `WalkDirs` / `ReadDirents` / `DirScanner` are the
+Go-market callback surfaces. `WalkDirs` is the godirwalk-shaped walk:
+lexical DFS unless `Unsorted`, owned persistable entries, `SkipThis`.
+`compat/godirwalk` is an import alias on that engine. Their callback
+entries cache target `Stat` results and depth. `WalkFS` and `NewFSWalker`
+provide lexical, no-follow traversal for arbitrary `fs.FS` implementations
+without OS identity claims.
 `ScanFS` / `EachFileFS` / `ScanPathsFS` apply the same ignore and hash
 engine on that walk. Content reads stop at the discovered size.
 `DirScanner` and `ReadDirentsScratch` reuse an optional getdents buffer.
