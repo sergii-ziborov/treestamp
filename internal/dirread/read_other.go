@@ -12,8 +12,7 @@ func Read(dir string, buf []Record) ([]Record, error) {
 		return buf, err
 	}
 	for _, dent := range dents {
-		info, _ := dent.Info()
-		buf = append(buf, Record{Name: dent.Name(), Type: dent.Type(), Info: info})
+		buf = append(buf, Record{Name: dent.Name(), Type: dent.Type()})
 	}
 	return buf, nil
 }

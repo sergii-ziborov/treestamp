@@ -2,6 +2,7 @@ package treestamp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 
@@ -195,10 +196,7 @@ func (s *Scanner) ScanPaths(ctx context.Context) ([]string, error) {
 		return nil, &Error{Code: CodeInvalid, Op: "ScanPaths", Err: err}
 	}
 	paths, err := scan.Paths(ctx, s.root, toScanOptions(s.options))
-	if err != nil {
-		return nil, wrap(err, "ScanPaths", s.root)
-	}
-	return paths, nil
+	return paths, wrap(err, "ScanPaths", s.root)
 }
 func (s *Scanner) ScanIncremental(ctx context.Context, previous *ScanReport) (*ScanReport, error) {
 	return s.runFull(ctx, "ScanIncremental", func() (*scan.Report, error) {
@@ -236,6 +234,9 @@ func wrap(err error, op, path string) error {
 	}
 	if typed, ok := err.(*Error); ok {
 		return typed
+	}
+	if errors.Is(err, scan.ErrIncomplete) {
+		err = ErrPartial
 	}
 	return &Error{Code: classifyCode(err), Op: op, Path: path, Err: err}
 }

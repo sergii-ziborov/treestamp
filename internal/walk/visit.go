@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/sergii-ziborov/treestamp/internal/dirread"
 	pathx "github.com/sergii-ziborov/treestamp/internal/path"
 	"github.com/sergii-ziborov/treestamp/internal/platform"
 )
@@ -42,7 +43,7 @@ func (w *Walker) visitPlain(path string, depth int, dent os.DirEntry, info os.Fi
 
 func fileModeOf(dent os.DirEntry, info os.FileInfo) os.FileMode {
 	if dent != nil {
-		if typ := dent.Type(); typ != 0 {
+		if typ := dent.Type(); dirread.Reported(typ) {
 			return typ
 		}
 	}
@@ -53,15 +54,7 @@ func fileModeOf(dent os.DirEntry, info os.FileInfo) os.FileMode {
 }
 
 func entryMode(entry os.DirEntry) (os.FileMode, error) {
-	mode := entry.Type()
-	if mode != 0 {
-		return mode, nil
-	}
-	info, err := entry.Info()
-	if err != nil {
-		return 0, err
-	}
-	return info.Mode(), nil
+	return dirread.ModeOf(entry)
 }
 
 func (s *concurrentState) needsEntryInfo() bool {
@@ -554,7 +547,7 @@ func (b *bufferedEntries) close()       {}
 func (b *bufferedEntries) drain()       {}
 
 func collectSorted(path string, cmp func(a, b os.DirEntry) int) (*bufferedEntries, error) {
-	entries, err := os.ReadDir(path)
+	entries, err := dirread.OSEntries(path)
 	if err != nil {
 		return nil, err
 	}

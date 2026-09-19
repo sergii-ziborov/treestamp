@@ -92,7 +92,7 @@ func finish(env *app.Env, current *treestamp.ScanReport, delta treestamp.ScanDel
 			return env.Fail(status.Publish, "stdout: %v", err)
 		}
 	} else if req.Null {
-		if err := render.WriteNull(env.Out, render.OfDelta(delta).Lines()); err != nil {
+		if err := render.WriteNull(env.Out, render.OfDelta(delta).Paths()); err != nil {
 			return env.Fail(status.Publish, "stdout: %v", err)
 		}
 	} else if err := writeHuman(env, delta, current, req.Color); err != nil {

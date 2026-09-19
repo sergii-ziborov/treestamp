@@ -321,6 +321,23 @@ func TestGlobParseAndEngineEdges(t *testing.T) {
 	_ = asciiLower("AbC1")
 }
 
+func TestLoadBytesNestedGitignore(t *testing.T) {
+	eng := NewEngine([]string{".gitignore"}, false, nil)
+	eng.SetPolicy(RepositoryPolicy())
+	if warns := eng.LoadBytes("", ".gitignore", ".gitignore", []byte("secret.bin\n")); len(warns) != 0 {
+		t.Fatal(warns)
+	}
+	if got := eng.Match("secret.bin", false); got != MatchIgnore {
+		t.Fatalf("root %v", got)
+	}
+	if warns := eng.LoadBytes("sub", "sub/.gitignore", ".gitignore", []byte("!secret.bin\nlocal.log\n")); len(warns) != 0 {
+		t.Fatal(warns)
+	}
+	if got := eng.Match("sub/local.log", false); got != MatchIgnore {
+		t.Fatalf("nested %v", got)
+	}
+}
+
 func TestExplainWinningRule(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, ".gitignore"), "# keep\ngenerated/**\n")

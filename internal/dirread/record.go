@@ -35,6 +35,31 @@ func (d Dent) Type() fs.FileMode          { return d.typ }
 func (d Dent) ModeType() fs.FileMode      { return d.typ.Type() }
 func (d Dent) Info() (fs.FileInfo, error) { return os.Lstat(joinName(d.dir, d.name)) }
 
+// Reported is true when mode came from the listing. Zero is a regular file.
+func Reported(mode fs.FileMode) bool { return mode != UnknownType }
+
+// Kind classifies a listing mode. UnknownType is neither a file nor a dir.
+func Kind(mode fs.FileMode) (isDir, isFile, symlink bool) {
+	if !Reported(mode) {
+		return false, false, false
+	}
+	symlink = mode&fs.ModeSymlink != 0
+	return !symlink && mode.IsDir(), !symlink && mode.IsRegular(), symlink
+}
+
+// ModeOf returns the listing type. Type()==0 is regular and does not call Info.
+func ModeOf(entry fs.DirEntry) (fs.FileMode, error) {
+	mode := entry.Type()
+	if Reported(mode) {
+		return mode, nil
+	}
+	info, err := entry.Info()
+	if err != nil {
+		return 0, err
+	}
+	return info.Mode().Type(), nil
+}
+
 func joinName(dir, name string) string {
 	if dir == "" {
 		return name

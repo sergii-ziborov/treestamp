@@ -2,22 +2,60 @@
 
 ## Unreleased
 
+Library scan is a Weavatrix Scan port with Go-side additions. `ScanFS` /
+`ScanPathsFS` / `EachFileFS` apply the same ignore, filter, skip, hash,
+and binary rules over an `fs.FS` without OS identity or cache reuse.
+Content reads stop at the discovered size (and `MaxFileBytes` when set);
+an extra byte is `concurrent_modification` or `oversized`. `size==0` with
+an unlimited byte cap still reads to EOF. Hashing also stops when
+`Limits.Timeout` is reached. `MultiScanReport.Revision` hashes ordered
+`(root, revision, complete)` tuples and does not smash colliding
+relatives into one report.
+
+`ScanPaths` / `ScanPathsFS` now return the selected prefix with
+`ErrPartial` when `MaxEntries` hits or discovery is incomplete.
+`--jobs` sets content workers and walk admission. `VisitContent`
+calls `factory(worker)` and does not retain hashed files in
+`VisitStreaming`. `inspectCompact` uses the same parallel inspect
+path. `BuildParallelOrdered` pulls from `IntoIterOrderedBounded`.
+`WalkParallel` keeps the first callback error under a mutex.
+`watch.Open` adds every directory and returns `ErrClosed` after
+`Close`. `--profile artifact` is `artifact-v2` (VCS skips only);
+`artifact-v1` snapshots keep generated-directory skips.
+`verify` / `diff --null` write raw paths. Official B01–B14 numbers
+stay the first-campaign receipts; the harness now calls compact,
+mutates before cache reuse, and uses two roots.
+
+`WalkDirs` is the first godirwalk replacement step: default order is
+lexical DFS, `Unsorted` only drops that sort (callbacks stay serial),
+saved `DirEntry` values keep their names after return, and
+`PostChildrenCallback` fires for the root after its children. Explicit
+`NumWorkers` still opts into parallel callbacks. `SkipThis` skips one
+node without dropping file siblings. `ErrorCallback` now sees both OS
+and user-callback errors (`nil` continues, a non-nil value halts).
+`ScratchBuffer` and `AllowNonDirectory` are on `DirWalkOptions`.
+Callback paths keep the cleaned root form instead of forcing
+absolute. `PostChildrenCallback` works with `FollowSymbolicLinks`.
+`compat/godirwalk` is an import-compatible entry on this engine, not
+a wrapper over karrick/godirwalk. Serial walk no longer treats a zero
+dirent type as missing metadata (that is a regular file) and only
+lstats `UnknownType`. `ReadDirnames` on Linux reads names from
+getdents without a `[]Record`. `WalkDirs` keeps owned records instead
+of a second `[]os.DirEntry` copy.
+
 `verify` and `diff` print every changed path in the human card, not a
-preview of eight. `--null` writes the same `+` / `-` / `~` / rename
-records separated by NUL. `scan` lists selected names when there are
-20 or fewer. `scan --format ndjson` emits `scan_begin`, each
+preview of eight. `scan` lists selected names when there are 20 or
+fewer. `scan --format ndjson` emits `scan_begin`, each
 `file_committed`, then `scan_end` from `ScanInto` instead of printing
-after a full in-memory manifest. `--profile artifact` hashes binaries,
-drops the 1.5MiB cap, and skips gitignore files while keeping standard
-skips. Default `repo` stays the Weavatrix source profile. This is not
-a hashdeep codec. Human `scan` lists selected names above `Dropped`,
-hides the revision unless `--output` is set, and drops the save hint.
-`explain` says `Would keep` when the path is not on disk. `paths` /
-`explain` / `config` no longer advertise scan-only flags. Human `scan`
-names dropped files under `Dropped`. Default `config` omits
-`Hash contents` when hashing is on. README CLI cards match that
-human output; examples show CI, `explain`, `paths`, and artifact
-scans.
+after a full in-memory manifest. Default `repo` stays the Weavatrix
+source profile. This is not a hashdeep codec. Human `scan` lists
+selected names above `Dropped`, hides the revision unless `--output`
+is set, and drops the save hint. `explain` says `Would keep` when the
+path is not on disk. `paths` / `explain` / `config` no longer
+advertise scan-only flags. Human `scan` names dropped files under
+`Dropped`. Default `config` omits `Hash contents` when hashing is on.
+README CLI cards match that human output; examples show CI, `explain`,
+`paths`, and artifact scans.
 
 ## Library 0.1.4 / CLI 0.1.4 (2026-09-19)
 

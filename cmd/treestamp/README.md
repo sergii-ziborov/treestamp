@@ -73,7 +73,8 @@ changed. The human card lists every one of those paths (`+`, `-`, `~`,
 `old → new`). Matching size and mtime is not enough. Fast cache is
 never treated as proof.
 
-Pipe the same records into another tool:
+Pipe raw changed paths into another tool (`verify --null` writes the
+path only, not the human `+` / `-` / `~` prefix):
 
 ```text
 treestamp verify ./baselines/cli.tstamp.json --root ./cmd/treestamp --null
@@ -141,9 +142,11 @@ treestamp scan ./dist --profile artifact --json --output ../dist.tstamp.json
 treestamp verify ../dist.tstamp.json --root ./dist
 ```
 
-`--profile artifact` still applies standard skips (VCS directories).
-It is not a hashdeep file. `--metadata-only` is refused. Old repo
-baselines keep skipping binaries.
+`--profile artifact` (stored as `artifact-v2`) hashes binaries and
+`node_modules` / `vendor` / `dist`. It still skips VCS directories
+(`.git`, `.hg`, `.svn`). Saved `artifact-v1` snapshots keep the old
+generated-directory skips. This is not a hashdeep file.
+`--metadata-only` is refused. Default `repo` still skips binaries.
 
 ## Feed selected names to another tool (no hashing)
 

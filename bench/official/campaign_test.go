@@ -55,7 +55,14 @@ func TestOfficialCampaign(t *testing.T) {
 		return err
 	})
 	measure(t, "B07", func() error {
-		_, err := treestamp.ScanWith(ctx, root, treestamp.WithExtensions("go"))
+		s, err := treestamp.NewScanner(root, treestamp.WithOptions(treestamp.DefaultOptions().WithExtensions("go")))
+		if err != nil {
+			return err
+		}
+		if _, err := s.Scan(ctx); err != nil {
+			return err
+		}
+		_, err = s.ScanCompact(ctx)
 		return err
 	})
 	measure(t, "B08", func() error {
@@ -77,6 +84,9 @@ func TestOfficialCampaign(t *testing.T) {
 		return err
 	})
 	measure(t, "B10", func() error {
+		if err := os.WriteFile(filepath.Join(root, "g00", "f000.go"), []byte("package changed\n"), 0o644); err != nil {
+			return err
+		}
 		scanner, err := treestamp.NewScanner(root, treestamp.WithOptions(treestamp.DefaultOptions().WithExtensions("go")))
 		if err != nil {
 			return err
@@ -85,7 +95,11 @@ func TestOfficialCampaign(t *testing.T) {
 		return err
 	})
 	measure(t, "B11", func() error {
-		_, err := treestamp.NewMultiScanner(root).Scan(ctx)
+		other := t.TempDir()
+		if err := os.WriteFile(filepath.Join(other, "extra.go"), []byte("package extra\n"), 0o644); err != nil {
+			return err
+		}
+		_, err := treestamp.NewMultiScanner(root).AddRoot(other).Scan(ctx)
 		return err
 	})
 	measure(t, "B12", func() error {

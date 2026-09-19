@@ -54,6 +54,9 @@ executor-owned parallel admission, compiled override-scope pruning,
 `Explain`, identity-keyed content reuse, a shared admission budget,
 ordered-parallel directory pull, and a persistent Merkle `TreeSnapshot`.
 `ScanSession` applies Merkle deltas when a `TreeSnapshot` is present.
+`ScanFS` / `EachFileFS` / `ScanPathsFS` scan an `fs.FS` with the same
+selection engine; content reads honor a growing-file budget; a
+`MultiScanReport` has one deterministic revision across roots.
 The recommended facade is `ScanWith` / `EachFile` / `Compile` without
 changing the two-argument `Scan` / `ScanPaths` signatures. The user CLI
 is `cmd/treestamp` (separate Go module). `cmd/treestamp-driver` stays the
@@ -69,6 +72,8 @@ Windows/Linux/macOS CI matrix. Ledger: `compat/ledger.json`.
    and the rust oracle when a dedicated host is available.
 2. Library tag is `v0.1.4`. CLI tag is `cmd/treestamp/v0.1.4` and must
    require that published library. Do not retag an immutable version.
+3. Weavatrix Search later: a nested module (like `watch/`) that calls
+   Treestamp. Do not fold regex, archives, or an index into this library.
 
 ## Local checks
 

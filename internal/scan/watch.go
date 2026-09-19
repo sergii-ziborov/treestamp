@@ -3,6 +3,8 @@ package scan
 import (
 	"context"
 	"errors"
+	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +13,8 @@ import (
 	"github.com/sergii-ziborov/treestamp/internal/ignore"
 	pathx "github.com/sergii-ziborov/treestamp/internal/path"
 	"github.com/sergii-ziborov/treestamp/internal/selection"
+	"github.com/sergii-ziborov/treestamp/internal/walk"
+	"github.com/sergii-ziborov/treestamp/internal/walkfs"
 )
 
 type WatchPlan struct {
@@ -400,4 +404,185 @@ func toIgnoreSources(in []ignore.Source) []IgnoreSource {
 		out = append(out, IgnoreSource{Kind: source.Kind, Location: source.Location, ContentHash: source.ContentHash})
 	}
 	return out
+}
+
+func discoverFS(ctx context.Context, fsys fs.FS, root string, opts Options, needMeta bool) (*discovery, error) {
+	if fsys == nil || !fs.ValidPath(root) {
+		return nil, fs.ErrInvalid
+	}
+	walker, err := walkfs.New(fsys, root)
+	if err != nil {
+		return nil, err
+	}
+	defer walker.Close()
+	matcher, err := selection.NewVirtualMatcher(root, virtualSelect(opts, needMeta))
+	if err != nil {
+		return nil, err
+	}
+	out := &discovery{root: root, complete: true, portable: true, emit: opts.emitPath}
+	loadIgnoreFS(fsys, root, "", matcher, out)
+	if needMeta {
+		mergeIgnoreSources(&out.sources, matcher.Sources())
+	}
+	snaps := []*ignore.Engine{matcher.Engine().Clone()}
+	last, selected, total := 0, uint64(0), uint64(0)
+	for {
+		if stopped, term := limitsHit(opts, selected, total); stopped {
+			out.term, out.complete = term, false
+			break
+		}
+		if err := ctx.Err(); err != nil {
+			out.term, out.complete = TermCancelled, false
+			break
+		}
+		entry, err := walker.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			if opts.Walk.ErrorPolicy == walk.ErrorAbort {
+				return nil, err
+			}
+			out.complete = false
+			continue
+		}
+		considerFS(considerFSArgs{
+			walker: walker, matcher: matcher, fsys: fsys, snaps: &snaps, out: out,
+			opts: opts, entry: entry, needMeta: needMeta, last: &last,
+		}, &selected, &total)
+	}
+	if needMeta {
+		mergeIgnoreSources(&out.sources, matcher.Sources())
+	}
+	return out, nil
+}
+
+type considerFSArgs struct {
+	walker   *walkfs.Walker
+	matcher  *selection.Matcher
+	fsys     fs.FS
+	snaps    *[]*ignore.Engine
+	out      *discovery
+	opts     Options
+	entry    *walkfs.Entry
+	needMeta bool
+	last     *int
+}
+
+func considerFS(a considerFSArgs, selected, total *uint64) {
+	rel := pathx.Slash(a.entry.RelativePath())
+	restoreMatcher(a.matcher, *a.snaps, a.entry.Depth(), a.last)
+	size := fsFileSize(a.entry)
+	dec := a.matcher.DecidePath(selection.PathQuery{
+		Rel: rel, Name: a.entry.FileName(), IsDir: a.entry.IsDir(),
+		IsFile: a.entry.IsFile(), IsSymlink: a.entry.IsSymlink(), Size: size,
+	})
+	if a.entry.IsDir() && dec.ShouldDescend() {
+		descendFS(a, rel)
+		return
+	}
+	if a.entry.IsDir() {
+		a.walker.SkipCurrentDir()
+	}
+	if dec.IsSelected() {
+		recordFSFile(a, rel, size, selected, total)
+		return
+	}
+	if a.opts.RecordSkipped && dec.Disposition == selection.Skipped {
+		a.out.skipped = append(a.out.skipped, Skipped{Relative: rel, Kind: dec.Skip})
+	}
+}
+
+func descendFS(a considerFSArgs, rel string) {
+	if a.entry.Depth() == 0 {
+		return
+	}
+	detachEngine(a.matcher)
+	loadIgnoreFS(a.fsys, a.entry.Path(), rel, a.matcher, a.out)
+	if a.needMeta {
+		mergeIgnoreSources(&a.out.sources, a.matcher.Sources())
+	}
+	for len(*a.snaps) <= a.entry.Depth() {
+		*a.snaps = append(*a.snaps, nil)
+	}
+	(*a.snaps)[a.entry.Depth()] = a.matcher.Engine().Clone()
+	*a.last = a.entry.Depth()
+}
+
+func recordFSFile(a considerFSArgs, rel string, size *uint64, selected, total *uint64) {
+	if !emitSelected(a.out, rel) {
+		return
+	}
+	if !a.needMeta {
+		*selected++
+		return
+	}
+	var n uint64
+	if size != nil {
+		n = *size
+	}
+	if oversized(a.opts, n) {
+		if a.opts.RecordSkipped {
+			a.out.skipped = append(a.out.skipped, Skipped{Relative: rel, Kind: selection.SkipOversized})
+		}
+		return
+	}
+	a.out.candidates = append(a.out.candidates, candidate{abs: a.entry.Path(), rel: rel, size: n})
+	*selected++
+	*total += n
+}
+
+func loadIgnoreFS(fsys fs.FS, dir, base string, matcher *selection.Matcher, out *discovery) {
+	cfg := matcher.Config()
+	for _, name := range cfg.IgnoreFiles {
+		body, err := fs.ReadFile(fsys, joinFSPath(dir, name))
+		if err != nil {
+			continue
+		}
+		noteIgnoreWarns(out, base, matcher.LoadBytes(base, name, body))
+	}
+	if !cfg.GitModules {
+		return
+	}
+	body, err := fs.ReadFile(fsys, joinFSPath(dir, ".gitmodules"))
+	if err == nil {
+		noteIgnoreWarns(out, base, matcher.LoadBytes(base, ".gitmodules", body))
+	}
+}
+
+func noteIgnoreWarns(out *discovery, rel string, warns []string) {
+	for _, msg := range warns {
+		out.warnings = append(out.warnings, Warning{Relative: rel, Message: msg})
+		out.complete = false
+	}
+}
+
+func virtualSelect(opts Options, needMeta bool) selection.Config {
+	cfg := selectionConfig(opts, opts.Walk, needMeta)
+	p := cfg.IgnorePolicy
+	if !p.Specified() {
+		p = ignore.RepositoryPolicy()
+	}
+	p.GitGlobal, p.GitExclude, p.ParentRules, p.ExplicitFiles = false, false, false, nil
+	cfg.IgnorePolicy, cfg.FollowLinks = p, false
+	return cfg
+}
+
+func fsFileSize(entry *walkfs.Entry) *uint64 {
+	if entry == nil || !entry.IsFile() {
+		return nil
+	}
+	info, err := entry.Info()
+	if err != nil {
+		return nil
+	}
+	n := uint64(info.Size())
+	return &n
+}
+
+func joinFSPath(dir, name string) string {
+	if dir == "." || dir == "" {
+		return name
+	}
+	return dir + "/" + name
 }

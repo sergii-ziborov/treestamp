@@ -46,7 +46,8 @@
     {
       "id": "B07",
       "class": "full_and_compact_reports",
-      "status": "MEASURED"
+      "status": "MEASURED",
+      "note": "First official campaign timed ScanWith only. The harness now calls Scan then ScanCompact. Do not rewrite official-benches.json without a new host run."
     },
     {
       "id": "B08",
@@ -62,12 +63,13 @@
       "id": "B10",
       "class": "incremental_lifecycle",
       "status": "MEASURED",
-      "note": "N=10k/100k/1M, k=0/1/10/100/1%/bulk. Compare each quiescent batch to a full rescan. Incremental is not wholly O(k): retained N records and revision still cost."
+      "note": "First official campaign reused a cache with no tree mutation. The harness now mutates one file before ScanCached. N=10k/100k/1M, k=0/1/10/100/1%/bulk still need a dedicated host. Incremental is not wholly O(k)."
     },
     {
       "id": "B11",
       "class": "multi_root",
-      "status": "MEASURED"
+      "status": "MEASURED",
+      "note": "First official campaign timed one root. The harness now adds a second root. Do not rewrite official-benches.json without a new host run."
     },
     {
       "id": "B12",

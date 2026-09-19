@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/sergii-ziborov/treestamp/internal/hashx"
 	"github.com/sergii-ziborov/treestamp/internal/ignore"
 	pathx "github.com/sergii-ziborov/treestamp/internal/path"
 	"github.com/sergii-ziborov/treestamp/internal/platform"
@@ -199,6 +200,7 @@ func NewSelectionMatcher(root string, opts Options) (*SelectionMatcher, error) {
 var (
 	SkipDir         = fs.SkipDir
 	SkipAll         = fs.SkipAll
+	SkipThis        = walk.ErrSkipThis
 	ErrSkipFiles    = walk.ErrSkipFiles
 	ErrAdmitTimeout = runtime.ErrAdmitTimeout
 	// ErrTraverseLink requests traversal of the callback's directory symlink.
@@ -329,6 +331,26 @@ type MultiScanReport struct{ Reports []*ScanReport }
 
 func (r MultiScanReport) Len() int      { return len(r.Reports) }
 func (r MultiScanReport) IsEmpty() bool { return len(r.Reports) == 0 }
+
+// Revision is one digest over the ordered roots. It does not merge file lists.
+func (r MultiScanReport) Revision() string {
+	h := hashx.New()
+	_, _ = h.Write([]byte("multi-scan-revision\x01"))
+	for _, rep := range r.Reports {
+		root, rev, complete := "", "", byte(0)
+		if rep != nil {
+			root, rev = rep.Root, rep.Revision
+			if rep.Complete {
+				complete = 1
+			}
+		}
+		_, _ = h.Write([]byte(root))
+		_, _ = h.Write([]byte{0})
+		_, _ = h.Write([]byte(rev))
+		_, _ = h.Write([]byte{0, complete, 0xfe})
+	}
+	return hashx.Finish(h)
+}
 
 type MultiScanner struct {
 	roots           []string

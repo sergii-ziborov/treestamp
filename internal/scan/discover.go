@@ -7,8 +7,10 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/sergii-ziborov/treestamp/internal/dirread"
 	"github.com/sergii-ziborov/treestamp/internal/ignore"
 	pathx "github.com/sergii-ziborov/treestamp/internal/path"
+	"github.com/sergii-ziborov/treestamp/internal/runtime"
 	"github.com/sergii-ziborov/treestamp/internal/selection"
 	"github.com/sergii-ziborov/treestamp/internal/walk"
 )
@@ -114,6 +116,9 @@ func openDiscovery(root string, opts Options, needMeta bool) (*walk.Walker, *sel
 	if needMeta {
 		walkOpts.CollectMetadata = true
 	}
+	if opts.TraversalWorkers > 0 && (walkOpts.MaxOpen == 0 || walkOpts.MaxOpen == walk.DefaultMaxOpen) {
+		walkOpts.MaxOpen = opts.TraversalWorkers
+	}
 	walker, err := walk.NewWithOptions(abs, walkOpts)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -131,7 +136,7 @@ func selectionConfig(opts Options, walkOpts walk.WalkOptions, needMeta bool) sel
 	return selection.Config{
 		IgnoreFiles: opts.IgnoreFiles, IgnoreCase: opts.IgnoreCase, IgnorePolicy: opts.IgnorePolicy,
 		OverrideRules: opts.OverrideRules, Extensions: opts.Extensions, FileTypes: opts.FileTypes,
-		SkipHidden: opts.SkipHidden, StandardSkips: opts.StandardSkips, GitModules: opts.GitModules,
+		SkipHidden: opts.SkipHidden, StandardSkips: opts.StandardSkips, VCSSkips: opts.VCSSkips, GitModules: opts.GitModules,
 		Filters:       opts.Filters,
 		MaxFileBytes:  opts.MaxFileBytes,
 		ApplyMaxBytes: needMeta, MinDepth: walkOpts.MinDepth, MaxDepth: walkOpts.MaxDepth,
@@ -339,6 +344,11 @@ func (w *listWalker) visitFiles(rel string, dents []os.DirEntry) {
 		if !w.keepFile(fileRel, name, isFile, symlink) {
 			continue
 		}
+		if stopped, term := limitsHit(w.opts, w.picked, 0); stopped {
+			w.out.term = term
+			w.out.complete = false
+			return
+		}
 		if !emitSelected(w.out, fileRel) {
 			return
 		}
@@ -405,14 +415,11 @@ func (w *listWalker) noteListed(abs, rel string, dents []os.DirEntry) {
 }
 
 func dentKind(dent os.DirEntry) (isDir, isFile, symlink bool) {
-	mode := dent.Type()
-	if mode == 0 {
-		if info, err := dent.Info(); err == nil {
-			mode = info.Mode()
-		}
+	mode, err := dirread.ModeOf(dent)
+	if err != nil {
+		return false, false, false
 	}
-	symlink = mode&os.ModeSymlink != 0
-	return !symlink && mode.IsDir(), !symlink && mode.IsRegular(), symlink
+	return dirread.Kind(mode)
 }
 
 func joinChild(dir, name string) string {
@@ -422,11 +429,15 @@ func joinChild(dir, name string) string {
 	return dir + string(os.PathSeparator) + name
 }
 
+func scanTimedOut(opts Options) bool {
+	return opts.Limits.Timeout > 0 && !opts.Started.IsZero() && time.Since(opts.Started) >= opts.Limits.Timeout
+}
+
 func limitsHit(opts Options, selected, total uint64) (bool, Termination) {
 	if opts.Cancel != nil && opts.Cancel.Cancelled() {
 		return true, TermCancelled
 	}
-	if opts.Limits.Timeout > 0 && !opts.Started.IsZero() && time.Since(opts.Started) >= opts.Limits.Timeout {
+	if scanTimedOut(opts) {
 		return true, TermTimeout
 	}
 	if opts.Limits.MaxEntries != nil && selected >= *opts.Limits.MaxEntries {
@@ -451,3 +462,80 @@ var errNotDir = errText("scan root must be a directory")
 type errText string
 
 func (e errText) Error() string { return string(e) }
+
+const inspectLeaseBytes int64 = 64 * 1024
+
+func inspectBudgeted(ctx context.Context, files []candidate, workers int, admit time.Duration, runOne func(candidate) inspectResult) ([]ScannedFile, []Skipped, CacheStats, error) {
+	rt := runtime.Dedicated(workers).WithAdmitTimeout(admit)
+	budget := runtime.NewBudget(runtime.DefaultLimits(workers))
+	defer budget.Close()
+	ch := make(chan candidate)
+	res := make(chan inspectResult, workers)
+	grp := rt.Group()
+	for i := 0; i < workers; i++ {
+		grp.Go(inspectWorker(ctx, ch, res, budget, runOne))
+	}
+	go feedInspect(ctx, ch, files)
+	waitErr := make(chan error, 1)
+	go func() {
+		waitErr <- grp.Wait()
+		close(res)
+	}()
+	out, skipped, stats, err := collectInspect(ctx, budget, res)
+	if werr := <-waitErr; err == nil {
+		err = werr
+	}
+	return out, skipped, stats, err
+}
+
+func inspectWorker(ctx context.Context, ch <-chan candidate, res chan<- inspectResult, budget *runtime.Budget, runOne func(candidate) inspectResult) func() error {
+	return func() error {
+		for c := range ch {
+			if err := budget.HoldReady(ctx, inspectLeaseBytes); err != nil {
+				return err
+			}
+			item := runOne(c)
+			item.lease = inspectLeaseBytes
+			res <- item
+		}
+		return nil
+	}
+}
+
+func feedInspect(ctx context.Context, ch chan<- candidate, files []candidate) {
+	defer close(ch)
+	for _, c := range files {
+		select {
+		case <-ctx.Done():
+			return
+		case ch <- c:
+		}
+	}
+}
+
+func collectInspect(ctx context.Context, budget *runtime.Budget, res <-chan inspectResult) ([]ScannedFile, []Skipped, CacheStats, error) {
+	var out []ScannedFile
+	var skipped []Skipped
+	var stats CacheStats
+	var first error
+	for item := range res {
+		budget.DropReady(item.lease)
+		if item.err != nil {
+			if first == nil {
+				first = item.err
+			}
+			continue
+		}
+		if first != nil {
+			continue
+		}
+		applyInspectResult(inspectOut{files: &out, skipped: &skipped, stats: &stats}, item, false)
+	}
+	if first != nil {
+		return out, skipped, stats, first
+	}
+	if err := ctx.Err(); err != nil {
+		return out, skipped, stats, err
+	}
+	return out, skipped, stats, nil
+}

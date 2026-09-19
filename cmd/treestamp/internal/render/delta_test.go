@@ -32,4 +32,8 @@ func TestDeltaLinesAndNull(t *testing.T) {
 	if !bytes.Contains(buf.Bytes(), []byte("new.go\x00")) {
 		t.Fatalf("%q", buf.Bytes())
 	}
+	paths := d.Paths()
+	if len(paths) != 5 || paths[0] != "new.go" || paths[3] != "old.go" || paths[4] != "ren.go" {
+		t.Fatalf("paths %q", paths)
+	}
 }

@@ -84,6 +84,13 @@ func NewEngine(ignoreFiles []string, caseInsensitive bool, overrides []string) *
 	return eng
 }
 
+// SetPolicy records ignore-source flags without reading OS policy files.
+func (e *Engine) SetPolicy(policy Policy) {
+	if e != nil {
+		e.policy = policy
+	}
+}
+
 func (e *Engine) SetGitModules(enabled bool) {
 	if e != nil {
 		e.gitModules = enabled
@@ -178,6 +185,27 @@ func (e *Engine) loadFile(path, base, prefix, location string, rank int, kind So
 	if err != nil {
 		return []string{err.Error()}
 	}
+	return e.applyRules(base, prefix, location, rank, kind, body)
+}
+
+// LoadBytes applies one ignore file already read from an fs.FS or test fixture.
+func (e *Engine) LoadBytes(base, location, name string, body []byte) []string {
+	if e == nil {
+		return nil
+	}
+	if name == ".gitmodules" {
+		if !e.gitModules {
+			return nil
+		}
+		return e.applyGitModules(base, body)
+	}
+	if !e.policy.Allows(name) {
+		return nil
+	}
+	return e.applyRules(base, "", location, rankFor(name), kindFor(name), body)
+}
+
+func (e *Engine) applyRules(base, prefix, location string, rank int, kind SourceKind, body []byte) []string {
 	rules, errs := parseFile(string(body), e.caseInsensitive)
 	if len(rules) > 0 {
 		e.layers[rank] = &layer{base: base, prefix: prefix, location: location, rules: rules, parent: e.layers[rank]}

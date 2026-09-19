@@ -10,7 +10,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	. "github.com/sergii-ziborov/treestamp"
 	"github.com/sergii-ziborov/treestamp/internal/walk"
@@ -469,4 +471,114 @@ func TestToScanOptionsKeepsWalkFollowWhenMaxOpenZero(t *testing.T) {
 		t.Fatalf("%+v", report.Files)
 	}
 	_ = walk.DefaultMaxOpen
+}
+
+func TestScanPathsMaxEntriesKeepsPrefix(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "a.go"), "package a\n")
+	mustWriteFile(t, filepath.Join(root, "b.go"), "package b\n")
+	paths, err := ScanPathsWith(context.Background(), root, Using(DefaultOptions().WithMaxEntries(1)))
+	if !errors.Is(err, ErrPartial) || len(paths) != 1 {
+		t.Fatalf("%v %v", paths, err)
+	}
+	paths, err = ScanPathsWith(context.Background(), root, Using(DefaultOptions().WithMaxEntries(0)))
+	if !errors.Is(err, ErrPartial) || len(paths) != 0 {
+		t.Fatalf("zero %v %v", paths, err)
+	}
+}
+
+func TestWalkParallelFirstError(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "a.txt"), "a")
+	mustWriteFile(t, filepath.Join(root, "b.txt"), "b")
+	err := WalkParallel(root, 2, func(e *WalkEntry) error {
+		if e.IsDir() {
+			return nil
+		}
+		return errors.New("boom")
+	})
+	if err == nil || err.Error() != "boom" {
+		t.Fatal(err)
+	}
+}
+
+func TestVisitStreamingUsesWorkerIndex(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "a.txt"), "a")
+	opts := DefaultOptions()
+	opts.ContentWorkers = 2
+	s, err := NewScanner(root, WithOptions(opts))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var workers []int
+	rep, err := s.VisitContentStreaming(context.Background(), func(id int) ContentVisitor {
+		workers = append(workers, id)
+		return func(ContentVisitEvent) ContentVisitControl { return ContentVisitContinue }
+	})
+	if err != nil || rep.Revision != "" {
+		t.Fatalf("%+v %v", rep, err)
+	}
+	if len(workers) != 2 || workers[0] != 0 || workers[1] != 1 {
+		t.Fatalf("workers %v", workers)
+	}
+}
+
+func TestWalkDirsKeepsEntriesAndOrder(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "b.txt"), "b")
+	mustWriteFile(t, filepath.Join(root, "a.txt"), "a")
+	mustMkdir(t, filepath.Join(root, "m"))
+	mustWriteFile(t, filepath.Join(root, "m", "z.txt"), "z")
+	var saved []fs.DirEntry
+	var names []string
+	err := WalkDirs(root, DirWalkOptions{Callback: func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d == nil {
+			return err
+		}
+		saved = append(saved, d)
+		rel, _ := filepath.Rel(root, path)
+		if rel != "." {
+			names = append(names, filepath.ToSlash(rel))
+		}
+		return nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"a.txt", "b.txt", "m", "m/z.txt"}
+	if strings.Join(names, ",") != strings.Join(want, ",") {
+		t.Fatalf("%q", names)
+	}
+	for _, d := range saved {
+		if d.Name() == "" {
+			t.Fatal("cleared")
+		}
+	}
+}
+
+func TestWalkDirsUnsortedStaysSerial(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"a.txt", "b.txt", "c.txt", "d.txt"} {
+		mustWriteFile(t, filepath.Join(root, name), name)
+	}
+	var cur, max atomic.Int32
+	err := WalkDirs(root, DirWalkOptions{Unsorted: true, Callback: func(string, fs.DirEntry, error) error {
+		n := cur.Add(1)
+		for {
+			old := max.Load()
+			if n <= old || max.CompareAndSwap(old, n) {
+				break
+			}
+		}
+		time.Sleep(15 * time.Millisecond)
+		cur.Add(-1)
+		return nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if max.Load() != 1 {
+		t.Fatalf("overlap %d", max.Load())
+	}
 }

@@ -54,6 +54,34 @@ func WalkFS(fsys fs.FS, root string, fn fs.WalkDirFunc) error {
 	return walkfs.Walk(fsys, root, fn)
 }
 
+// ScanFS is ScanWith over an fs.FS. Walk is lexical and does not follow
+// symlinks. Native identity, ConfineAt, and cache reuse do not apply.
+func ScanFS(ctx context.Context, fsys fs.FS, root string, opts ...Option) (*ScanReport, error) {
+	p, err := Compile(opts...)
+	if err != nil {
+		return nil, err
+	}
+	return p.ScanFS(ctx, fsys, root)
+}
+
+// ScanPathsFS is ScanPathsWith over an fs.FS. Content options are rejected.
+func ScanPathsFS(ctx context.Context, fsys fs.FS, root string, opts ...Option) ([]string, error) {
+	p, err := Compile(opts...)
+	if err != nil {
+		return nil, err
+	}
+	return p.ScanPathsFS(ctx, fsys, root)
+}
+
+// EachFileFS is EachFile over an fs.FS. A callback error is not replayed.
+func EachFileFS(ctx context.Context, fsys fs.FS, root string, consume func(ScannedFile, []byte) error, opts ...Option) (*ScanSummary, error) {
+	p, err := Compile(opts...)
+	if err != nil {
+		return nil, err
+	}
+	return p.EachFileFS(ctx, fsys, root, consume)
+}
+
 // MinimumScratchBufferSize is the reusable getdents buffer floor.
 // It is the page size on Unix and 0 on Windows.
 func MinimumScratchBufferSize() int { return dirread.MinimumScratch() }
@@ -122,7 +150,7 @@ func (s *DirScanner) Close() error { return s.Err() }
 // ErrTerminateWalk is returned when FileWalker.Terminate stops a walk.
 var ErrTerminateWalk = errors.New("treestamp terminated")
 
-var errPostChildrenUnsupported = errors.New("PostChildrenCallback requires NumWorkers=0 and FollowSymbolicLinks=false")
+var errPostChildrenUnsupported = errors.New("PostChildrenCallback requires NumWorkers=0")
 
 // Filters is the public declarative name/dir/regex filter set.
 type Filters = selection.Filters
@@ -164,40 +192,77 @@ type DirWalkOptions struct {
 	FollowSymbolicLinks  bool
 	ContentsFirst        bool
 	DirsFirst            bool
+	AllowNonDirectory    bool
 	NumWorkers           int
 	ToSlash              bool
+	ScratchBuffer        []byte
 }
 
 func WalkDirs(root string, opts DirWalkOptions) error {
-	fn := opts.Callback
-	if opts.ErrorCallback != nil {
-		inner := fn
-		fn = func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return opts.ErrorCallback(path, err)
-			}
-			if inner == nil {
-				return nil
-			}
-			return inner(path, d, err)
-		}
+	fn := dirWalkCallback(opts)
+	if fn == nil {
+		fn = func(string, fs.DirEntry, error) error { return nil }
 	}
-	if opts.PostChildrenCallback != nil {
-		if opts.NumWorkers != 0 || opts.FollowSymbolicLinks {
+	if opts.NumWorkers != 0 {
+		if opts.PostChildrenCallback != nil {
 			return errPostChildrenUnsupported
 		}
-		return walk.WalkCallbackHooks(root, fn, opts.PostChildrenCallback, opts.ToSlash, opts.ContentsFirst)
+		return WalkWithConfig(root, Config{
+			Follow: opts.FollowSymbolicLinks, ToSlash: opts.ToSlash,
+			ContentsFirst: opts.ContentsFirst, DirsFirst: opts.DirsFirst,
+			NumWorkers: opts.NumWorkers,
+		}, fn)
 	}
-	cfg := Config{
-		Follow: opts.FollowSymbolicLinks, ToSlash: opts.ToSlash,
-		ContentsFirst: opts.ContentsFirst, DirsFirst: opts.DirsFirst,
+	return walk.WalkCallbackHooks(root, fn, walk.CallbackOptions{
+		After: dirWalkAfter(opts), ToSlash: opts.ToSlash, ContentsFirst: opts.ContentsFirst,
+		Sort: !opts.Unsorted, Follow: opts.FollowSymbolicLinks, Scratch: opts.ScratchBuffer,
+		RequireDirectory: !opts.AllowNonDirectory,
+	})
+}
+
+func dirWalkCallback(opts DirWalkOptions) WalkDirFunc {
+	fn := opts.Callback
+	return func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return applyWalkError(opts.ErrorCallback, path, err)
+		}
+		if fn == nil {
+			return nil
+		}
+		return applyWalkError(opts.ErrorCallback, path, fn(path, d, nil))
 	}
-	if opts.Unsorted {
-		cfg.NumWorkers = -1
-	} else if opts.NumWorkers != 0 {
-		cfg.NumWorkers = opts.NumWorkers
+}
+
+func dirWalkAfter(opts DirWalkOptions) WalkDirFunc {
+	fn := opts.PostChildrenCallback
+	if fn == nil {
+		return nil
 	}
-	return WalkWithConfig(root, cfg, fn)
+	return func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return applyWalkError(opts.ErrorCallback, path, err)
+		}
+		return applyWalkError(opts.ErrorCallback, path, fn(path, d, nil))
+	}
+}
+
+func applyWalkError(policy func(string, error) error, path string, err error) error {
+	if err == nil || isWalkControl(err) {
+		return err
+	}
+	if policy == nil {
+		return err
+	}
+	if next := policy(path, err); next == nil {
+		return nil
+	} else {
+		return next
+	}
+}
+
+func isWalkControl(err error) bool {
+	return errors.Is(err, fs.SkipDir) || errors.Is(err, fs.SkipAll) || errors.Is(err, SkipThis) ||
+		errors.Is(err, ErrSkipFiles) || errors.Is(err, ErrTraverseLink)
 }
 
 func CompileFilters(includeNames, excludeNames, includeDirs, excludeDirs []string, includeNameRE, excludeNameRE, includeDirRE, excludeDirRE []string) (Filters, error) {

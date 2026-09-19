@@ -112,9 +112,11 @@ walk.
 
 Default `--profile repo` is the source profile: gitignore applies,
 binaries are skipped, files over 1.5MiB are skipped. `--profile artifact`
-hashes every selected file, including binaries and large files, and does
-not read gitignore. Standard skips stay. The name is stored on the
-manifest so `verify` restores it. This is not a hashdeep digest list.
+hashes every selected file, including binaries, large files, and
+generated directories such as `node_modules`. It does not read gitignore.
+VCS directories still stay out. The stored name is `artifact-v2`.
+`artifact-v1` snapshots keep the older generated-directory skips.
+This is not a hashdeep digest list.
 
 ## Explain a skip with the same policy
 
@@ -149,9 +151,9 @@ relative path.
 | `--ext` | Extension filter. Dots are optional. |
 | `--json` | One versioned document on stdout. |
 | `--output FILE` | Atomic write. File must be outside the scan root. |
-| `--null` | `paths`: exact names, NUL separated. `verify` / `diff`: one changed-path record per NUL. |
+| `--null` | `paths`: exact names, NUL separated. `verify` / `diff`: raw changed paths, NUL separated. |
 | `--absolute` | `paths` only. Print absolute paths. |
-| `--profile` | `repo` (default) or `artifact`. Artifact hashes binaries and ignores gitignore. |
+| `--profile` | `repo` (default) or `artifact` (`artifact-v2`). Artifact hashes binaries and ignores gitignore; VCS dirs stay skipped. |
 | `--metadata-only` | `scan` only. No content hashes; `verify` will refuse. Invalid with `--profile artifact`. |
 | `--color` | `auto`, `always`, or `never`. `NO_COLOR` wins. |
 

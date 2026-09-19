@@ -1,20 +1,25 @@
 package scan
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"hash"
+	"io"
+	"io/fs"
 	"path/filepath"
 	"sort"
 	"time"
 
 	"github.com/sergii-ziborov/treestamp/internal/filetypes"
+	"github.com/sergii-ziborov/treestamp/internal/hashx"
 	"github.com/sergii-ziborov/treestamp/internal/ignore"
 	"github.com/sergii-ziborov/treestamp/internal/runtime"
 	"github.com/sergii-ziborov/treestamp/internal/selection"
 	"github.com/sergii-ziborov/treestamp/internal/walk"
 )
 
-const DescriptorVersion uint32 = 2
-const CacheFormatVersion uint32 = 2
+const DescriptorVersion, CacheFormatVersion uint32 = 2, 2
 
 type Options struct {
 	MaxFileBytes      uint64
@@ -26,6 +31,7 @@ type Options struct {
 	IgnoreCase        bool
 	SkipHidden        bool
 	StandardSkips     bool
+	VCSSkips          bool
 	GitModules        bool
 	Filters           selection.Filters
 	HashFileContents  bool
@@ -48,9 +54,8 @@ type Options struct {
 }
 
 type Limits struct {
-	MaxEntries    *uint64
-	MaxTotalBytes *uint64
-	Timeout       time.Duration
+	MaxEntries, MaxTotalBytes *uint64
+	Timeout                   time.Duration
 }
 
 type CacheValidation int
@@ -268,19 +273,17 @@ func (c *Cache) Invalidate(relatives []string) int {
 }
 
 func Paths(ctx context.Context, root string, opts Options) ([]string, error) {
+	opts.ensureStarted()
 	discovered, err := discover(ctx, root, pathOpts(opts), false)
 	if err != nil {
 		return nil, err
 	}
-	if err := pathTermErr(ctx, discovered); err != nil {
-		return nil, err
-	}
 	sort.Strings(discovered.paths)
-	return discovered.paths, nil
+	return discovered.paths, pathTermErr(ctx, discovered)
 }
 
-// StreamPaths emits selected relatives during discovery instead of buffering them.
 func StreamPaths(ctx context.Context, root string, opts Options, emit func(string) error) error {
+	opts.ensureStarted()
 	sel := pathOpts(opts)
 	sel.emitPath = emit
 	if emit == nil {
@@ -296,6 +299,8 @@ func StreamPaths(ctx context.Context, root string, opts Options, emit func(strin
 	return pathTermErr(ctx, discovered)
 }
 
+var ErrIncomplete = errText("incomplete selected work")
+
 func pathOpts(opts Options) Options {
 	sel := opts
 	sel.HashFileContents, sel.DetectBinary, sel.RecordSkipped = false, false, false
@@ -304,26 +309,31 @@ func pathOpts(opts Options) Options {
 	return sel
 }
 
-func pathTermErr(ctx context.Context, discovered *discovery) error {
-	if discovered == nil {
+func pathTermErr(ctx context.Context, d *discovery) error {
+	if d == nil {
 		return nil
 	}
-	if discovered.term == TermCancelled {
+	if d.term == TermCancelled || d.term == TermTimeout {
 		if err := ctx.Err(); err != nil {
 			return err
+		}
+		if d.term == TermTimeout {
+			return context.DeadlineExceeded
 		}
 		return context.Canceled
 	}
-	if discovered.term == TermTimeout {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		return context.DeadlineExceeded
+	if d.term != TermNone || !d.complete {
+		return ErrIncomplete
 	}
 	return nil
 }
 
+func (o *Options) ensureStarted() {
+	if o != nil && o.Started.IsZero() { o.Started = time.Now() }
+}
+
 func Full(ctx context.Context, root string, opts Options) (*Report, error) {
+	opts.ensureStarted()
 	discovered, err := discover(ctx, root, opts, true)
 	if err != nil {
 		return nil, err
@@ -345,6 +355,7 @@ func Full(ctx context.Context, root string, opts Options) (*Report, error) {
 }
 
 func Compact(ctx context.Context, root string, opts Options) (*CompactReport, error) {
+	opts.ensureStarted()
 	discovered, err := discover(ctx, root, opts, true)
 	if err != nil {
 		return nil, err
@@ -417,4 +428,172 @@ func dropBadCache(opts *Options) bool {
 		return true
 	}
 	return false
+}
+
+type readCap struct {
+	n    uint64
+	on   bool
+	kind selection.SkipKind
+}
+
+func contentBudget(size uint64, opts Options) readCap {
+	if opts.MaxFileBytesZero {
+		return readCap{on: true, kind: selection.SkipOversized}
+	}
+	if size > 0 {
+		if opts.MaxFileBytes > 0 && size > opts.MaxFileBytes {
+			return readCap{n: opts.MaxFileBytes, on: true, kind: selection.SkipOversized}
+		}
+		return readCap{n: size, on: true, kind: selection.SkipConcurrentModification}
+	}
+	if opts.MaxFileBytes > 0 {
+		return readCap{n: opts.MaxFileBytes, on: true, kind: selection.SkipOversized}
+	}
+	return readCap{}
+}
+
+func readBudgeted(r io.Reader, buf []byte, read uint64, capn readCap, rel string) ([]byte, *Skipped, bool, error) {
+	if capn.on && read >= capn.n {
+		return peekOver(r, capn, rel)
+	}
+	toRead := len(buf)
+	if capn.on && capn.n-read < uint64(toRead) {
+		toRead = int(capn.n - read)
+	}
+	n, err := r.Read(buf[:toRead])
+	var chunk []byte
+	if n > 0 {
+		chunk = buf[:n]
+	}
+	if err == io.EOF {
+		return chunk, nil, true, nil
+	}
+	if err != nil {
+		return nil, &Skipped{Relative: rel, Kind: selection.SkipIOError, Detail: err.Error()}, true, nil
+	}
+	return chunk, nil, false, nil
+}
+
+func peekOver(r io.Reader, capn readCap, rel string) ([]byte, *Skipped, bool, error) {
+	var one [1]byte
+	n, err := r.Read(one[:])
+	if n > 0 {
+		return nil, &Skipped{Relative: rel, Kind: capn.kind}, true, nil
+	}
+	if err == io.EOF || err == nil {
+		return nil, nil, true, nil
+	}
+	return nil, &Skipped{Relative: rel, Kind: selection.SkipIOError, Detail: err.Error()}, true, nil
+}
+
+func hashReader(ctx context.Context, r io.Reader, c candidate, opts Options, file ScannedFile, keep bool) (ScannedFile, []byte, *Skipped, CacheStats, error) {
+	st := newHashState(opts)
+	for {
+		if ctx != nil {
+			if err := ctx.Err(); err != nil {
+				return file, st.owned, nil, CacheStats{ContentReads: 1}, err
+			}
+		}
+		if scanTimedOut(opts) {
+			return file, st.owned, nil, CacheStats{ContentReads: 1}, context.DeadlineExceeded
+		}
+		chunk, skip, done, err := readBudgeted(r, st.buf, st.read, contentBudget(c.size, opts), c.rel)
+		if skip != nil || err != nil {
+			return file, st.owned, skip, CacheStats{ContentReads: 1}, err
+		}
+		if skip := st.add(chunk, opts, c.rel, keep); skip != nil {
+			return file, nil, skip, CacheStats{ContentReads: 1}, nil
+		}
+		if done || st.earlyStop(opts, keep) {
+			break
+		}
+	}
+	if opts.ContentValidation == ContentStrict && c.size > 0 && st.read < c.size {
+		return file, st.owned, &Skipped{Relative: c.rel, Kind: selection.SkipConcurrentModification}, CacheStats{ContentReads: 1}, nil
+	}
+	return st.finish(file, opts, keep)
+}
+
+type hashState struct {
+	h          hash.Hash
+	fp         hashx.ContentFingerprint
+	needFP     bool
+	buf, owned []byte
+	read       uint64
+}
+
+func newHashState(opts Options) *hashState {
+	st := &hashState{buf: make([]byte, 64*1024), needFP: opts.HashFileContents || opts.CacheValidation == CacheStrict, fp: hashx.NewContentFingerprint()}
+	if opts.HashFileContents {
+		st.h = sha256.New()
+	}
+	return st
+}
+
+func (st *hashState) add(chunk []byte, opts Options, rel string, keep bool) *Skipped {
+	if len(chunk) == 0 {
+		return nil
+	}
+	if opts.DetectBinary && bytes.IndexByte(chunk, 0) >= 0 {
+		return &Skipped{Relative: rel, Kind: selection.SkipBinary}
+	}
+	if st.h != nil {
+		_, _ = st.h.Write(chunk)
+	}
+	if st.needFP {
+		st.fp.Write(chunk)
+	}
+	if keep {
+		st.owned = append(st.owned, chunk...)
+	}
+	st.read += uint64(len(chunk))
+	return nil
+}
+
+func (st *hashState) earlyStop(opts Options, keep bool) bool {
+	return !keep && !opts.HashFileContents && st.read >= 8*1024
+}
+
+func (st *hashState) finish(file ScannedFile, opts Options, keep bool) (ScannedFile, []byte, *Skipped, CacheStats, error) {
+	if st.h != nil {
+		file.ContentHash = hashx.Finish(st.h)
+	}
+	if st.needFP {
+		file.ContentFingerprint = st.fp.Finish()
+	}
+	file.BinaryChecked = opts.DetectBinary
+	if keep && st.owned == nil {
+		st.owned = []byte{}
+	}
+	return file, st.owned, nil, CacheStats{ContentReads: 1}, nil
+}
+
+func FullFS(ctx context.Context, fsys fs.FS, root string, opts Options) (*Report, error) {
+	opts.ensureStarted()
+	discovered, err := discoverFS(ctx, fsys, root, opts, true)
+	if err != nil {
+		return nil, err
+	}
+	opts.Root, opts.Cache = "", nil
+	files, extraSkip, stats, err := inspectFS(ctx, fsys, discovered.candidates, opts)
+	if err != nil {
+		return nil, err
+	}
+	report := &Report{
+		Root: discovered.root, Files: files, Skipped: append(discovered.skipped, extraSkip...),
+		Warnings: discovered.warnings, IgnoreSources: discovered.sources, Complete: discovered.complete,
+		Termination: discovered.term, Portable: true, Cache: stats,
+	}
+	finalize(report, opts)
+	return report, nil
+}
+
+func PathsFS(ctx context.Context, fsys fs.FS, root string, opts Options) ([]string, error) {
+	opts.ensureStarted()
+	discovered, err := discoverFS(ctx, fsys, root, pathOpts(opts), false)
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(discovered.paths)
+	return discovered.paths, pathTermErr(ctx, discovered)
 }

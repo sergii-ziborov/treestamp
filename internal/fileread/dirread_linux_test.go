@@ -90,3 +90,33 @@ func TestDirScannerFIFO(t *testing.T) {
 	}
 	_ = os.Remove(fifo)
 }
+
+func TestNamesSkipRecordSlice(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	names, err := dirread.Names(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recs, err := dirread.Read(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != len(recs) {
+		t.Fatalf("names=%v recs=%+v", names, recs)
+	}
+	got := map[string]struct{}{}
+	for _, name := range names {
+		got[name] = struct{}{}
+	}
+	for _, rec := range recs {
+		if _, ok := got[rec.Name]; !ok {
+			t.Fatalf("missing %q in %v", rec.Name, names)
+		}
+	}
+}

@@ -173,7 +173,7 @@ func scanRows(sel policy.Select, man store.Manifest) []render.Row {
 	if sel.Output != "" {
 		rows = append(rows, render.Row{Key: "Revision", Value: man.Revisions.Legacy})
 	}
-	if man.Policy.Profile == policy.ProfileArtifact {
+	if man.Policy.Profile == policy.ProfileArtifact || man.Policy.Profile == policy.ProfileArtifactV1 {
 		rows = append(rows, render.Row{Key: "Profile", Value: policy.DisplayProfile(man.Policy.Profile)})
 	}
 	if sel.Output != "" && man.Observation.Complete && man.Summary.Failures == 0 {

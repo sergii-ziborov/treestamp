@@ -46,6 +46,17 @@ func (d Delta) Rows() []Row {
 	}
 }
 
+func (d Delta) Paths() []string {
+	out := make([]string, 0, len(d.Added)+len(d.Removed)+len(d.Changed)+2*len(d.Renames))
+	out = append(out, d.Added...)
+	out = append(out, d.Removed...)
+	out = append(out, d.Changed...)
+	for _, item := range d.Renames {
+		out = append(out, item.From, item.To)
+	}
+	return out
+}
+
 func (d Delta) Lines() []string {
 	out := make([]string, 0, len(d.Added)+len(d.Removed)+len(d.Changed)+len(d.Renames))
 	for _, path := range d.Added {

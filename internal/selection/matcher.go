@@ -80,6 +80,8 @@ var standardDirs = map[string]struct{}{
 	"target": {}, "vendor": {},
 }
 
+var vcsDirs = map[string]struct{}{".git": {}, ".hg": {}, ".svn": {}}
+
 type Config struct {
 	IgnoreFiles   []string
 	IgnoreCase    bool
@@ -89,6 +91,7 @@ type Config struct {
 	FileTypes     *filetypes.NamedFileTypes
 	SkipHidden    bool
 	StandardSkips bool
+	VCSSkips      bool
 	GitModules    bool
 	MaxFileBytes  uint64
 	ApplyMaxBytes bool
@@ -146,6 +149,36 @@ func newMatcher(root string, cfg Config, loadRoot bool) (*Matcher, error) {
 		root: abs, engine: eng, cfg: cfg, plan: Compile(cfg), warnings: warns,
 		filtersEmpty: cfg.Filters.Empty(), idle: eng.Idle(), simple: simpleConfig(cfg),
 	}, nil
+}
+
+// NewVirtualMatcher matches slash-relative paths from an fs.FS.
+// It does not resolve the root on the OS or load git global/exclude files.
+func NewVirtualMatcher(root string, cfg Config) (*Matcher, error) {
+	if root == "" {
+		root = "."
+	}
+	eng := ignore.NewEngine(cfg.IgnoreFiles, cfg.IgnoreCase, cfg.OverrideRules)
+	eng.SetGitModules(cfg.GitModules)
+	if cfg.IgnorePolicy.Specified() {
+		eng.SetPolicy(cfg.IgnorePolicy)
+	}
+	return &Matcher{
+		root: root, engine: eng, cfg: cfg, plan: Compile(cfg),
+		filtersEmpty: cfg.Filters.Empty(), idle: eng.Idle(), simple: simpleConfig(cfg),
+	}, nil
+}
+
+func (m *Matcher) LoadBytes(base, name string, body []byte) []string {
+	if m == nil {
+		return nil
+	}
+	location := name
+	if base != "" {
+		location = base + "/" + name
+	}
+	warns := m.engine.LoadBytes(base, location, name, body)
+	m.idle = m.engine.Idle()
+	return warns
 }
 
 func simpleConfig(cfg Config) bool {
@@ -278,10 +311,8 @@ func (m *Matcher) KeepListedDir(rel, name string) (descend, fast bool) {
 	if m.cfg.SkipHidden && platform.HiddenName(name) && rel != "" {
 		return false, true
 	}
-	if m.cfg.StandardSkips {
-		if _, ok := standardDirs[name]; ok && rel != "" {
-			return false, true
-		}
+	if rel != "" && skipNamedDir(name, m.cfg) {
+		return false, true
 	}
 	return m.filtersEmpty || !m.cfg.Filters.rejectDir(rel, name, ""), true
 }
@@ -403,10 +434,8 @@ func (m *Matcher) decide(q PathQuery) Decision {
 	if m.cfg.SkipHidden && platform.HiddenName(q.Name) && q.Rel != "" {
 		return Decision{Disposition: Skipped, Skip: SkipHidden, Repo: ignore.MatchHidden}
 	}
-	if q.IsDir && m.cfg.StandardSkips {
-		if _, ok := standardDirs[q.Name]; ok && q.Rel != "" {
-			return Decision{Disposition: Skipped, Skip: SkipStandardDirectory}
-		}
+	if q.IsDir && q.Rel != "" && skipNamedDir(q.Name, m.cfg) {
+		return Decision{Disposition: Skipped, Skip: SkipStandardDirectory}
 	}
 	if m.rejectByFilter(q) {
 		return Decision{Disposition: Skipped, Skip: SkipIgnored, Repo: ignore.MatchNone}
@@ -510,4 +539,16 @@ func relativeDepth(rel string) int {
 		return 0
 	}
 	return strings.Count(rel, "/") + 1
+}
+
+func skipNamedDir(name string, cfg Config) bool {
+	if cfg.StandardSkips {
+		_, ok := standardDirs[name]
+		return ok
+	}
+	if cfg.VCSSkips {
+		_, ok := vcsDirs[name]
+		return ok
+	}
+	return false
 }

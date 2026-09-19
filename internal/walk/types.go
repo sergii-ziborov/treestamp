@@ -280,8 +280,12 @@ func (d *callbackDirEntry) Stat() (fs.FileInfo, error) {
 func (d *callbackDirEntry) Depth() int { return d.source.Depth() }
 
 func NewDirEntry(entry *WalkEntry) DirEntry {
-	entry.cb.source = entry
-	return &entry.cb
+	if entry == nil {
+		return nil
+	}
+	clone := *entry
+	clone.cb.source = &clone
+	return &clone.cb
 }
 
 func StatDirEntry(path string, entry fs.DirEntry) (fs.FileInfo, error) {
@@ -375,6 +379,17 @@ const (
 
 var ErrTraverseLink = errors.New("treestamp: traverse symlink target directory")
 var ErrSkipFiles = errors.New("skip remaining files in this directory")
+var ErrSkipThis = errors.New("skip this directory entry")
+
+type CallbackOptions struct {
+	After            fs.WalkDirFunc
+	ToSlash          bool
+	ContentsFirst    bool
+	Sort             bool
+	Follow           bool
+	Scratch          []byte
+	RequireDirectory bool
+}
 
 type WalkEvent struct {
 	Entry *WalkEntry
@@ -399,13 +414,15 @@ type WalkFunc func(*WalkEntry) error
 type ControlFunc func(WalkEvent) WalkControl
 
 func WalkCallback(root string, fn fs.WalkDirFunc, toSlash bool) error {
-	return WalkCallbackHooks(root, fn, nil, toSlash, false)
+	return WalkCallbackHooks(root, fn, CallbackOptions{ToSlash: toSlash})
 }
 
-func WalkCallbackHooks(root string, fn, post fs.WalkDirFunc, toSlash, contentsFirst bool) error {
+func WalkCallbackHooks(root string, fn fs.WalkDirFunc, opts CallbackOptions) error {
 	return listwalk.Walk(root, fn, listwalk.Config{
-		After: post, ToSlash: toSlash, ContentsFirst: contentsFirst,
-		SkipFiles: ErrSkipFiles, TraverseLink: ErrTraverseLink,
+		After: opts.After, ToSlash: opts.ToSlash, ContentsFirst: opts.ContentsFirst,
+		Sort: opts.Sort, Follow: opts.Follow, Scratch: opts.Scratch,
+		RequireDirectory: opts.RequireDirectory,
+		SkipFiles:        ErrSkipFiles, TraverseLink: ErrTraverseLink, SkipThis: ErrSkipThis,
 		OnLink: func(path, name string, depth int, ancestors []string) (bool, error) {
 			return traverseListed(root, path, name, depth, ancestors)
 		},
@@ -496,4 +513,28 @@ func chainHasID(root, dir string, id platform.Identity, depth int) (bool, *WalkE
 		dir = next
 	}
 	return false, nil
+}
+
+func (b *StatefulWalkBuilder[R, E]) BuildParallelOrdered(capacity int) (*ParallelStatefulWalker[E], error) {
+	if _, err := filepath.Abs(b.root); err != nil {
+		return nil, walkErr(b.root, 0, OpCanonicalize, err)
+	}
+	iter := NewParallelWalker(b.root).Options(b.options).WithParallelism(b.workers).IntoIterOrderedBounded(capacity)
+	process, state := b.process, b.rootState
+	return &ParallelStatefulWalker[E]{next: func() (*StatefulWalkEntry[E], error) {
+		entry, err := iter.Next()
+		if err != nil {
+			return nil, err
+		}
+		item := &StatefulWalkEntry[E]{Entry: entry, ReadChildren: entry.isDir && !entry.hasSkip()}
+		if process != nil {
+			batch := []StatefulResult[E]{{Entry: item}}
+			st := state
+			process(entry.depth, filepath.Dir(entry.path), &st, &batch)
+			if len(batch) > 0 && batch[0].Entry != nil {
+				item = batch[0].Entry
+			}
+		}
+		return item, nil
+	}, close: iter.Close}, nil
 }

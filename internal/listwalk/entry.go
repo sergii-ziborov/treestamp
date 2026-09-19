@@ -96,7 +96,17 @@ func Show(path string, toSlash bool) string {
 	return path
 }
 
-// Call invokes fn with the entry and no error.
+// Clone is a persistable copy. The caller may keep it after Release.
+func (e *Entry) Clone() *Entry {
+	if e == nil {
+		return nil
+	}
+	out := *e
+	out.info, out.stat = nil, nil
+	return &out
+}
+
+// Call invokes fn with a persistable entry and no error.
 func Call(fn fs.WalkDirFunc, entry *Entry, toSlash bool) error {
-	return fn(Show(entry.path, toSlash), entry, nil)
+	return fn(Show(entry.path, toSlash), entry.Clone(), nil)
 }

@@ -107,6 +107,8 @@ pull iterator. `Walk` / `WalkUnsorted` / `ReadDirents` / `DirScanner` are the Go
 callback surfaces. Their callback entries cache target `Stat` results and
 depth. `WalkFS` and `NewFSWalker` provide lexical, no-follow traversal for
 arbitrary `fs.FS` implementations without OS identity claims.
+`ScanFS` / `EachFileFS` / `ScanPathsFS` apply the same ignore and hash
+engine on that walk. Content reads stop at the discovered size.
 `DirScanner` and `ReadDirentsScratch` reuse an optional getdents buffer.
 
 ## Out of scope

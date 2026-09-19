@@ -5,14 +5,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"hash"
-	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
-	"time"
+	"sync"
+	"sync/atomic"
 
 	"github.com/sergii-ziborov/treestamp/internal/hashx"
-	"github.com/sergii-ziborov/treestamp/internal/runtime"
 	"github.com/sergii-ziborov/treestamp/internal/selection"
 )
 
@@ -93,6 +93,7 @@ type ContentVisitReport struct {
 }
 
 func VisitContent(ctx context.Context, root string, opts Options, mode ContentVisitMode, factory func(worker int) ContentVisitor) (*ContentVisitReport, error) {
+	opts.ensureStarted()
 	discovered, err := discover(ctx, root, opts, true)
 	if err != nil {
 		return nil, err
@@ -102,6 +103,7 @@ func VisitContent(ctx context.Context, root string, opts Options, mode ContentVi
 }
 
 func VisitChanged(ctx context.Context, root string, opts Options, plan WatchPlan, factory func(worker int) ContentVisitor) (*ContentVisitReport, error) {
+	opts.ensureStarted()
 	discovered, err := discoverChanged(ctx, root, opts, plan)
 	if err != nil {
 		return nil, err
@@ -136,14 +138,37 @@ func discoverChanged(ctx context.Context, root string, opts Options, plan WatchP
 }
 
 func runVisit(ctx context.Context, opts Options, mode ContentVisitMode, factory func(worker int) ContentVisitor, discovered *discovery) (*ContentVisitReport, error) {
-	visitor := factory(0)
 	report := newVisitReport(discovered, mode)
+	workers := opts.ContentWorkers
+	if workers < 1 {
+		workers = 1
+	}
 	var files []ScannedFile
+	retain := (*[]ScannedFile)(nil)
+	if mode == VisitRevision {
+		retain = &files
+	}
+	if workers == 1 {
+		runVisitLoop(ctx, report, discovered, opts, factory(0), retain)
+	} else {
+		runVisitParallel(ctx, report, discovered, opts, factory, workers, retain)
+	}
+	if mode == VisitRevision {
+		sort.Slice(files, func(i, j int) bool { return files[i].Relative < files[j].Relative })
+		attachVisitManifest(report, discovered, files, opts)
+	}
+	return report, nil
+}
+
+func runVisitLoop(ctx context.Context, report *ContentVisitReport, discovered *discovery, opts Options, visitor ContentVisitor, files *[]ScannedFile) {
 	for i, c := range discovered.candidates {
 		if err := ctx.Err(); err != nil {
-			report.Termination = TermCancelled
-			report.Complete = false
-			break
+			report.Termination, report.Complete = TermCancelled, false
+			return
+		}
+		if scanTimedOut(opts) {
+			report.Termination, report.Complete = TermTimeout, false
+			return
 		}
 		file := ContentFile{Sequence: uint64(i + 1), Root: discovered.root, Absolute: c.abs, Relative: c.rel, Bytes: c.size}
 		start := visitor(ContentVisitEvent{Kind: ContentFileStart, File: file})
@@ -153,17 +178,104 @@ func runVisit(ctx context.Context, opts Options, mode ContentVisitMode, factory 
 		}
 		if start == ContentQuit {
 			report.Stopped = true
-			break
+			return
 		}
-		if quit := accumulateVisit(report, &files, visitWork{ctx: ctx, c: c, file: file, opts: opts, visitor: visitor}); quit {
+		if accumulateVisit(report, files, visitWork{ctx: ctx, c: c, file: file, opts: opts, visitor: visitor}) {
 			report.Stopped = true
-			break
+			return
 		}
 	}
-	if mode == VisitRevision {
-		attachVisitManifest(report, discovered, files, opts)
+}
+
+func runVisitParallel(ctx context.Context, report *ContentVisitReport, discovered *discovery, opts Options, factory func(int) ContentVisitor, workers int, files *[]ScannedFile) {
+	var mu sync.Mutex
+	var stop atomic.Bool
+	jobs := make(chan int)
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func(visitor ContentVisitor) {
+			defer wg.Done()
+			for i := range jobs {
+				if stop.Load() {
+					continue
+				}
+				if haltVisit(ctx, opts, report, &mu, &stop) {
+					return
+				}
+				c := discovered.candidates[i]
+				file := ContentFile{Sequence: uint64(i + 1), Root: discovered.root, Absolute: c.abs, Relative: c.rel, Bytes: c.size}
+				start := visitor(ContentVisitEvent{Kind: ContentFileStart, File: file})
+				if start == ContentSkipFile {
+					mu.Lock()
+					report.ConsumerSkipped++
+					mu.Unlock()
+					continue
+				}
+				if start == ContentQuit {
+					mu.Lock()
+					report.Stopped = true
+					stop.Store(true)
+					mu.Unlock()
+					return
+				}
+				work := visitWork{ctx: ctx, c: c, file: file, opts: opts, visitor: visitor}
+				scanned, skip, stat, ev, status, consumerSkip, quit, opened, committed := readVisited(work)
+				mu.Lock()
+				mergeVisit(report, files, scanned, skip, stat, ev, status, consumerSkip, opened, committed)
+				if quit {
+					report.Stopped = true
+					stop.Store(true)
+				}
+				mu.Unlock()
+			}
+		}(factory(w))
 	}
-	return report, nil
+	for i := range discovered.candidates {
+		if stop.Load() {
+			break
+		}
+		jobs <- i
+	}
+	close(jobs)
+	wg.Wait()
+}
+
+func haltVisit(ctx context.Context, opts Options, report *ContentVisitReport, mu *sync.Mutex, stop *atomic.Bool) bool {
+	if ctx.Err() == nil && !scanTimedOut(opts) {
+		return false
+	}
+	mu.Lock()
+	if ctx.Err() != nil {
+		report.Termination, report.Complete = TermCancelled, false
+	} else {
+		report.Termination, report.Complete = TermTimeout, false
+	}
+	stop.Store(true)
+	mu.Unlock()
+	return true
+}
+
+func mergeVisit(report *ContentVisitReport, files *[]ScannedFile, scanned ScannedFile, skip *Skipped, stat CacheStats, ev visitCounters, status ContentFileStatus, consumerSkip, opened, committed bool) {
+	if opened {
+		report.Opened++
+	}
+	report.Chunks += ev.chunks
+	report.BytesRead += ev.bytesRead
+	report.BytesEmitted += ev.bytesEmitted
+	report.Cache.ContentReads += stat.ContentReads
+	report.Cache.ReusedHashes += stat.ReusedHashes
+	if consumerSkip {
+		report.ConsumerSkipped++
+	}
+	if skip != nil {
+		report.Skipped = append(report.Skipped, *skip)
+	} else if committed && status == ContentSelected {
+		report.Completed++
+		if files != nil {
+			*files = append(*files, scanned)
+		}
+	}
 }
 
 func newVisitReport(discovered *discovery, mode ContentVisitMode) *ContentVisitReport {
@@ -184,23 +296,7 @@ type visitWork struct {
 
 func accumulateVisit(report *ContentVisitReport, files *[]ScannedFile, work visitWork) bool {
 	scanned, skip, stat, ev, status, consumerSkip, quit, opened, committed := readVisited(work)
-	if opened {
-		report.Opened++
-	}
-	report.Chunks += ev.chunks
-	report.BytesRead += ev.bytesRead
-	report.BytesEmitted += ev.bytesEmitted
-	report.Cache.ContentReads += stat.ContentReads
-	report.Cache.ReusedHashes += stat.ReusedHashes
-	if consumerSkip {
-		report.ConsumerSkipped++
-	}
-	if skip != nil {
-		report.Skipped = append(report.Skipped, *skip)
-	} else if committed && status == ContentSelected {
-		report.Completed++
-		*files = append(*files, scanned)
-	}
+	mergeVisit(report, files, scanned, skip, stat, ev, status, consumerSkip, opened, committed)
 	return quit
 }
 
@@ -254,16 +350,20 @@ func finishVisited(f *os.File, scanned ScannedFile, work visitWork) (ScannedFile
 	var offset uint64
 	var counters visitCounters
 	skipRest, consumerSkip := false, false
+	budget := contentBudget(scanned.Bytes, opts)
 	for {
 		if ctx != nil {
 			if err := ctx.Err(); err != nil {
 				return scanned, &Skipped{Relative: scanned.Relative, Kind: selection.SkipIOError, Detail: err.Error()}, CacheStats{ContentReads: 1}, counters, ContentChanged, consumerSkip, true, false
 			}
 		}
-		n, readErr := f.Read(buf)
-		if n > 0 {
+		chunk, skip, done, _ := readBudgeted(f, buf, offset, budget, scanned.Relative)
+		if skip != nil {
+			return scanned, skip, CacheStats{ContentReads: 1}, counters, ContentChanged, consumerSkip, false, false
+		}
+		if len(chunk) > 0 {
 			skip, quit, binary := emitVisitedChunk(chunkEmit{
-				chunk: buf[:n], scanned: &scanned, file: file, opts: opts, visitor: visitor,
+				chunk: chunk, scanned: &scanned, file: file, opts: opts, visitor: visitor,
 				h: h, fp: &fp, offset: &offset, counters: &counters, skipRest: &skipRest, consumerSkip: &consumerSkip,
 			})
 			if binary {
@@ -276,12 +376,12 @@ func finishVisited(f *os.File, scanned ScannedFile, work visitWork) (ScannedFile
 				return scanned, skip, CacheStats{ContentReads: 1}, counters, ContentChanged, consumerSkip, false, false
 			}
 		}
-		if readErr == io.EOF {
+		if done {
 			break
 		}
-		if readErr != nil {
-			return scanned, &Skipped{Relative: scanned.Relative, Kind: selection.SkipIOError, Detail: readErr.Error()}, CacheStats{ContentReads: 1}, counters, ContentChanged, consumerSkip, false, false
-		}
+	}
+	if opts.ContentValidation == ContentStrict && scanned.Bytes > 0 && offset < scanned.Bytes {
+		return scanned, &Skipped{Relative: scanned.Relative, Kind: selection.SkipConcurrentModification}, CacheStats{ContentReads: 1}, counters, ContentChanged, consumerSkip, false, false
 	}
 	if skip := checkContentSize(f, candidate{rel: scanned.Relative, size: scanned.Bytes, version: scanned.Version}, opts); skip != nil {
 		return scanned, skip, CacheStats{ContentReads: 1}, counters, ContentChanged, consumerSkip, false, false
@@ -397,6 +497,50 @@ func Into(ctx context.Context, root string, opts Options, sink func(*ScannedFile
 	return out, nil
 }
 
+func VisitOwnedFS(ctx context.Context, fsys fs.FS, root string, opts Options, consume func(ScannedFile, []byte) error) (*ContentVisitReport, error) {
+	discovered, err := discoverFS(ctx, fsys, root, opts, true)
+	if err != nil {
+		return nil, err
+	}
+	opts.Root, opts.Cache = "", nil
+	report := newVisitReport(discovered, VisitRevision)
+	var files []ScannedFile
+	for _, c := range discovered.candidates {
+		if err := ctx.Err(); err != nil {
+			report.Termination, report.Complete = TermCancelled, false
+			break
+		}
+		file, skip, stat, err := ownedOneFS(ctx, fsys, c, opts, consume)
+		report.Cache.ContentReads += stat.ContentReads
+		report.Cache.ReusedHashes += stat.ReusedHashes
+		if err != nil {
+			return report, err
+		}
+		if skip != nil {
+			report.Skipped = append(report.Skipped, *skip)
+			continue
+		}
+		report.Completed++
+		files = append(files, file)
+	}
+	attachVisitManifest(report, discovered, files, opts)
+	return report, nil
+}
+
+func ownedOneFS(ctx context.Context, fsys fs.FS, c candidate, opts Options, consume func(ScannedFile, []byte) error) (ScannedFile, *Skipped, CacheStats, error) {
+	file := ScannedFile{Absolute: c.abs, Relative: c.rel, Bytes: c.size}
+	f, err := fsys.Open(c.abs)
+	if err != nil {
+		return file, &Skipped{Relative: c.rel, Kind: selection.SkipIOError, Detail: err.Error()}, CacheStats{}, nil
+	}
+	defer f.Close()
+	file, data, skip, stat, err := hashReader(ctx, f, c, opts, file, true)
+	if err != nil || skip != nil || consume == nil {
+		return file, skip, stat, err
+	}
+	return file, skip, stat, consume(file, data)
+}
+
 func VisitOwned(ctx context.Context, root string, opts Options, consume func(ScannedFile, []byte) error) (*ContentVisitReport, error) {
 	discovered, err := discover(ctx, root, opts, true)
 	if err != nil {
@@ -447,81 +591,4 @@ func readOwned(ctx context.Context, c candidate, opts Options, _ map[string]Cach
 		memo.store(file)
 	}
 	return file, data, skip, stat, err
-}
-
-const inspectLeaseBytes int64 = 64 * 1024
-
-func inspectBudgeted(ctx context.Context, files []candidate, workers int, admit time.Duration, runOne func(candidate) inspectResult) ([]ScannedFile, []Skipped, CacheStats, error) {
-	rt := runtime.Dedicated(workers).WithAdmitTimeout(admit)
-	budget := runtime.NewBudget(runtime.DefaultLimits(workers))
-	defer budget.Close()
-	ch := make(chan candidate)
-	res := make(chan inspectResult, workers)
-	grp := rt.Group()
-	for i := 0; i < workers; i++ {
-		grp.Go(inspectWorker(ctx, ch, res, budget, runOne))
-	}
-	go feedInspect(ctx, ch, files)
-	waitErr := make(chan error, 1)
-	go func() {
-		waitErr <- grp.Wait()
-		close(res)
-	}()
-	out, skipped, stats, err := collectInspect(ctx, budget, res)
-	if werr := <-waitErr; err == nil {
-		err = werr
-	}
-	return out, skipped, stats, err
-}
-
-func inspectWorker(ctx context.Context, ch <-chan candidate, res chan<- inspectResult, budget *runtime.Budget, runOne func(candidate) inspectResult) func() error {
-	return func() error {
-		for c := range ch {
-			if err := budget.HoldReady(ctx, inspectLeaseBytes); err != nil {
-				return err
-			}
-			item := runOne(c)
-			item.lease = inspectLeaseBytes
-			res <- item
-		}
-		return nil
-	}
-}
-
-func feedInspect(ctx context.Context, ch chan<- candidate, files []candidate) {
-	defer close(ch)
-	for _, c := range files {
-		select {
-		case <-ctx.Done():
-			return
-		case ch <- c:
-		}
-	}
-}
-
-func collectInspect(ctx context.Context, budget *runtime.Budget, res <-chan inspectResult) ([]ScannedFile, []Skipped, CacheStats, error) {
-	var out []ScannedFile
-	var skipped []Skipped
-	var stats CacheStats
-	var first error
-	for item := range res {
-		budget.DropReady(item.lease)
-		if item.err != nil {
-			if first == nil {
-				first = item.err
-			}
-			continue
-		}
-		if first != nil {
-			continue
-		}
-		applyInspectResult(inspectOut{files: &out, skipped: &skipped, stats: &stats}, item, false)
-	}
-	if first != nil {
-		return out, skipped, stats, first
-	}
-	if err := ctx.Err(); err != nil {
-		return out, skipped, stats, err
-	}
-	return out, skipped, stats, nil
 }

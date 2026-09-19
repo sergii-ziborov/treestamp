@@ -501,7 +501,7 @@ func prepareCallback(root string, fn fs.WalkDirFunc, toSlash bool) (string, bool
 	typ := entry.Type()
 	listwalk.Release(entry)
 	if cbErr != nil {
-		if errors.Is(cbErr, fs.SkipAll) || errors.Is(cbErr, fs.SkipDir) {
+		if errors.Is(cbErr, fs.SkipAll) || errors.Is(cbErr, fs.SkipDir) || errors.Is(cbErr, ErrSkipThis) {
 			return "", false, nil
 		}
 		return "", false, cbErr

@@ -19,7 +19,7 @@ type Config struct {
 
 func Serial(root string, cfg Config, fn fs.WalkDirFunc) error {
 	if !cfg.Follow && cfg.MaxDepth == 0 && !cfg.Sort {
-		return walk.WalkCallbackHooks(root, fn, nil, cfg.ToSlash, cfg.ContentsFirst)
+		return walk.WalkCallbackHooks(root, fn, walk.CallbackOptions{ToSlash: cfg.ToSlash, ContentsFirst: cfg.ContentsFirst})
 	}
 	opts := walk.DefaultOptions()
 	opts.FollowLinks = cfg.Follow
@@ -85,6 +85,12 @@ func applyCallback(ev walk.WalkEvent, cfg Config, fn fs.WalkDirFunc, mu *sync.Mu
 		}
 	}
 	cbErr := fn(path, walk.NewDirEntry(ev.Entry), nil)
+	if errors.Is(cbErr, walk.ErrSkipThis) {
+		if ev.Entry.IsDir() {
+			return walk.WalkSkip
+		}
+		return walk.WalkContinue
+	}
 	if errors.Is(cbErr, walk.ErrTraverseLink) && ev.Entry.IsSymlink() {
 		return walk.WalkTraverseLink
 	}
@@ -158,6 +164,12 @@ func drainOne(w walker, fn fs.WalkDirFunc, path string, entry *walk.WalkEntry, s
 		}
 	case errors.Is(cbErr, fs.SkipAll):
 		return errDrainStop
+	case errors.Is(cbErr, walk.ErrSkipThis):
+		if entry.IsDir() {
+			if skipper, ok := w.(interface{ SkipCurrentDir() }); ok {
+				skipper.SkipCurrentDir()
+			}
+		}
 	case errors.Is(cbErr, walk.ErrSkipFiles):
 		*skipFiles, *skipDir = true, filepath.Dir(entry.Path())
 	case errors.Is(cbErr, walk.ErrTraverseLink) && entry.IsSymlink():

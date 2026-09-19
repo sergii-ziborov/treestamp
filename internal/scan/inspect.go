@@ -1,7 +1,6 @@
 package scan
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
@@ -9,6 +8,7 @@ import (
 	"errors"
 	"hash"
 	"io"
+	"io/fs"
 	"os"
 	stdlib "runtime"
 	"sort"
@@ -39,6 +39,12 @@ func inspect(ctx context.Context, files []candidate, opts Options) ([]ScannedFil
 		workers = 1
 		if opts.HashFileContents && len(files) > 8 {
 			workers = min(stdlib.GOMAXPROCS(0), 4)
+		}
+	}
+	if opts.ContentDiscovery == DiscoverBufferedParallel && workers < 2 {
+		workers = min(stdlib.GOMAXPROCS(0), 4)
+		if workers < 2 {
+			workers = 2
 		}
 	}
 	memo := newContentMemo()
@@ -77,20 +83,13 @@ func inspectParallel(ctx context.Context, files []candidate, workers int, admit 
 }
 
 func inspectCompact(ctx context.Context, files []candidate, opts Options) ([]CompactFile, []Skipped, CacheStats, error) {
-	index := cacheIndex(opts)
-	memo := newContentMemo()
-	var compact []CompactFile
-	var skipped []Skipped
-	var stats CacheStats
-	for _, c := range files {
-		if err := ctx.Err(); err != nil {
-			return nil, nil, stats, err
-		}
-		file, skip, stat, err := inspectOne(ctx, c, opts, index, memo)
-		if err != nil {
-			return nil, nil, stats, err
-		}
-		applyInspectResult(inspectOut{compact: &compact, skipped: &skipped, stats: &stats}, inspectResult{file: file, skip: skip, stat: stat}, true)
+	out, skipped, stats, err := inspect(ctx, files, opts)
+	if err != nil {
+		return nil, skipped, stats, err
+	}
+	compact := make([]CompactFile, len(out))
+	for i, file := range out {
+		compact[i] = compactFrom(file)
 	}
 	return compact, skipped, stats, nil
 }
@@ -273,62 +272,38 @@ func hashOpened(ctx context.Context, c candidate, opts Options, file ScannedFile
 }
 
 func hashChunks(ctx context.Context, f *os.File, c candidate, opts Options, file ScannedFile, keep bool) (ScannedFile, []byte, *Skipped, CacheStats, error) {
-	var h hash.Hash
-	if opts.HashFileContents {
-		h = sha256.New()
-	}
-	fp := hashx.NewContentFingerprint()
-	needFP := opts.HashFileContents || opts.CacheValidation == CacheStrict
-	buf := make([]byte, 64*1024)
-	var owned []byte
-	var read uint64
-	for {
-		if ctx != nil {
-			if err := ctx.Err(); err != nil {
-				return file, owned, nil, CacheStats{ContentReads: 1}, err
-			}
-		}
-		n, readErr := f.Read(buf)
-		if n > 0 {
-			chunk := buf[:n]
-			if opts.DetectBinary && bytes.IndexByte(chunk, 0) >= 0 {
-				return file, nil, &Skipped{Relative: c.rel, Kind: selection.SkipBinary}, CacheStats{ContentReads: 1}, nil
-			}
-			if h != nil {
-				_, _ = h.Write(chunk)
-			}
-			if needFP {
-				fp.Write(chunk)
-			}
-			if keep {
-				owned = append(owned, chunk...)
-			}
-			read += uint64(n)
-			if !keep && !opts.HashFileContents && read >= 8*1024 {
-				break
-			}
-		}
-		if readErr == io.EOF {
-			break
-		}
-		if readErr != nil {
-			return file, nil, &Skipped{Relative: c.rel, Kind: selection.SkipIOError, Detail: readErr.Error()}, CacheStats{ContentReads: 1}, nil
-		}
+	file, owned, skip, stats, err := hashReader(ctx, f, c, opts, file, keep)
+	if skip != nil || err != nil {
+		return file, owned, skip, stats, err
 	}
 	if skip := checkContentSize(f, c, opts); skip != nil {
-		return file, owned, skip, CacheStats{ContentReads: 1}, nil
+		return file, owned, skip, stats, nil
 	}
-	if h != nil {
-		file.ContentHash = hashx.Finish(h)
+	return file, owned, nil, stats, nil
+}
+
+func inspectFS(ctx context.Context, fsys fs.FS, files []candidate, opts Options) ([]ScannedFile, []Skipped, CacheStats, error) {
+	return inspectSerial(ctx, files, func(c candidate) inspectResult {
+		file, skip, stat, err := inspectOneFS(ctx, fsys, c, opts)
+		if err == nil && skip != nil && skip.Kind == selection.SkipConcurrentModification && ctx.Err() == nil {
+			file, skip, stat, err = inspectOneFS(ctx, fsys, c, opts)
+		}
+		return inspectResult{file: file, skip: skip, stat: stat, err: err}
+	})
+}
+
+func inspectOneFS(ctx context.Context, fsys fs.FS, c candidate, opts Options) (ScannedFile, *Skipped, CacheStats, error) {
+	file := ScannedFile{Absolute: c.abs, Relative: c.rel, Bytes: c.size, Version: c.version}
+	if !opts.HashFileContents && !opts.DetectBinary {
+		return file, nil, CacheStats{}, nil
 	}
-	if needFP {
-		file.ContentFingerprint = fp.Finish()
+	f, err := fsys.Open(c.abs)
+	if err != nil {
+		return file, &Skipped{Relative: c.rel, Kind: selection.SkipIOError, Detail: err.Error()}, CacheStats{}, nil
 	}
-	file.BinaryChecked = opts.DetectBinary
-	if keep && owned == nil {
-		owned = []byte{}
-	}
-	return file, owned, nil, CacheStats{ContentReads: 1}, nil
+	defer f.Close()
+	file, _, skip, stat, err := hashReader(ctx, f, c, opts, file, false)
+	return file, skip, stat, err
 }
 
 func checkContentSize(f *os.File, c candidate, opts Options) *Skipped {
@@ -411,6 +386,9 @@ func writeDescriptorFlags(h hash.Hash, opts Options) {
 	writeBool(h, opts.SkipHidden)
 	writeByteFlag(h, opts.StandardSkips, 1, 0)
 	if opts.GitModules {
+		writeBool(h, true)
+	}
+	if opts.VCSSkips {
 		writeBool(h, true)
 	}
 	if !opts.Filters.Empty() {

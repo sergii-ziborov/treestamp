@@ -177,14 +177,6 @@ func (b *StatefulWalkBuilder[R, E]) ProcessReadDir(fn ProcessReadDir[R, E]) *Sta
 func (b *StatefulWalkBuilder[R, E]) Build() (*StatefulWalker[R, E], error) {
 	return newStatefulWalker(b)
 }
-func (b *StatefulWalkBuilder[R, E]) BuildParallelOrdered(capacity int) (*ParallelStatefulWalker[E], error) {
-	serial, err := newStatefulWalker(b)
-	if err != nil {
-		return nil, err
-	}
-	_ = capacity
-	return &ParallelStatefulWalker[E]{next: serial.Next, close: serial.Close}, nil
-}
 
 type frame[R, E any] struct {
 	items []StatefulResult[E]
@@ -341,6 +333,7 @@ func (p *ParallelWalker) Walk() (*ParallelWalkReport, error) {
 }
 
 func WalkParallel(root string, workers int, fn WalkFunc) error {
+	var mu sync.Mutex
 	var fnErr error
 	_, err := NewParallelWalker(root).WithParallelism(workers).Visit(func(ev WalkEvent) WalkControl {
 		if ev.Err != nil {
@@ -350,10 +343,11 @@ func WalkParallel(root string, workers int, fn WalkFunc) error {
 			if errors.Is(err, ErrTraverseLink) && ev.Entry.symlink {
 				return WalkTraverseLink
 			}
-			fnErr = err
-			if err == io.EOF {
-				fnErr = nil
+			mu.Lock()
+			if fnErr == nil && err != io.EOF {
+				fnErr = err
 			}
+			mu.Unlock()
 			return WalkQuit
 		}
 		return WalkContinue

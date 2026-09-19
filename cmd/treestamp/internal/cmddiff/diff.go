@@ -59,7 +59,7 @@ func run(env *app.Env, before, after string, asJSON, exitCode, nul bool) error {
 			return env.Fail(status.Publish, "stdout: %v", err)
 		}
 	} else if nul {
-		if err := render.WriteNull(env.Out, render.OfDelta(delta).Lines()); err != nil {
+		if err := render.WriteNull(env.Out, render.OfDelta(delta).Paths()); err != nil {
 			return env.Fail(status.Publish, "stdout: %v", err)
 		}
 	} else if err := writeHuman(env, delta); err != nil {

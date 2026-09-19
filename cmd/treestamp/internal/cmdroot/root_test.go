@@ -314,8 +314,11 @@ func TestVerifyNullWritesRecords(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("verify %d %s", code, errb.String())
 	}
-	if !bytes.Contains(out.Bytes(), []byte("+ new.go\x00")) {
+	if !bytes.Contains(out.Bytes(), []byte("new.go\x00")) {
 		t.Fatalf("%q", out.Bytes())
+	}
+	if bytes.Contains(out.Bytes(), []byte("+ new.go")) {
+		t.Fatalf("human prefix in null output %q", out.Bytes())
 	}
 	if bytes.Contains(out.Bytes(), []byte("\n")) {
 		t.Fatalf("newlines in null output %q", out.Bytes())
@@ -374,15 +377,16 @@ func TestScanArtifactHashesBinaryAndGitignored(t *testing.T) {
 	writeFile(t, filepath.Join(root, "note.txt"), "hello\n")
 	writeFile(t, filepath.Join(root, "keep.bin"), "plain\n")
 	writeFile(t, filepath.Join(root, "payload.bin"), "a\x00b")
+	writeFile(t, filepath.Join(root, "node_modules", "pkg.js"), "module.exports=1\n")
 	repo := scanJSON(t, root)
-	if hasRel(repo, "keep.bin") || hasRel(repo, "payload.bin") || !hasRel(repo, "note.txt") {
+	if hasRel(repo, "keep.bin") || hasRel(repo, "payload.bin") || hasRel(repo, "node_modules/pkg.js") || !hasRel(repo, "note.txt") {
 		t.Fatalf("repo files %+v", rels(repo))
 	}
 	art := scanJSON(t, root, "--profile", "artifact")
-	if art.Policy.Profile != "artifact-v1" {
+	if art.Policy.Profile != "artifact-v2" {
 		t.Fatalf("profile %q", art.Policy.Profile)
 	}
-	if !hasHash(art, "keep.bin") || !hasHash(art, "payload.bin") || !hasHash(art, "note.txt") {
+	if !hasHash(art, "keep.bin") || !hasHash(art, "payload.bin") || !hasHash(art, "note.txt") || !hasHash(art, "node_modules/pkg.js") {
 		t.Fatalf("artifact files %+v", art.Files)
 	}
 }

@@ -15,7 +15,8 @@ func TestNormalizeProfile(t *testing.T) {
 		{"repo", ProfileRepo},
 		{"REPO-V1", ProfileRepo},
 		{"artifact", ProfileArtifact},
-		{"artifact-v1", ProfileArtifact},
+		{"artifact-v2", ProfileArtifact},
+		{"artifact-v1", ProfileArtifactV1},
 	}
 	for _, c := range cases {
 		got, err := NormalizeProfile(c.in)
@@ -47,7 +48,7 @@ func TestArtifactOptionsHashBinaries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if opts.DetectBinaryFiles || opts.MaxFileBytes != 0 || opts.IgnoreFiles != nil || !opts.HashFileContents || !opts.StandardSkips {
+	if opts.DetectBinaryFiles || opts.MaxFileBytes != 0 || opts.IgnoreFiles != nil || !opts.HashFileContents || opts.StandardSkips || !opts.VCSSkips {
 		t.Fatalf("%+v", opts)
 	}
 	snap := sel.Snapshot(opts)
@@ -55,8 +56,15 @@ func TestArtifactOptionsHashBinaries(t *testing.T) {
 		t.Fatalf("%+v", snap)
 	}
 	restored, err := OptionsFrom(snap)
-	if err != nil || restored.DetectBinaryFiles || restored.MaxFileBytes != 0 || restored.IgnoreFiles != nil {
+	if err != nil || restored.DetectBinaryFiles || restored.MaxFileBytes != 0 || restored.IgnoreFiles != nil || restored.StandardSkips || !restored.VCSSkips {
 		t.Fatalf("restore %+v %v", restored, err)
+	}
+}
+
+func TestArtifactV1KeepsGeneratedSkips(t *testing.T) {
+	opts, err := OptionsFrom(Snapshot{Profile: ProfileArtifactV1, HashContents: true, StandardSkips: true})
+	if err != nil || !opts.StandardSkips || opts.VCSSkips {
+		t.Fatalf("%+v %v", opts, err)
 	}
 }
 

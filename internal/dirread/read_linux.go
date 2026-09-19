@@ -43,15 +43,52 @@ func OSEntriesScratch(dir string, scratch []byte) ([]os.DirEntry, error) {
 }
 
 func Names(dir string, scratch []byte) ([]string, error) {
-	recs, err := ReadScratch(dir, nil, scratch)
+	tmp := scratch
+	if len(tmp) < MinimumScratch() {
+		var stack [blockSize]byte
+		tmp = stack[:]
+	}
+	return readNames(dir, tmp)
+}
+
+func readNames(dir string, tmp []byte) ([]string, error) {
+	fd, err := openRetry(dir)
 	if err != nil {
-		return nil, err
+		return nil, &os.PathError{Op: "open", Path: dir, Err: err}
 	}
-	out := make([]string, len(recs))
-	for i, rec := range recs {
-		out[i] = rec.Name
+	defer syscall.Close(fd)
+	var out []string
+	for {
+		n, err := readRetry(fd, tmp)
+		if err != nil {
+			return out, os.NewSyscallError("readdirent", err)
+		}
+		if n <= 0 {
+			return out, nil
+		}
+		next, err := appendNames(tmp[:n], out)
+		if err != nil {
+			return out, err
+		}
+		out = next
 	}
-	return out, nil
+}
+
+func appendNames(block []byte, buf []string) ([]string, error) {
+	for consumed := 0; consumed < len(block); {
+		adv, name, _ := parseLinux(block[consumed:])
+		if adv == 0 {
+			if consumed < len(block) {
+				return buf, ErrTruncatedRecord
+			}
+			break
+		}
+		consumed += adv
+		if name != "" && name != "." && name != ".." {
+			buf = append(buf, name)
+		}
+	}
+	return buf, nil
 }
 
 func readInto(dir string, buf []Record, tmp []byte) ([]Record, error) {

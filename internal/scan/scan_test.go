@@ -134,10 +134,9 @@ func TestLimitsCancelAndBinary(t *testing.T) {
 	opts.Limits.MaxEntries = &n
 	opts.Limits.Timeout = time.Hour
 	hit, err := Paths(context.Background(), root, opts)
-	if err != nil {
-		t.Fatal(err)
+	if err != ErrIncomplete || len(hit) != 0 {
+		t.Fatalf("max entries %v %v", hit, err)
 	}
-	_ = hit
 	if TermCancelled.String() != "cancelled" || TermNone.String() != "" {
 		t.Fatal(TermCancelled.String())
 	}

@@ -30,6 +30,7 @@ type Options struct {
 	IgnoreCase        bool
 	SkipHidden        bool
 	StandardSkips     bool
+	VCSSkips          bool
 	GitModules        bool
 	Filters           selection.Filters
 	HashFileContents  bool
@@ -76,7 +77,7 @@ func toScanOptions(opts Options) scan.Options {
 	out := scan.Options{
 		MaxFileBytes: opts.MaxFileBytes, IgnoreFiles: opts.IgnoreFiles, OverrideRules: opts.OverrideRules,
 		Extensions: opts.Extensions, FileTypes: opts.FileTypes, IgnorePolicy: opts.IgnorePolicy.inner,
-		IgnoreCase: opts.IgnoreCase, SkipHidden: opts.SkipHidden, StandardSkips: opts.StandardSkips,
+		IgnoreCase: opts.IgnoreCase, SkipHidden: opts.SkipHidden, StandardSkips: opts.StandardSkips, VCSSkips: opts.VCSSkips,
 		GitModules:       opts.GitModules,
 		Filters:          opts.Filters,
 		HashFileContents: opts.HashFileContents, DetectBinary: opts.DetectBinaryFiles, RecordSkipped: record,
@@ -134,6 +135,7 @@ func (o Options) WithIgnoreCase(enabled bool) Options          { o.IgnoreCase = 
 func (o Options) WithIgnorePolicy(policy IgnorePolicy) Options { o.IgnorePolicy = policy; return o }
 func (o Options) WithSkipHidden(enabled bool) Options          { o.SkipHidden = enabled; return o }
 func (o Options) WithStandardSkips(enabled bool) Options       { o.StandardSkips = enabled; return o }
+func (o Options) WithVCSSkips(enabled bool) Options            { o.VCSSkips = enabled; return o }
 func (o Options) WithGitModules(enabled bool) Options          { o.GitModules = enabled; return o }
 func (o Options) WithFilters(filters selection.Filters) Options {
 	o.Filters = filters

@@ -40,6 +40,7 @@ type Snapshot struct {
 	HashContents  bool                     `json:"hash_contents"`
 	MaxFileBytes  uint64                   `json:"max_file_bytes"`
 	StandardSkips bool                     `json:"standard_skips"`
+	VCSSkips      bool                     `json:"vcs_skips,omitempty"`
 	IgnoreFiles   []string                 `json:"ignore_files,omitempty"`
 	Descriptor    treestamp.ScanDescriptor `json:"descriptor"`
 }
@@ -59,7 +60,7 @@ func (s *Select) BindPolicy(cmd *cobra.Command) {
 	cmd.Flags().StringSliceVar(&s.Scope, "scope", nil, "only this part of the tree (.gitignore still applies)")
 	cmd.Flags().StringSliceVar(&s.Exclude, "exclude", nil, "drop relative paths that contain this text")
 	cmd.Flags().BoolVar(&s.NoIgnore, "no-ignore", false, "do not read gitignore files")
-	cmd.Flags().IntVar(&s.Jobs, "jobs", 0, "parallel walkers (0 = default)")
+	cmd.Flags().IntVar(&s.Jobs, "jobs", 0, "content workers and walk admission (0 = default)")
 	cmd.Flags().StringVar(&s.Config, "config", "", "shared policy file (treestamp.policy/v1)")
 	cmd.Flags().StringVar(&s.Color, "color", "auto", "auto, always, or never")
 	cmd.Flags().StringVar(&s.Profile, "profile", "", "repo (default) or artifact")
@@ -148,16 +149,20 @@ func (s Select) Options() (treestamp.Options, error) {
 	if err != nil {
 		return opts, err
 	}
-	if name == ProfileArtifact {
+	if name == ProfileArtifact || name == ProfileArtifactV1 {
 		if s.MetadataOnly {
 			return opts, fmt.Errorf("artifact profile requires content hashes")
 		}
-		applyArtifact(&opts)
+		if name == ProfileArtifactV1 {
+			applyArtifactV1(&opts)
+		} else {
+			applyArtifactV2(&opts)
+		}
 	}
 	opts.Extensions = append([]string(nil), s.Exts...)
 	opts.Filters.LocationInclude = append([]string(nil), s.Scope...)
 	opts.Filters.LocationExclude = append([]string(nil), s.Exclude...)
-	if s.NoIgnore || name == ProfileArtifact {
+	if s.NoIgnore || name == ProfileArtifact || name == ProfileArtifactV1 {
 		opts.IgnoreFiles = nil
 	}
 	if s.MetadataOnly {
@@ -165,6 +170,7 @@ func (s Select) Options() (treestamp.Options, error) {
 	}
 	if s.Jobs > 0 {
 		opts.TraversalWorkers = s.Jobs
+		opts.ContentWorkers = s.Jobs
 	}
 	if s.maxFileBytes != nil {
 		opts.MaxFileBytes = *s.maxFileBytes
@@ -176,8 +182,8 @@ func (s Select) Snapshot(opts treestamp.Options) Snapshot {
 	name, _ := NormalizeProfile(s.Profile)
 	return Snapshot{
 		Profile: name, Extensions: opts.Extensions, Scope: s.Scope, Exclude: s.Exclude,
-		NoIgnore: s.NoIgnore || name == ProfileArtifact, HashContents: opts.HashFileContents,
-		MaxFileBytes: opts.MaxFileBytes, StandardSkips: opts.StandardSkips, IgnoreFiles: opts.IgnoreFiles,
+		NoIgnore: s.NoIgnore || name == ProfileArtifact || name == ProfileArtifactV1, HashContents: opts.HashFileContents,
+		MaxFileBytes: opts.MaxFileBytes, StandardSkips: opts.StandardSkips, VCSSkips: opts.VCSSkips, IgnoreFiles: opts.IgnoreFiles,
 		Descriptor: treestamp.DescriptorFromOptions(opts),
 	}
 }
@@ -189,7 +195,9 @@ func OptionsFrom(snap Snapshot) (treestamp.Options, error) {
 		return opts, err
 	}
 	if name == ProfileArtifact {
-		applyArtifact(&opts)
+		applyArtifactV2(&opts)
+	} else if name == ProfileArtifactV1 {
+		applyArtifactV1(&opts)
 	}
 	opts.Extensions = append([]string(nil), snap.Extensions...)
 	opts.Filters.LocationInclude = append([]string(nil), snap.Scope...)
@@ -197,7 +205,8 @@ func OptionsFrom(snap Snapshot) (treestamp.Options, error) {
 	opts.HashFileContents = snap.HashContents
 	opts.MaxFileBytes = snap.MaxFileBytes
 	opts.StandardSkips = snap.StandardSkips
-	if snap.NoIgnore || name == ProfileArtifact {
+	opts.VCSSkips = snap.VCSSkips
+	if snap.NoIgnore || name == ProfileArtifact || name == ProfileArtifactV1 {
 		opts.IgnoreFiles = nil
 	} else if len(snap.IgnoreFiles) > 0 {
 		opts.IgnoreFiles = append([]string(nil), snap.IgnoreFiles...)

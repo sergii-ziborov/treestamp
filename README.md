@@ -51,6 +51,7 @@ Runnable copy: [`examples/docquickstart`](examples/docquickstart).
 | Choose an API | [docs/choose-an-api.md](docs/choose-an-api.md) |
 | List paths | [docs/recipes/scan-paths.md](docs/recipes/scan-paths.md) |
 | Manifest / EachFile / Explain | [docs/index.md](docs/index.md) |
+| Scan an `fs.FS` | [docs/choose-an-api.md](docs/choose-an-api.md) |
 | Why a file was skipped | [docs/recipes/explain.md](docs/recipes/explain.md) |
 | Cache, snapshot, tree2 | [docs/guides/snapshots.md](docs/guides/snapshots.md) |
 | Symptom → check | [docs/troubleshooting.md](docs/troubleshooting.md) |
@@ -61,9 +62,11 @@ Runnable copy: [`examples/docquickstart`](examples/docquickstart).
 `TreeSnapshot` is an in-memory persistent structure, not a disk index.
 `ContentProvider.Open` returns loaded bytes, not an `io.Reader`.
 
-The library is a native Go port of pinned Weavatrix Scan **0.5.2**. It is not
-a parser, search engine, graph, embedder, secret scanner, MCP server, web
-service, or daemon.
+The library is a native Go port of pinned Weavatrix Scan **0.5.2**, plus
+Go-side additions (`ScanFS`, a growing-file read budget,
+`MultiScanReport.Revision`). It is not a parser, search engine, graph,
+embedder, secret scanner, MCP server, web service, or daemon. Search, when
+ported, stays a consumer of this module.
 
 ## Command line
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"io/fs"
 	"log/slog"
 	"regexp"
 	"time"
@@ -40,13 +41,58 @@ func (p *Plan) ScanPaths(ctx context.Context, root string) ([]string, error) {
 	}
 	paths, err := s.ScanPaths(ctx)
 	if err != nil {
-		return nil, wrap(err, "ScanPaths", root)
+		p.logFinish(ctx, "paths.finished", slog.Int("selected", len(paths)), reportStatus(nil, err))
+		return paths, err
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, wrap(err, "ScanPaths", root)
+		return paths, wrap(err, "ScanPaths", root)
 	}
 	p.logFinish(ctx, "paths.finished", slog.Int("selected", len(paths)), slog.String("status", "complete"))
 	return paths, nil
+}
+
+func (p *Plan) ScanFS(ctx context.Context, fsys fs.FS, root string) (*ScanReport, error) {
+	if p == nil {
+		return nil, &Error{Code: CodeInvalid, Op: "ScanFS", Err: errEmptyRoot}
+	}
+	rep, err := scan.FullFS(ctx, fsys, root, toScanOptions(p.opts))
+	if err != nil {
+		return nil, wrap(err, "ScanFS", root)
+	}
+	return p.finishLogged(ctx, "ScanFS", root, fromFull(rep), nil)
+}
+
+func (p *Plan) ScanPathsFS(ctx context.Context, fsys fs.FS, root string) ([]string, error) {
+	if p.hashSet || p.binarySet || p.maxSet {
+		return nil, &Error{Code: CodeUnsupported, Op: "ScanPathsFS", Err: errString("content options require ScanFS or EachFileFS")}
+	}
+	paths, err := scan.PathsFS(ctx, fsys, root, toScanOptions(p.opts))
+	if err != nil {
+		err = wrap(err, "ScanPathsFS", root)
+		p.logFinish(ctx, "paths.finished", slog.Int("selected", len(paths)), reportStatus(nil, err))
+		return paths, err
+	}
+	if err := ctx.Err(); err != nil {
+		return paths, wrap(err, "ScanPathsFS", root)
+	}
+	p.logFinish(ctx, "paths.finished", slog.Int("selected", len(paths)), slog.String("status", "complete"))
+	return paths, nil
+}
+
+func (p *Plan) EachFileFS(ctx context.Context, fsys fs.FS, root string, consume func(ScannedFile, []byte) error) (*ScanSummary, error) {
+	if p == nil {
+		return nil, &Error{Code: CodeInvalid, Op: "EachFileFS", Err: errEmptyRoot}
+	}
+	start := time.Now()
+	var n, read uint64
+	var pace dx.Pace
+	inner, err := scan.VisitOwnedFS(ctx, fsys, root, toScanOptions(p.opts), func(file scan.ScannedFile, data []byte) error {
+		n++
+		read += uint64(len(data))
+		noteProgress(p.progress, &pace, start, n, read)
+		return consume(publicFile(file), data)
+	})
+	return finishEach(ctx, p, root, inner, err)
 }
 
 func (p *Plan) EachFile(ctx context.Context, root string, consume func(ScannedFile, []byte) error) (*ScanSummary, error) {

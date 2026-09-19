@@ -248,3 +248,36 @@ func TestCompiledSelectionMayContain(t *testing.T) {
 		t.Fatal("open")
 	}
 }
+
+func TestVirtualMatcherLoadsBytes(t *testing.T) {
+	m, err := NewVirtualMatcher(".", Config{IgnoreFiles: []string{".gitignore"}, StandardSkips: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = m.LoadBytes("", ".gitignore", []byte("secret.bin\n"))
+	if m.DecidePath(PathQuery{Rel: "secret.bin", Name: "secret.bin", IsFile: true}).Skip != SkipIgnored {
+		t.Fatal("ignore")
+	}
+	if m.DecidePath(PathQuery{Rel: "keep.go", Name: "keep.go", IsFile: true}).IsSelected() != true {
+		t.Fatal("keep")
+	}
+	if m.DecidePath(PathQuery{Rel: "node_modules", Name: "node_modules", IsDir: true}).Skip != SkipStandardDirectory {
+		t.Fatal("standard")
+	}
+}
+
+func TestVCSSkipsKeepsGeneratedDirs(t *testing.T) {
+	root := t.TempDir()
+	mustMkdir(t, filepath.Join(root, "node_modules"))
+	mustMkdir(t, filepath.Join(root, ".git"))
+	m, err := NewMatcher(root, Config{VCSSkips: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.DecidePath(PathQuery{Rel: "node_modules", Name: "node_modules", IsDir: true}).Skip != SkipNone {
+		t.Fatal("generated")
+	}
+	if m.DecidePath(PathQuery{Rel: ".git", Name: ".git", IsDir: true}).Skip != SkipStandardDirectory {
+		t.Fatal("vcs")
+	}
+}
