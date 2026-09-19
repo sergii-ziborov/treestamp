@@ -24,3 +24,27 @@ func TestApplyConfigMaxFileBytesAndFormat(t *testing.T) {
 		t.Fatal("unknown format")
 	}
 }
+
+func TestApplyConfigProfile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "p.json")
+	body := `{"schema":"treestamp.policy/v1","profile":"artifact"}`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sel := Select{Config: path, Format: "text", Color: "auto"}
+	if err := sel.ApplyConfig(); err != nil {
+		t.Fatal(err)
+	}
+	opts, err := sel.Options()
+	if err != nil || opts.DetectBinaryFiles || opts.IgnoreFiles != nil {
+		t.Fatalf("%+v %v", opts, err)
+	}
+	flagWins := Select{Config: path, Profile: "repo", Format: "text", Color: "auto"}
+	if err := flagWins.ApplyConfig(); err != nil {
+		t.Fatal(err)
+	}
+	opts, err = flagWins.Options()
+	if err != nil || !opts.DetectBinaryFiles {
+		t.Fatalf("flag %v %v", opts.DetectBinaryFiles, err)
+	}
+}

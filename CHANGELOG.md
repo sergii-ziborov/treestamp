@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+`verify` and `diff` print every changed path in the human card, not a
+preview of eight. `--null` writes the same `+` / `-` / `~` / rename
+records separated by NUL. `scan` lists selected names when there are
+20 or fewer. `scan --format ndjson` emits `scan_begin`, each
+`file_committed`, then `scan_end` from `ScanInto` instead of printing
+after a full in-memory manifest. `--profile artifact` hashes binaries,
+drops the 1.5MiB cap, and skips gitignore files while keeping standard
+skips. Default `repo` stays the Weavatrix source profile. This is not
+a hashdeep codec.
+
 ## Library 0.1.4 / CLI 0.1.4 (2026-09-19)
 
 High-level scan now reports incompleteness on every facade: `Plan.Scan`,

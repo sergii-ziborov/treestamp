@@ -104,13 +104,24 @@ func TestLoadRejectsContradictoryObservation(t *testing.T) {
 		`{"schema":"treestamp.manifest/v1","producer":{},"policy":{},"observation":{"complete":true,"termination":"cancelled","evidence":"sha256"},"files":[],"revisions":{},"summary":{}}`,
 		`{"schema":"treestamp.manifest/v1","producer":{},"policy":{},"observation":{"complete":true,"evidence":"sha256"},"files":[],"revisions":{},"summary":{"failures":1}}`,
 		`{"schema":"treestamp.manifest/v1","producer":{},"policy":{},"observation":{"evidence":"md5"},"files":[],"revisions":{},"summary":{}}`,
-		`{"schema":"treestamp.manifest/v1","producer":{},"policy":{"profile":"artifact-v1"},"observation":{"evidence":"sha256"},"files":[],"revisions":{},"summary":{}}`,
+		`{"schema":"treestamp.manifest/v1","producer":{},"policy":{"profile":"hashdeep-v1"},"observation":{"evidence":"sha256"},"files":[],"revisions":{},"summary":{}}`,
 		`{"schema":"treestamp.manifest/v1","producer":{},"policy":{},"observation":{"evidence":"sha256"},"files":[],"revisions":{},"summary":{"selected":2}}`,
 	}
 	for _, body := range cases {
 		if _, err := loadManifest(t, body); err == nil {
 			t.Fatalf("accepted %s", body)
 		}
+	}
+}
+
+func TestLoadAcceptsArtifactProfile(t *testing.T) {
+	body := `{"schema":"treestamp.manifest/v1","producer":{},"policy":{"profile":"artifact-v1","hash_contents":true},"observation":{"evidence":"sha256"},"files":[],"revisions":{},"summary":{}}`
+	man, err := loadManifest(t, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if man.Policy.Profile != "artifact-v1" {
+		t.Fatalf("profile %q", man.Policy.Profile)
 	}
 }
 

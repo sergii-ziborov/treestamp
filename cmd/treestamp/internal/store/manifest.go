@@ -240,7 +240,7 @@ func (m Manifest) validateObservation() error {
 	if ev != "" && ev != "sha256" && ev != "metadata" {
 		return fmt.Errorf("unknown evidence %q", ev)
 	}
-	if profile := m.Policy.Profile; profile != "" && profile != policy.Profile {
+	if profile := m.Policy.Profile; profile != "" && !policy.KnownProfile(profile) {
 		return fmt.Errorf("unknown profile %q", profile)
 	}
 	term := m.Observation.Termination

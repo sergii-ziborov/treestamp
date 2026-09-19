@@ -170,7 +170,7 @@ func TestScanHumanOmitsLecture(t *testing.T) {
 		t.Fatalf("scan %d %s", code, errb.String())
 	}
 	text := out.String()
-	if !strings.Contains(text, "Complete") {
+	if !strings.Contains(text, "Complete") || !strings.Contains(text, "a.go") {
 		t.Fatalf("%s", text)
 	}
 	for _, junk := range []string{"within selected scope", "Policy exclusions", "repo-v1", "Failures"} {
@@ -192,6 +192,194 @@ func TestExplainExcludedIsSuccess(t *testing.T) {
 	if !bytes.Contains(out.Bytes(), []byte("skip.txt")) {
 		t.Fatalf("%s", out.String())
 	}
+}
+
+func TestVerifyHumanListsEveryChangedPath(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "keep.go"), "package keep\n")
+	base := filepath.Join(t.TempDir(), "base.tstamp.json")
+	var out, errb bytes.Buffer
+	if code := Run(context.Background(), []string{"scan", root, "--json", "--output", base}, bytes.NewReader(nil), &out, &errb); code != 0 {
+		t.Fatalf("scan %d %s", code, errb.String())
+	}
+	for i := 0; i < 10; i++ {
+		writeFile(t, filepath.Join(root, "extra"+itoa(i)+".go"), "package extra\n")
+	}
+	out.Reset()
+	errb.Reset()
+	code := Run(context.Background(), []string{"verify", base, "--root", root}, bytes.NewReader(nil), &out, &errb)
+	if code != 1 {
+		t.Fatalf("verify %d %s", code, errb.String())
+	}
+	text := out.String()
+	if strings.Contains(text, "…") {
+		t.Fatalf("truncated %s", text)
+	}
+	for i := 0; i < 10; i++ {
+		name := "+ extra" + itoa(i) + ".go"
+		if !strings.Contains(text, name) {
+			t.Fatalf("missing %s in %s", name, text)
+		}
+	}
+}
+
+func TestVerifyNullWritesRecords(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "old.go"), "package old\n")
+	base := filepath.Join(t.TempDir(), "base.tstamp.json")
+	var out, errb bytes.Buffer
+	if code := Run(context.Background(), []string{"scan", root, "--json", "--output", base}, bytes.NewReader(nil), &out, &errb); code != 0 {
+		t.Fatalf("scan %d %s", code, errb.String())
+	}
+	writeFile(t, filepath.Join(root, "new.go"), "package neu\n")
+	out.Reset()
+	errb.Reset()
+	code := Run(context.Background(), []string{"verify", base, "--root", root, "--null"}, bytes.NewReader(nil), &out, &errb)
+	if code != 1 {
+		t.Fatalf("verify %d %s", code, errb.String())
+	}
+	if !bytes.Contains(out.Bytes(), []byte("+ new.go\x00")) {
+		t.Fatalf("%q", out.Bytes())
+	}
+	if bytes.Contains(out.Bytes(), []byte("\n")) {
+		t.Fatalf("newlines in null output %q", out.Bytes())
+	}
+}
+
+func TestVerifyJSONAndNullIsUsage(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "a.go"), "package a\n")
+	base := filepath.Join(t.TempDir(), "base.tstamp.json")
+	var out, errb bytes.Buffer
+	if code := Run(context.Background(), []string{"scan", root, "--json", "--output", base}, bytes.NewReader(nil), &out, &errb); code != 0 {
+		t.Fatalf("scan %d %s", code, errb.String())
+	}
+	out.Reset()
+	errb.Reset()
+	if code := Run(context.Background(), []string{"verify", base, "--root", root, "--json", "--null"}, bytes.NewReader(nil), &out, &errb); code != 2 {
+		t.Fatalf("code %d %s", code, errb.String())
+	}
+}
+
+func TestScanNDJSONEmitsBeginFilesEnd(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "a.go"), "package a\n")
+	writeFile(t, filepath.Join(root, "b.go"), "package b\n")
+	var out, errb bytes.Buffer
+	code := Run(context.Background(), []string{"scan", root, "--ext", "go", "--format", "ndjson"}, bytes.NewReader(nil), &out, &errb)
+	if code != 0 {
+		t.Fatalf("scan %d %s", code, errb.String())
+	}
+	lines := bytes.Split(bytes.TrimRight(out.Bytes(), "\n"), []byte("\n"))
+	if len(lines) != 4 {
+		t.Fatalf("lines %d %s", len(lines), out.String())
+	}
+	var first, last map[string]any
+	if err := json.Unmarshal(lines[0], &first); err != nil || first["event"] != "scan_begin" {
+		t.Fatalf("begin %v %s", err, lines[0])
+	}
+	if err := json.Unmarshal(lines[len(lines)-1], &last); err != nil || last["event"] != "scan_end" {
+		t.Fatalf("end %v %s", err, lines[len(lines)-1])
+	}
+	if last["complete"] != true {
+		t.Fatalf("complete %v", last["complete"])
+	}
+	for _, line := range lines[1 : len(lines)-1] {
+		var ev map[string]any
+		if err := json.Unmarshal(line, &ev); err != nil || ev["event"] != "file_committed" {
+			t.Fatalf("file %v %s", err, line)
+		}
+	}
+}
+
+func TestScanArtifactHashesBinaryAndGitignored(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, ".gitignore"), "*.bin\n")
+	writeFile(t, filepath.Join(root, "note.txt"), "hello\n")
+	writeFile(t, filepath.Join(root, "keep.bin"), "plain\n")
+	writeFile(t, filepath.Join(root, "payload.bin"), "a\x00b")
+	repo := scanJSON(t, root)
+	if hasRel(repo, "keep.bin") || hasRel(repo, "payload.bin") || !hasRel(repo, "note.txt") {
+		t.Fatalf("repo files %+v", rels(repo))
+	}
+	art := scanJSON(t, root, "--profile", "artifact")
+	if art.Policy.Profile != "artifact-v1" {
+		t.Fatalf("profile %q", art.Policy.Profile)
+	}
+	if !hasHash(art, "keep.bin") || !hasHash(art, "payload.bin") || !hasHash(art, "note.txt") {
+		t.Fatalf("artifact files %+v", art.Files)
+	}
+}
+
+func TestScanArtifactRejectsMetadataOnly(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "a.go"), "package a\n")
+	var out, errb bytes.Buffer
+	code := Run(context.Background(), []string{"scan", root, "--profile", "artifact", "--metadata-only"}, bytes.NewReader(nil), &out, &errb)
+	if code != 2 {
+		t.Fatalf("code %d %s", code, errb.String())
+	}
+}
+
+func TestVerifyArtifactRestoresBinaryHash(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "payload.bin"), "a\x00b")
+	base := filepath.Join(t.TempDir(), "base.tstamp.json")
+	var out, errb bytes.Buffer
+	args := []string{"scan", root, "--profile", "artifact", "--json", "--output", base}
+	if code := Run(context.Background(), args, bytes.NewReader(nil), &out, &errb); code != 0 {
+		t.Fatalf("scan %d %s", code, errb.String())
+	}
+	out.Reset()
+	errb.Reset()
+	code := Run(context.Background(), []string{"verify", base, "--root", root, "--json"}, bytes.NewReader(nil), &out, &errb)
+	if code != 0 {
+		t.Fatalf("verify %d out=%s err=%s", code, out.String(), errb.String())
+	}
+}
+
+func scanJSON(t *testing.T, root string, extra ...string) store.Manifest {
+	t.Helper()
+	var out, errb bytes.Buffer
+	args := append([]string{"scan", root, "--json"}, extra...)
+	if code := Run(context.Background(), args, bytes.NewReader(nil), &out, &errb); code != 0 {
+		t.Fatalf("scan %d %s", code, errb.String())
+	}
+	var man store.Manifest
+	if err := json.Unmarshal(out.Bytes(), &man); err != nil {
+		t.Fatal(err)
+	}
+	return man
+}
+
+func hasRel(man store.Manifest, name string) bool {
+	for _, file := range man.Files {
+		if file.Relative == name {
+			return true
+		}
+	}
+	return false
+}
+
+func hasHash(man store.Manifest, name string) bool {
+	for _, file := range man.Files {
+		if file.Relative == name && file.Hash != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func rels(man store.Manifest) []string {
+	out := make([]string, 0, len(man.Files))
+	for _, file := range man.Files {
+		out = append(out, file.Relative)
+	}
+	return out
+}
+
+func itoa(n int) string {
+	return string(rune('0' + n))
 }
 
 func writeFile(t *testing.T, path, body string) {

@@ -36,8 +36,15 @@ treestamp verify ./baselines/cli.tstamp.json --root ./cmd/treestamp
 
 Exit `0` means the same policy still selects the same bytes. Exit `1`
 means a selected file was added, removed, renamed, or its contents
-changed. Matching size and mtime is not enough. Fast cache is never
-treated as proof.
+changed. The human card lists every one of those paths (`+`, `-`, `~`,
+`old → new`). Matching size and mtime is not enough. Fast cache is
+never treated as proof.
+
+Pipe the same records into another tool:
+
+```text
+treestamp verify ./baselines/cli.tstamp.json --root ./cmd/treestamp --null
+```
 
 Whole-repo baseline lives *beside* the checkout, not inside it:
 
@@ -68,6 +75,31 @@ treestamp diff ./baselines/before.tstamp.json ./baselines/after.tstamp.json --js
 `diff` only reads the two documents. Use it when the trees are gone and
 you still need added/removed/changed/renamed. `--exit-code` is exit `1`
 when a completed comparison finds a difference.
+
+## Watch files as they hash
+
+```text
+treestamp scan ./cmd/treestamp --ext go --format ndjson
+```
+
+Each line is one JSON object: `scan_begin`, then `file_committed` as
+soon as that file is hashed, then `scan_end`. This is not a dump of a
+finished manifest.
+
+## Hash binaries and ignore gitignore
+
+Default `scan` is the repo profile: `.gitignore` applies, NUL-containing
+files are skipped, and files over 1.5MiB are skipped. For a release
+tree or other artifact that should be hashed as-is:
+
+```text
+treestamp scan ./dist --profile artifact --json --output ../dist.tstamp.json
+treestamp verify ../dist.tstamp.json --root ./dist
+```
+
+`--profile artifact` still applies standard skips (VCS directories).
+It is not a hashdeep file. `--metadata-only` is refused. Old repo
+baselines keep skipping binaries.
 
 ## Feed selected names to another tool (no hashing)
 
@@ -105,6 +137,7 @@ question; it did not fail the build. For a script, `--json` prints
 ```text
 {
   "schema": "treestamp.policy/v1",
+  "profile": "repo",
   "extensions": ["go"],
   "scope": ["cmd/treestamp"],
   "exclude": ["testdata"]

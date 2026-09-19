@@ -79,6 +79,8 @@ treestamp explain skip.txt --root . --ext go
 `--output` cannot sit inside the scan root. Scan a subtree if the
 manifest must live in the same repository. `verify` re-applies the
 saved policy; `diff` only compares two already-written manifests.
+`--profile artifact` hashes binaries and skips gitignore; default
+`scan` stays the repo profile.
 
 ![treestamp scan](docs/cli/scan.svg)
 ![treestamp explain](docs/cli/explain.svg)

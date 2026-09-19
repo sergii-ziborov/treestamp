@@ -13,7 +13,7 @@ import (
 
 const (
 	CLIVersion = "0.1.4"
-	Profile    = "repo-v1"
+	Profile    = ProfileRepo
 )
 
 type Select struct {
@@ -27,6 +27,7 @@ type Select struct {
 	Output               string
 	Color                string
 	Quiet                bool
+	Profile              string
 	maxFileBytes         *uint64
 }
 
@@ -50,6 +51,7 @@ type fileConfig struct {
 	Exclude      []string `json:"exclude"`
 	NoIgnore     bool     `json:"no_ignore"`
 	MaxFileBytes *uint64  `json:"max_file_bytes"`
+	Profile      string   `json:"profile"`
 }
 
 func (s *Select) Bind(cmd *cobra.Command) {
@@ -65,6 +67,7 @@ func (s *Select) Bind(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&s.Output, "output", "", "write the snapshot here; must be outside the scan folder")
 	cmd.Flags().StringVar(&s.Color, "color", "auto", "auto, always, or never")
 	cmd.Flags().BoolVar(&s.Quiet, "quiet", false, "skip next-step hints")
+	cmd.Flags().StringVar(&s.Profile, "profile", "", "repo (default) or artifact")
 }
 
 func (s *Select) ApplyConfig() error {
@@ -97,6 +100,9 @@ func (s *Select) ApplyConfig() error {
 	if cfg.MaxFileBytes != nil {
 		s.maxFileBytes = cfg.MaxFileBytes
 	}
+	if s.Profile == "" {
+		s.Profile = cfg.Profile
+	}
 	return s.validate()
 }
 
@@ -110,6 +116,9 @@ func (s Select) validate() error {
 	case "", "auto", "always", "never":
 	default:
 		return fmt.Errorf("unknown color mode %q", s.Color)
+	}
+	if _, err := NormalizeProfile(s.Profile); err != nil {
+		return err
 	}
 	return nil
 }
@@ -126,10 +135,20 @@ func (s Select) FormatName() string {
 
 func (s Select) Options() (treestamp.Options, error) {
 	opts := treestamp.DefaultOptions()
+	name, err := NormalizeProfile(s.Profile)
+	if err != nil {
+		return opts, err
+	}
+	if name == ProfileArtifact {
+		if s.MetadataOnly {
+			return opts, fmt.Errorf("artifact profile requires content hashes")
+		}
+		applyArtifact(&opts)
+	}
 	opts.Extensions = append([]string(nil), s.Exts...)
 	opts.Filters.LocationInclude = append([]string(nil), s.Scope...)
 	opts.Filters.LocationExclude = append([]string(nil), s.Exclude...)
-	if s.NoIgnore {
+	if s.NoIgnore || name == ProfileArtifact {
 		opts.IgnoreFiles = nil
 	}
 	if s.MetadataOnly {
@@ -145,23 +164,31 @@ func (s Select) Options() (treestamp.Options, error) {
 }
 
 func (s Select) Snapshot(opts treestamp.Options) Snapshot {
+	name, _ := NormalizeProfile(s.Profile)
 	return Snapshot{
-		Profile: Profile, Extensions: opts.Extensions, Scope: s.Scope, Exclude: s.Exclude,
-		NoIgnore: s.NoIgnore, HashContents: opts.HashFileContents, MaxFileBytes: opts.MaxFileBytes,
-		StandardSkips: opts.StandardSkips, IgnoreFiles: opts.IgnoreFiles,
+		Profile: name, Extensions: opts.Extensions, Scope: s.Scope, Exclude: s.Exclude,
+		NoIgnore: s.NoIgnore || name == ProfileArtifact, HashContents: opts.HashFileContents,
+		MaxFileBytes: opts.MaxFileBytes, StandardSkips: opts.StandardSkips, IgnoreFiles: opts.IgnoreFiles,
 		Descriptor: treestamp.DescriptorFromOptions(opts),
 	}
 }
 
 func OptionsFrom(snap Snapshot) (treestamp.Options, error) {
 	opts := treestamp.DefaultOptions()
+	name, err := NormalizeProfile(snap.Profile)
+	if err != nil {
+		return opts, err
+	}
+	if name == ProfileArtifact {
+		applyArtifact(&opts)
+	}
 	opts.Extensions = append([]string(nil), snap.Extensions...)
 	opts.Filters.LocationInclude = append([]string(nil), snap.Scope...)
 	opts.Filters.LocationExclude = append([]string(nil), snap.Exclude...)
 	opts.HashFileContents = snap.HashContents
 	opts.MaxFileBytes = snap.MaxFileBytes
 	opts.StandardSkips = snap.StandardSkips
-	if snap.NoIgnore {
+	if snap.NoIgnore || name == ProfileArtifact {
 		opts.IgnoreFiles = nil
 	} else if len(snap.IgnoreFiles) > 0 {
 		opts.IgnoreFiles = append([]string(nil), snap.IgnoreFiles...)

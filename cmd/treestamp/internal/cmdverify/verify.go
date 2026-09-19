@@ -17,6 +17,7 @@ type request struct {
 	Manifest string
 	Root     string
 	JSON     bool
+	Null     bool
 }
 
 func New(env *app.Env) *cobra.Command {
@@ -25,7 +26,7 @@ func New(env *app.Env) *cobra.Command {
 		Use:   "verify SNAPSHOT",
 		Short: "Re-scan a tree and compare it to a saved snapshot",
 		Example: "  treestamp verify ./baselines/cli.tstamp.json --root ./cmd/treestamp\n" +
-			"  treestamp verify ./baselines/cli.tstamp.json --root ./cmd/treestamp --json",
+			"  treestamp verify ./baselines/cli.tstamp.json --root ./cmd/treestamp --null",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			req.Manifest = args[0]
@@ -34,10 +35,14 @@ func New(env *app.Env) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&req.Root, "root", "", "folder to read (required; not taken from the snapshot)")
 	cmd.Flags().BoolVar(&req.JSON, "json", false, "print JSON instead of the human summary")
+	cmd.Flags().BoolVar(&req.Null, "null", false, "print every changed path, NUL-separated")
 	return cmd
 }
 
 func run(ctx context.Context, env *app.Env, req request) error {
+	if req.JSON && req.Null {
+		return env.Fail(status.Usage, "--json and --null cannot be combined")
+	}
 	if req.Root == "" {
 		return env.Fail(status.Usage, "verify needs --root (the folder to read)")
 	}
@@ -67,10 +72,10 @@ func run(ctx context.Context, env *app.Env, req request) error {
 	prev := base.AsReport()
 	prev.Root = current.Root
 	delta := treestamp.DeltaBetween(prev, current)
-	return finish(env, current, delta, req.JSON)
+	return finish(env, current, delta, req)
 }
 
-func finish(env *app.Env, current *treestamp.ScanReport, delta treestamp.ScanDelta, asJSON bool) error {
+func finish(env *app.Env, current *treestamp.ScanReport, delta treestamp.ScanDelta, req request) error {
 	if !current.Complete && env.Code != status.Partial {
 		env.Set(status.Partial)
 	}
@@ -80,8 +85,12 @@ func finish(env *app.Env, current *treestamp.ScanReport, delta treestamp.ScanDel
 		"renamed": renamed(delta.Renamed), "selection_inputs_changed": delta.SelectionInputsChanged,
 		"policy_changed": delta.PolicyChanged, "complete": current.Complete, "cache_not_used": true,
 	}
-	if asJSON {
+	if req.JSON {
 		if err := render.JSON(env.Out, doc); err != nil {
+			return env.Fail(status.Publish, "stdout: %v", err)
+		}
+	} else if req.Null {
+		if err := render.WriteNull(env.Out, render.OfDelta(delta).Lines()); err != nil {
 			return env.Fail(status.Publish, "stdout: %v", err)
 		}
 	} else if err := writeHuman(env, delta, current); err != nil {
@@ -103,39 +112,14 @@ func writeHuman(env *app.Env, delta treestamp.ScanDelta, current *treestamp.Scan
 		card.Status, card.Detail, card.Tone = "Partial", "Walk did not finish", "warn"
 	} else if !delta.IsEmpty() {
 		card.Status, card.Detail, card.Tone = "Differ", "Selected files changed", "bad"
-		card.Rows = deltaRows(delta)
-		card.Items = deltaItems(delta)
+		view := render.OfDelta(delta)
+		card.Rows = view.Rows()
+		card.Items = view.Lines()
 	}
 	if card.Status == "Match" {
 		card.Rows = []render.Row{{Key: "Selected", Value: render.Comma(len(current.Files))}}
 	}
 	return render.WriteCard(env.Out, pal, card)
-}
-
-func deltaRows(delta treestamp.ScanDelta) []render.Row {
-	return []render.Row{
-		render.CountRow("Added", len(delta.Added)),
-		render.CountRow("Removed", len(delta.Removed)),
-		render.CountRow("Changed", len(delta.Modified)),
-		render.CountRow("Renamed", len(delta.Renamed)),
-	}
-}
-
-func deltaItems(delta treestamp.ScanDelta) []string {
-	items := make([]string, 0, 8)
-	for _, f := range delta.Added {
-		items = append(items, "+ "+f.Relative)
-	}
-	for _, f := range delta.Removed {
-		items = append(items, "- "+f.Relative)
-	}
-	for _, item := range delta.Modified {
-		items = append(items, "~ "+item.Current.Relative)
-	}
-	for _, item := range delta.Renamed {
-		items = append(items, item.Previous.Relative+" → "+item.Current.Relative)
-	}
-	return render.Preview(items, 8)
 }
 
 func names(files []treestamp.ScannedFile) []string {

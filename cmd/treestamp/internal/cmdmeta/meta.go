@@ -94,6 +94,7 @@ func runConfig(env *app.Env, sel policy.Select) error {
 	return render.WriteCard(env.Out, render.Detect(env.Out, sel.Color), render.Card{
 		Status: "Policy",
 		Rows: []render.Row{
+			{Key: "Profile", Value: policy.DisplayProfile(snap.Profile)},
 			{Key: "Extensions", Value: strings.Join(snap.Extensions, ", ")},
 			{Key: "Scope", Value: strings.Join(snap.Scope, ", ")},
 			{Key: "Exclude", Value: strings.Join(snap.Exclude, ", ")},

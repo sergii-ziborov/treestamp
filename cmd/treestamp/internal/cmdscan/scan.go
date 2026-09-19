@@ -54,6 +54,9 @@ func run(ctx context.Context, env *app.Env, sel policy.Select, root string) erro
 			return env.Fail(status.Usage, "refusing --output inside scan root; write the manifest outside the tree")
 		}
 	}
+	if sel.FormatName() == "ndjson" {
+		return runNDJSON(ctx, env, sel, root, opts)
+	}
 	rep, err := treestamp.ScanWith(ctx, root, treestamp.Using(opts))
 	if errors.Is(err, treestamp.ErrPartial) {
 		env.Set(status.Partial)
@@ -107,8 +110,6 @@ func writeScan(env *app.Env, sel policy.Select, man store.Manifest, format strin
 		if _, err := env.Out.Write(payload); err != nil {
 			return env.Fail(status.Publish, "stdout: %v", err)
 		}
-	case "ndjson":
-		return writeNDJSON(env, man)
 	case "text":
 		if err := writeHuman(env, sel, man); err != nil {
 			return env.Fail(status.Publish, "stdout: %v", err)
@@ -128,11 +129,24 @@ func writeHuman(env *app.Env, sel policy.Select, man store.Manifest) error {
 			env.Set(status.Partial)
 		}
 	}
-	card := render.Card{Status: title, Detail: scanDetail(man), Tone: tone, Rows: scanRows(sel, man)}
+	card := render.Card{Status: title, Detail: scanDetail(man), Tone: tone, Rows: scanRows(sel, man), Items: scanNames(man)}
 	if !sel.Quiet && sel.Output == "" {
 		card.Next = []string{"Save a baseline:  treestamp scan <root> --output FILE"}
 	}
 	return render.WriteCard(env.Out, pal, card)
+}
+
+const maxScanNames = 20
+
+func scanNames(man store.Manifest) []string {
+	if len(man.Files) == 0 || len(man.Files) > maxScanNames {
+		return nil
+	}
+	out := make([]string, 0, len(man.Files))
+	for _, file := range man.Files {
+		out = append(out, file.Relative)
+	}
+	return out
 }
 
 func scanDetail(man store.Manifest) string {
@@ -141,6 +155,9 @@ func scanDetail(man store.Manifest) string {
 		return "no files selected"
 	}
 	if man.Summary.Hashed == man.Summary.Selected {
+		if man.Policy.Profile == policy.ProfileArtifact {
+			return n + " files selected and hashed, including binaries"
+		}
 		return n + " files selected and hashed"
 	}
 	if man.Summary.Hashed == 0 {
@@ -151,6 +168,9 @@ func scanDetail(man store.Manifest) string {
 
 func scanRows(sel policy.Select, man store.Manifest) []render.Row {
 	rows := []render.Row{{Key: "Revision", Value: man.Revisions.Legacy}}
+	if man.Policy.Profile == policy.ProfileArtifact {
+		rows = append(rows, render.Row{Key: "Profile", Value: policy.DisplayProfile(man.Policy.Profile)})
+	}
 	if sel.Output != "" && man.Observation.Complete && man.Summary.Failures == 0 {
 		rows = append(rows, render.Row{Key: "Wrote", Value: sel.Output})
 	}
@@ -161,23 +181,6 @@ func scanRows(sel policy.Select, man store.Manifest) []render.Row {
 		rows = append(rows, render.Row{Key: "Failed", Value: render.Comma(man.Summary.Failures)})
 	}
 	return rows
-}
-
-func writeNDJSON(env *app.Env, man store.Manifest) error {
-	begin := map[string]any{"schema": store.Schema, "event": "scan_begin", "profile": man.Policy.Profile}
-	if err := render.JSONLine(env.Out, begin); err != nil {
-		return env.Fail(status.Publish, "stdout: %v", err)
-	}
-	for _, file := range man.Files {
-		if err := render.JSONLine(env.Out, map[string]any{"event": "file_committed", "relative": file.Relative, "sha256": file.Hash}); err != nil {
-			return env.Fail(status.Publish, "stdout: %v", err)
-		}
-	}
-	end := map[string]any{"event": "scan_end", "complete": man.Observation.Complete, "revisions": man.Revisions, "summary": man.Summary}
-	if err := render.JSONLine(env.Out, end); err != nil {
-		return env.Fail(status.Publish, "stdout: %v", err)
-	}
-	return nil
 }
 
 func mapScan(err error) int {

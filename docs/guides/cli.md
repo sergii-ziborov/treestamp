@@ -43,7 +43,10 @@ treestamp verify ./baselines/cli.tstamp.json --root ./cmd/treestamp --json
 ```
 
 Exit `1` is a finished difference. Exit `3` is a partial walk; do not
-treat that as “clean”.
+treat that as “clean”. Without `--json`, `verify` and `diff` print
+every added, removed, changed, and renamed path. `--null` writes those
+records with a NUL after each one (`--json` and `--null` cannot be
+combined).
 
 When two jobs already produced manifests and the trees are gone:
 
@@ -66,6 +69,17 @@ command cannot run from the scan root. `--null` and `--json` cannot be
 combined. `--metadata-only` is invalid here: `paths` is already
 content-free.
 
+`scan --format ndjson` writes one JSON object per line as files are
+hashed (`scan_begin`, `file_committed`, `scan_end`). It is not a second
+scan engine. `--output` still writes the baseline only after a complete
+walk.
+
+Default `--profile repo` is the source profile: gitignore applies,
+binaries are skipped, files over 1.5MiB are skipped. `--profile artifact`
+hashes every selected file, including binaries and large files, and does
+not read gitignore. Standard skips stay. The name is stored on the
+manifest so `verify` restores it. This is not a hashdeep digest list.
+
 ## Explain a skip with the same policy
 
 ```text
@@ -79,6 +93,7 @@ checked.
 ## Shared policy file
 
 Schema `treestamp.policy/v1`. Flags override empty slices from the file.
+`profile` may be `repo` or `artifact`.
 
 ```text
 treestamp config --config policy.json
@@ -98,9 +113,10 @@ relative path.
 | `--ext` | Extension filter. Dots are optional. |
 | `--json` | One versioned document on stdout. |
 | `--output FILE` | Atomic write. File must be outside the scan root. |
-| `--null` | `paths` only. Exact names, NUL separated. |
+| `--null` | `paths`: exact names, NUL separated. `verify` / `diff`: one changed-path record per NUL. |
 | `--absolute` | `paths` only. Print absolute paths. |
-| `--metadata-only` | `scan` only. No content hashes; `verify` will refuse. |
+| `--profile` | `repo` (default) or `artifact`. Artifact hashes binaries and ignores gitignore. |
+| `--metadata-only` | `scan` only. No content hashes; `verify` will refuse. Invalid with `--profile artifact`. |
 | `--color` | `auto`, `always`, or `never`. `NO_COLOR` wins. |
 
 ## What this release does not do
