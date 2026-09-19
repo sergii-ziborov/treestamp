@@ -1,16 +1,52 @@
 package walk
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/sergii-ziborov/treestamp/internal/dirread"
+	"github.com/sergii-ziborov/treestamp/internal/listwalk"
 	pathx "github.com/sergii-ziborov/treestamp/internal/path"
 	"github.com/sergii-ziborov/treestamp/internal/platform"
 )
 
 const readDirBatch = 64
+
+func versionFromInfo(info os.FileInfo) FileVersion {
+	var ver FileVersion
+	if t := info.ModTime(); !t.IsZero() && t.After(time.Unix(0, 0)) {
+		ns := uint64(t.UnixNano())
+		ver.ModifiedNS = &ns
+	}
+	if id, ok := platform.IdentityFromInfo(info); ok {
+		ver.Identity = &id
+	}
+	return ver
+}
+
+var errVisitStop = errors.New("visit stop")
+
+func (w *callbackWork) streamDir(job dirJob) {
+	skip := false
+	err := listwalk.Stream(job.path, job.depth+1, func(e *listwalk.Entry) error {
+		if w.quit.Load() {
+			return errVisitStop
+		}
+		if skip && e.Type().IsRegular() {
+			return nil
+		}
+		if w.control(listwalk.Deliver(w.fn, e, w.toSlash), e, job, &skip) {
+			return errVisitStop
+		}
+		return nil
+	})
+	if err != nil && !errors.Is(err, errVisitStop) {
+		w.reportRead(job.path, err)
+	}
+}
 
 type pendingDir struct {
 	path      string
@@ -177,7 +213,7 @@ func (w *Walker) followTarget(path string, depth int, symlink, isFile bool, meta
 	if w.options.CollectMetadata && info.Mode().IsRegular() {
 		size := uint64(info.Size())
 		meta.bytes = &size
-		ver := versionFromInfo(path, info)
+		ver := versionFromInfo(info)
 		meta.version = &ver
 		h := platform.HiddenFromInfo(path, info)
 		meta.hidden = &h
@@ -206,7 +242,7 @@ func (w *Walker) classifyDir(path string, depth int, symlink, isDir bool, target
 		}
 		canonical = resolved
 	}
-	if !pathx.UnderRoot(w.root, canonical) {
+	if !w.options.FollowOutside && !pathx.UnderRoot(w.root, canonical) {
 		return SkipPathEscape, nil, nil
 	}
 	if !isDir {
@@ -221,11 +257,9 @@ func (w *Walker) dirIdentity(path string, depth int, canonical string, target os
 		info = *w.rootInfo
 	} else {
 		if target == nil {
-			st, stErr := os.Stat(path)
-			if stErr != nil {
+			if _, stErr := os.Stat(path); stErr != nil {
 				return SkipNone, nil, walkErr(path, depth, OpReadMetadata, stErr)
 			}
-			_ = st
 		}
 		got, infoErr := platform.DirectoryInfo(canonical)
 		if infoErr != nil {
@@ -281,7 +315,7 @@ func inspectSelectedLink(p selectedLinkPolicy) (selectedLinkResult, *WalkError) 
 		}
 		return selectedLinkResult{}, walkErr(p.path, p.depth, OpCanonicalize, err)
 	}
-	if !pathx.UnderRoot(root, resolved) {
+	if !p.options.FollowOutside && !pathx.UnderRoot(root, resolved) {
 		return selectedLinkResult{skip: SkipPathEscape}, nil
 	}
 	info, err := platform.DirectoryInfo(resolved)
@@ -303,10 +337,7 @@ func inspectSelectedLink(p selectedLinkPolicy) (selectedLinkResult, *WalkError) 
 }
 
 func applySelectedLink(entry *WalkEntry, result selectedLinkResult) {
-	entry.isFile = false
-	entry.isDir = true
-	entry.dirID = result.identity
-	entry.skip = result.skip
+	entry.isFile, entry.isDir, entry.dirID, entry.skip = false, true, result.identity, result.skip
 }
 
 func (w *Walker) prepareSelectedLink(entry *WalkEntry) *WalkError {
@@ -435,7 +466,7 @@ func makeEntry(root, path string, depth int, info os.FileInfo, options WalkOptio
 	if options.CollectMetadata && isFile {
 		size := uint64(info.Size())
 		entry.bytes = &size
-		ver := versionFromInfo(path, info)
+		ver := versionFromInfo(info)
 		entry.version = &ver
 		h := platform.HiddenFromInfo(path, info)
 		entry.hidden = &h

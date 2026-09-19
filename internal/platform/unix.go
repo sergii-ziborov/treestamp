@@ -4,6 +4,7 @@ package platform
 
 import (
 	"os"
+	"syscall"
 
 	"golang.org/x/sys/unix"
 )
@@ -34,6 +35,22 @@ func PathIdentity(path string) (Identity, error) {
 		return Identity{}, err
 	}
 	return Identity{FileSystem: uint64(st.Dev), File: uint64(st.Ino)}, nil
+}
+
+func identityFromInfo(info os.FileInfo) (Identity, bool) {
+	if info == nil {
+		return Identity{}, false
+	}
+	switch st := info.Sys().(type) {
+	case *syscall.Stat_t:
+		return Identity{FileSystem: uint64(st.Dev), File: uint64(st.Ino)}, true
+	case syscall.Stat_t:
+		return Identity{FileSystem: uint64(st.Dev), File: uint64(st.Ino)}, true
+	case *unix.Stat_t:
+		return Identity{FileSystem: uint64(st.Dev), File: uint64(st.Ino)}, true
+	default:
+		return Identity{}, false
+	}
 }
 
 func nativeHidden(_ os.FileInfo) bool {

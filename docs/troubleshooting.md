@@ -13,6 +13,14 @@
 | File root: `cannot Walk non-directory` | godirwalk default | Set `AllowNonDirectory`. |
 | `SkipDir` on a file dropped siblings | That is `SkipDir` | Use `SkipThis` to skip one node. |
 | `compat/godirwalk` slower than `WalkDirs` | Extra `Dirent` wrappers | Prefer `WalkDirs` unless you need the old types. |
+| Hardlink shown twice | Path-only dedup | Wrap with `IgnoreDuplicateFiles`. Same bytes ≠ same object. |
+| `compat/fastwalk` `SkipAll` is an error | fastwalk v1.0.14 | Native `Walk` treats `SkipAll` as a successful stop unless `KeepSkipAll`. |
+| Need an import switch, not a speed claim | Existing fastwalk module | Change the import to `compat/fastwalk`; see `consumer/`. |
+| Parallel walk became serial after `Sort` | Legacy `Config.Sort` bool | Use `SortMode` for local order. `Sort` is global DFS. |
+| Ordered pull hung after `Close` | Waiters missed cancel | `Close` cancels the pull context and wakes cond waiters. |
+| `TryIntoIterOrderedBounded` failed | Executor admitted no workers | That is an admission error, not a silent one-goroutine fallback. |
+| Darwin or Windows walk ≠ Linux timing | Different directory backends | Do not publish a Linux getdents number as a Darwin/Windows result. |
+| `FileVersion.Identity` nil on Windows | FindFirstFile has no file index | Use `PathIdentity` or follow/same-filesystem when an index is required. |
 | What to attach to an issue | Versions, options, tiny fixture | No file contents, no absolute host paths. |
 
 `Explain` does not diagnose binary or oversize skips. Those appear as typed

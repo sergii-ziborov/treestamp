@@ -2,7 +2,10 @@
 
 package dirread
 
-import "os"
+import (
+	"io"
+	"os"
+)
 
 // Read appends unsorted directory records. It does not call os.ReadDir,
 // which sorts names and is slower than godirwalk on wide directories.
@@ -12,7 +15,8 @@ func Read(dir string, buf []Record) ([]Record, error) {
 		return buf, err
 	}
 	for _, dent := range dents {
-		buf = append(buf, Record{Name: dent.Name(), Type: dent.Type()})
+		info, _ := dent.Info()
+		buf = append(buf, Record{Name: dent.Name(), Type: dent.Type(), Info: info})
 	}
 	return buf, nil
 }
@@ -24,6 +28,29 @@ func ReadScratch(dir string, buf []Record, _ []byte) ([]Record, error) {
 
 func OSEntries(dir string) ([]os.DirEntry, error) {
 	return OSEntriesScratch(dir, nil)
+}
+
+// Visit streams children in ReadDir batches so SkipAll can close early.
+func Visit(dir string, _ []byte, fn func(name string, typ os.FileMode, dent os.DirEntry) error) error {
+	file, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	for {
+		dents, err := file.ReadDir(256)
+		for _, dent := range dents {
+			if cbErr := fn(dent.Name(), dent.Type(), dent); cbErr != nil {
+				return cbErr
+			}
+		}
+		if err == io.EOF || (err == nil && len(dents) == 0) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+	}
 }
 
 func OSEntriesScratch(dir string, _ []byte) ([]os.DirEntry, error) {

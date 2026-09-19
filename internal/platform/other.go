@@ -22,6 +22,10 @@ func PathIdentity(path string) (Identity, error) {
 	return Identity{}, fmt.Errorf("filesystem identity is unsupported: %s", path)
 }
 
+func identityFromInfo(_ os.FileInfo) (Identity, bool) {
+	return Identity{}, false
+}
+
 func nativeHidden(_ os.FileInfo) bool {
 	return false
 }

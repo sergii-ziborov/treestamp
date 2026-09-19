@@ -10,6 +10,17 @@ import (
 	"github.com/sergii-ziborov/treestamp/internal/dirread"
 )
 
+// Stream calls visit for each child without buffering the directory.
+func Stream(dir string, depth int, visit func(*Entry) error) error {
+	return dirread.Visit(dir, nil, func(name string, typ fs.FileMode, dent fs.DirEntry) error {
+		entry := Own(name, child(dir, name), typ, depth, nil)
+		if dent != nil {
+			entry.Bind(dent)
+		}
+		return visit(entry)
+	})
+}
+
 func fill(top *frame, fn fs.WalkDirFunc, cfg Config) error {
 	if top.ready {
 		return nil

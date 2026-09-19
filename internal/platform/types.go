@@ -66,3 +66,9 @@ func PathMatchesIdentity(path string, expected Identity) (bool, error) {
 func isRegularFile(info os.FileInfo) bool {
 	return info != nil && info.Mode().IsRegular()
 }
+
+// IdentityFromInfo extracts native identity from FileInfo.Sys when the
+// platform left device and inode (or equivalent) on that value.
+func IdentityFromInfo(info os.FileInfo) (Identity, bool) {
+	return identityFromInfo(info)
+}

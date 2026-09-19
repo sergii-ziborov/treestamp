@@ -2,9 +2,9 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/sergii-ziborov/treestamp.svg)](https://pkg.go.dev/github.com/sergii-ziborov/treestamp)
 
-Native Go library for walking a tree, selecting files, hashing what you
-selected, explaining why a path was kept or dropped, and verifying the
-next tree. Same scanner from a CLI when you are not writing Go.
+Native Go library for walking a tree. You can then select files, hash what
+you selected, explain why a path was kept or dropped, and verify the next
+tree. Same scanner from a CLI when you are not writing Go.
 
 | What | Where | Open this |
 | --- | --- | --- |
@@ -15,6 +15,7 @@ next tree. Same scanner from a CLI when you are not writing Go.
 Current tags: library [`v0.1.4`](https://github.com/sergii-ziborov/treestamp/releases/tag/v0.1.4),
 CLI [`cmd/treestamp/v0.1.4`](https://github.com/sergii-ziborov/treestamp/releases/tag/cmd/treestamp/v0.1.4).
 `go install` uses the CLI module version (`@v0.1.4`), not the Git tag prefix.
+Those tags stay immutable. This tree is not a retag.
 
 ## Install
 
@@ -28,6 +29,8 @@ go get github.com/sergii-ziborov/treestamp@v0.1.4
 
 Import `github.com/sergii-ziborov/treestamp`. Docs and examples:
 [pkg.go.dev/github.com/sergii-ziborov/treestamp](https://pkg.go.dev/github.com/sergii-ziborov/treestamp).
+The runtime module requires `golang.org/x/sys` only. It does not require
+fastwalk, godirwalk, gocodewalker, or fsnotify.
 
 ### CLI
 
@@ -52,7 +55,107 @@ A bare `treestamp` prints help. It does not hash the current directory.
 `cmd/treestamp-driver` speaks a JSON fixture protocol for parity tests.
 Do not `go install` it. Do not ship it as Treestamp.
 
-## Library example
+## Walk
+
+```go
+package main
+
+import (
+	"fmt"
+	"io/fs"
+	"log"
+
+	"github.com/sergii-ziborov/treestamp"
+)
+
+func main() {
+	err := treestamp.WalkWithConfig(".", treestamp.Config{NumWorkers: 4},
+		func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			fmt.Println(path)
+			return nil
+		})
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+```
+
+`Walk` is serial. `NumWorkers != 0` is the parallel opt-in. `Config.Sort`
+is legacy serial global DFS; `SortMode` is local and may stay parallel.
+Saved callback entries keep their names. Switch a fastwalk import to
+[`compat/fastwalk`](MIGRATING.md) — worked example:
+[`consumer/`](consumer). Runnable iterator: [`examples/walk`](examples/walk).
+
+This is not a claimed speed win over charlievieth/fastwalk v1.0.14.
+
+## Proven receipts
+
+Official B01–B14 first-campaign rows are **MEASURED** on a
+1000-file tree, `TREESTAMP_OFFICIAL=1`. Receipt:
+[`compat/results/official-benches.json`](compat/results/official-benches.json)
+(host Windows/AMD64, `go1.26.5`, 2026-09-17). Policy: [BENCHMARKS.md](BENCHMARKS.md).
+
+```text
+set CGO_ENABLED=0
+python tools/run_official_benches.py
+```
+
+These nanoseconds are host-local. They are not a 10k/100k/1M ranking and not
+Rust oracle percentages. The informal table below is a 20 September 2026
+remasurement of this tree. Official B01–B14 stay the 17 September first
+campaign.
+
+Pinned sources used with those receipts:
+
+| Pin | Value |
+| --- | --- |
+| weavatrix-scan | 0.5.2, commit `29c003a6ad541c9a10faf30505235375fa78b9d8` |
+| fastwalk (bench only) | v1.0.14 |
+| gocodewalker (bench only) | v1.5.1 |
+| godirwalk (bench only) | v1.17.0 |
+| Informal listing table | 20 September 2026, [`INFORMAL_RUN.json`](bench/go-compat/INFORMAL_RUN.json) |
+
+Do not follow live `main` of a competitor as the oracle. Do not rewrite
+`official-benches.json` or `INFORMAL_RUN.json` without a new host run.
+
+## Informal benches
+
+Windows/amd64, Intel Core Ultra 7 255U, 20 September 2026.
+Go **1.26.5** (`go env GOVERSION`), module line **1.21.0**, `CGO_ENABLED=0`,
+`GOTOOLCHAIN=local`. Comparators in `bench/go-compat`:
+**fastwalk v1.0.14**, **gocodewalker v1.5.1**, **godirwalk v1.17.0**.
+Medians of three runs on a ~400-file temp tree. Not a 15–25% release claim.
+
+| Case | Treestamp | Comparator |
+| --- | --- | --- |
+| Raw serial walk | 212 µs, 153 KiB, 1638 allocs | fastwalk v1.0.14: 240 µs / 142 KiB; godirwalk v1.17.0: 382 µs / 208 KiB |
+| Raw parallel walk | 243 µs, 161 KiB, 1651 allocs | fastwalk v1.0.14: 240 µs / 142 KiB |
+| Regex `ScanPaths` | 3.25 ms, 98 KiB, 1338 allocs | gocodewalker v1.5.1: 3.46 ms / 129 KiB |
+| Cached `Stat` | 231 µs, 156 KiB, 1641 allocs | fastwalk v1.0.14: 221 µs / 139 KiB; `os.Stat` 11.4 ms |
+| `DirScanner` | 1.30 ms, 648 KiB, 8152 allocs | godirwalk v1.17.0: 1.45 ms / 564 KiB / 12008 allocs |
+| Scratch `ReadDirents` | 1.30 ms, 736 KiB, 8021 allocs | godirwalk v1.17.0: 1.61 ms / 955 KiB / 12023 allocs |
+
+`WalkFS` is `fs.WalkDir` (same 2678 allocs). Compiled test-binary peak working set
+**20.2 MiB**, process CPU **89.8 s** on `-test.count=1`. Per-op memory is
+`B/op`, not that RSS. Serial raw walk is a few percent faster here and still
+uses more `B/op` than fastwalk. Parallel raw walk and cached `Stat` are not
+faster on this run. That is not a claimed speed win.
+
+```text
+set CGO_ENABLED=0
+set GOTOOLCHAIN=local
+python tools/run_informal_benches.py
+```
+
+Receipt: [`bench/go-compat/INFORMAL_RUN.json`](bench/go-compat/INFORMAL_RUN.json).
+WalkDirs and listing methods vs godirwalk v1.17.0 (20 September 2026)
+are [`bench/go-compat/WALKDIRS_G05.md`](bench/go-compat/WALKDIRS_G05.md);
+they do not replace the table above.
+
+## Scan and explain
 
 ```go
 package main
@@ -123,10 +226,12 @@ Guide: [docs/guides/cli.md](docs/guides/cli.md).
 | Task | Start here |
 | --- | --- |
 | Choose an API | [docs/choose-an-api.md](docs/choose-an-api.md) |
+| Walk a tree | [docs/recipes/walk-fastwalk.md](docs/recipes/walk-fastwalk.md) |
 | List paths | [docs/recipes/scan-paths.md](docs/recipes/scan-paths.md) |
 | Manifest / EachFile / Explain | [docs/index.md](docs/index.md) |
 | Scan an `fs.FS` | [docs/choose-an-api.md](docs/choose-an-api.md) |
 | Replace godirwalk | [docs/recipes/walk-dirs.md](docs/recipes/walk-dirs.md) |
+| Replace fastwalk | [MIGRATING.md](MIGRATING.md) |
 | Why a file was skipped | [docs/recipes/explain.md](docs/recipes/explain.md) |
 | Cache, snapshot, tree2 | [docs/guides/snapshots.md](docs/guides/snapshots.md) |
 | Symptom → check | [docs/troubleshooting.md](docs/troubleshooting.md) |
@@ -135,57 +240,10 @@ Guide: [docs/guides/cli.md](docs/guides/cli.md).
 
 The library is a native Go port of pinned Weavatrix Scan **0.5.2**, plus
 Go-side additions (`ScanFS`, a growing-file read budget,
-`MultiScanReport.Revision`, `WalkDirs` / `compat/godirwalk`). It is not a
+`MultiScanReport.Revision`, `WalkDirs` / `compat/godirwalk`,
+`compat/fastwalk`). It is not a
 parser, search engine, graph, embedder, secret scanner, MCP server, web
 service, or daemon. Search, when ported, stays a consumer of this module.
-
-## Official first campaign
-
-Official B01–B14 first-campaign rows are **MEASURED** on a
-1000-file tree, `TREESTAMP_OFFICIAL=1`. Receipt:
-[`compat/results/official-benches.json`](compat/results/official-benches.json).
-Policy: [BENCHMARKS.md](BENCHMARKS.md).
-
-```text
-set CGO_ENABLED=0
-python tools/run_official_benches.py
-```
-
-These nanoseconds are host-local. They are not a 10k/100k/1M ranking and not
-Rust oracle percentages.
-
-## Informal benches
-
-Windows/amd64, Intel Core Ultra 7 255U, 16 September 2026.
-Go **1.26.5** (`go env GOVERSION`), module line **1.21.0**, `CGO_ENABLED=0`,
-`GOTOOLCHAIN=local`. Comparators in `bench/go-compat`:
-**fastwalk v1.0.14**, **gocodewalker v1.5.1**, **godirwalk v1.17.0**.
-Medians of three runs.
-
-| Case | Treestamp | Comparator |
-| --- | --- | --- |
-| Raw serial walk | 375 µs, 123 KiB, 1230 allocs | fastwalk v1.0.14: 520 µs / 150 KiB; godirwalk v1.17.0: 609 µs / 227 KiB |
-| Raw parallel walk | 633 µs, 125 KiB, 1242 allocs | fastwalk v1.0.14: 520 µs / 150 KiB |
-| Regex `ScanPaths` | 2.36 ms, 102 KiB, 1339 allocs | gocodewalker v1.5.1: 3.01 ms / 134 KiB |
-| Cached `Stat` | 197 µs, 126 KiB, 1233 allocs | fastwalk v1.0.14: 344 µs / 146 KiB; `os.Stat` 23.2 ms |
-| `DirScanner` | 1.22 ms, 648 KiB, 8152 allocs | godirwalk v1.17.0: 1.46 ms / 564 KiB / 12008 allocs |
-| Scratch `ReadDirents` | 1.82 ms, 736 KiB, 8021 allocs | godirwalk v1.17.0: 2.26 ms / 955 KiB / 12023 allocs |
-
-`WalkFS` is `fs.WalkDir` (same allocs). Compiled test-binary peak working set
-**54.2 MiB**, process CPU **93.9 s** on `-test.count=1`. Per-op memory is
-`B/op`, not that RSS. Parallel raw walk is still slower than fastwalk on this
-small tree.
-
-```text
-set CGO_ENABLED=0
-set GOTOOLCHAIN=local
-python tools/run_informal_benches.py
-```
-
-Receipt: [`bench/go-compat/INFORMAL_RUN.json`](bench/go-compat/INFORMAL_RUN.json).
-WalkDirs and listing methods vs godirwalk v1.17.0 (19 September 2026)
-are [`bench/go-compat/WALKDIRS_G05.md`](bench/go-compat/WALKDIRS_G05.md);
-they do not replace the table above.
 
 ## Authorship and license
 

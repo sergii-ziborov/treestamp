@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 
 	"github.com/sergii-ziborov/treestamp/internal/listwalk"
@@ -40,6 +41,23 @@ type WalkOptions struct {
 	RootSymlinkPolicy RootSymlinkPolicy
 	ContentsFirst     bool
 	DirsFirst         bool
+	FollowOutside     bool
+	LocalSort         int
+}
+
+const (
+	LocalSortNone = iota
+	LocalSortLexical
+	LocalSortFilesFirst
+	LocalSortDirsFirst
+)
+
+type ParallelCallback struct {
+	Workers       int
+	LocalSort     int
+	ToSlash       bool
+	KeepSkipAll   bool
+	FollowOutside bool
 }
 
 const DefaultMaxOpen = 64
@@ -73,18 +91,11 @@ const (
 )
 
 func (r WalkSkipReason) String() string {
-	switch r {
-	case SkipMaxDepth:
-		return "max_depth"
-	case SkipFileSystemBoundary:
-		return "filesystem_boundary"
-	case SkipPathEscape:
-		return "path_escape"
-	case SkipSymlinkLoop:
-		return "symlink_loop"
-	default:
-		return ""
+	names := [...]string{"", "max_depth", "filesystem_boundary", "path_escape", "symlink_loop"}
+	if int(r) < len(names) {
+		return names[r]
 	}
+	return ""
 }
 
 type FileVersion struct {
@@ -93,25 +104,28 @@ type FileVersion struct {
 	Identity   *platform.Identity `json:"identity,omitempty"`
 }
 
+func (v FileVersion) Reusable(other FileVersion) bool {
+	if v.ModifiedNS == nil || other.ModifiedNS == nil || *v.ModifiedNS != *other.ModifiedNS {
+		return false
+	}
+	sameChg := v.ChangedNS == nil || other.ChangedNS == nil || *v.ChangedNS == *other.ChangedNS
+	sameID := v.Identity == nil || other.Identity == nil || v.Identity.Equal(*other.Identity)
+	return sameChg && sameID
+}
+
 type WalkEntry struct {
-	root    string
-	path    string
-	name    string
-	depth   int
-	isFile  bool
-	isDir   bool
-	symlink bool
-	bytes   *uint64
-	version *FileVersion
-	hidden  *bool
-	dirID   *platform.Identity
-	skip    WalkSkipReason
-	dent    os.DirEntry
-	info    fs.FileInfo
-	stat    *fileInfoCache
-	cb      callbackDirEntry
-	rel     string
-	relOK   bool
+	root, path, name, rel         string
+	depth                         int
+	isFile, isDir, symlink, relOK bool
+	bytes                         *uint64
+	version                       *FileVersion
+	hidden                        *bool
+	dirID                         *platform.Identity
+	skip                          WalkSkipReason
+	dent                          os.DirEntry
+	info                          fs.FileInfo
+	stat                          *fileInfoCache
+	cb                            callbackDirEntry
 }
 
 func (e *WalkEntry) Path() string { return e.path }
@@ -324,20 +338,11 @@ const (
 )
 
 func (o WalkOperation) String() string {
-	switch o {
-	case OpCanonicalize:
-		return "canonicalize"
-	case OpReadDirectory:
-		return "read directory"
-	case OpReadEntry:
-		return "read entry"
-	case OpReadMetadata:
-		return "read metadata"
-	case OpScheduleWorker:
-		return "schedule worker"
-	default:
-		return "walk"
+	names := [...]string{"canonicalize", "read directory", "read entry", "read metadata", "schedule worker"}
+	if int(o) < len(names) {
+		return names[o]
 	}
+	return "walk"
 }
 
 type WalkError struct {
@@ -392,6 +397,7 @@ type CallbackOptions struct {
 	RequireDirectory bool
 	MaxOpen          int
 	Context          context.Context
+	FollowOutside    bool
 }
 
 type WalkEvent struct {
@@ -427,16 +433,18 @@ func WalkCallbackHooks(root string, fn fs.WalkDirFunc, opts CallbackOptions) err
 		RequireDirectory: opts.RequireDirectory, MaxOpen: opts.MaxOpen, Context: opts.Context,
 		SkipFiles: ErrSkipFiles, TraverseLink: ErrTraverseLink, SkipThis: ErrSkipThis,
 		OnLink: func(path, name string, depth int, ancestors []string) (bool, error) {
-			return traverseListed(root, path, name, depth, ancestors)
+			return traverseListed(root, path, name, depth, ancestors, opts.FollowOutside)
 		},
 	})
 }
 
-func traverseListed(root, path, name string, depth int, ancestors []string) (bool, error) {
+func traverseListed(root, path, name string, depth int, ancestors []string, outside bool) (bool, error) {
 	walkEntry := &WalkEntry{root: root, path: path, name: name, depth: depth, symlink: true}
+	opts := DefaultOptions()
+	opts.FollowOutside = outside
 	result, err := inspectSelectedLink(selectedLinkPolicy{
 		root: root, path: path, depth: depth, entry: walkEntry,
-		options: DefaultOptions(),
+		options: opts,
 		ancestor: func(id platform.Identity) (bool, *WalkError) {
 			return ancestorHasID(ancestors, id, depth)
 		},
@@ -462,9 +470,11 @@ func ancestorHasID(paths []string, id platform.Identity, depth int) (bool, *Walk
 
 func (w *callbackWork) follow(entry *listwalk.Entry, job dirJob) bool {
 	walkEntry := &WalkEntry{root: w.root, path: entry.Path(), name: entry.Name(), depth: entry.Depth(), symlink: true}
+	opts := DefaultOptions()
+	opts.FollowOutside = w.followOutside
 	result, err := inspectSelectedLink(selectedLinkPolicy{
 		root: w.root, path: entry.Path(), depth: entry.Depth(), entry: walkEntry,
-		options: DefaultOptions(),
+		options: opts,
 		ancestor: func(id platform.Identity) (bool, *WalkError) {
 			return chainHasID(w.root, job.path, id, entry.Depth())
 		},
@@ -497,6 +507,35 @@ func childPath(dir, name string) string {
 	return dir + string(os.PathSeparator) + name
 }
 
+func sortDirents(dents []os.DirEntry, mode int) {
+	if mode == LocalSortNone || len(dents) < 2 {
+		return
+	}
+	sort.SliceStable(dents, func(i, j int) bool {
+		if mode != LocalSortLexical {
+			ri, rj := direntRank(dents[i], mode), direntRank(dents[j], mode)
+			if ri != rj {
+				return ri < rj
+			}
+		}
+		return dents[i].Name() < dents[j].Name()
+	})
+}
+
+func direntRank(d os.DirEntry, mode int) int {
+	dir, file := 2, 0
+	if mode == LocalSortDirsFirst {
+		dir, file = 0, 1
+	}
+	if d.IsDir() {
+		return dir
+	}
+	if d.Type().IsRegular() {
+		return file
+	}
+	return 1
+}
+
 func chainHasID(root, dir string, id platform.Identity, depth int) (bool, *WalkError) {
 	for dir != "" {
 		info, err := platform.DirectoryInfo(dir)
@@ -506,11 +545,8 @@ func chainHasID(root, dir string, id platform.Identity, depth int) (bool, *WalkE
 		if info.Identity == id {
 			return true, nil
 		}
-		if filepath.Clean(dir) == filepath.Clean(root) {
-			return false, nil
-		}
 		next := filepath.Dir(dir)
-		if next == dir {
+		if filepath.Clean(dir) == filepath.Clean(root) || next == dir {
 			return false, nil
 		}
 		dir = next
@@ -540,4 +576,24 @@ func (b *StatefulWalkBuilder[R, E]) BuildParallelOrdered(capacity int) (*Paralle
 		}
 		return item, nil
 	}, close: iter.Close}, nil
+}
+
+func listedBytes(l *listedDir) int64 {
+	if l == nil || l.err != nil {
+		return 0
+	}
+	n := int64(len(l.entries)+len(l.descents)) * 64
+	for _, e := range l.entries {
+		n += int64(len(e.path) + len(e.name))
+	}
+	return n
+}
+
+func sendOrdered(quit <-chan struct{}, ch chan item, it item) bool {
+	select {
+	case <-quit:
+		return false
+	case ch <- it:
+		return true
+	}
 }

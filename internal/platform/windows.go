@@ -62,6 +62,11 @@ func handleIdentity(h windows.Handle) (Identity, error) {
 	}, nil
 }
 
+func identityFromInfo(_ os.FileInfo) (Identity, bool) {
+	// FindFirstFile / Lstat expose Win32FileAttributeData, not a file index.
+	return Identity{}, false
+}
+
 func nativeHidden(info os.FileInfo) bool {
 	if info == nil {
 		return false

@@ -38,6 +38,7 @@ type (
 	FileIdentity         = platform.Identity
 	WalkControl          = walk.WalkControl
 	WalkEvent            = walk.WalkEvent
+	SortMode             = int
 	ParallelWalkReport   = walk.ParallelWalkReport
 	ParallelVisitReport  = walk.ParallelVisitReport
 	ParallelWalker       = walk.ParallelWalker
@@ -74,6 +75,10 @@ const (
 	WalkSkip                   = walk.WalkSkip
 	WalkQuit                   = walk.WalkQuit
 	WalkTraverseLink           = walk.WalkTraverseLink
+	SortNone                   = 0
+	SortLexical                = 1
+	SortFilesFirst             = 2
+	SortDirsFirst              = 3
 	SelectedFile               = selection.SelectedFile
 	TraverseDirectory          = selection.TraverseDirectory
 	Unselected                 = selection.Unselected
@@ -216,22 +221,21 @@ func WalkUnsorted(root string, fn WalkDirFunc) error {
 }
 
 type Config struct {
-	Follow        bool
-	Sort          bool
-	NumWorkers    int
-	MaxDepth      int
-	ToSlash       bool
-	ContentsFirst bool
-	DirsFirst     bool
+	Follow, Sort, ToSlash, ContentsFirst, DirsFirst bool
+	FollowOutside, KeepSkipAll                      bool
+	NumWorkers, MaxDepth                            int
+	SortMode                                        SortMode
 }
 
 // WalkWithConfig uses serial traversal when deterministic sorting is requested.
+// Sort (bool) is the legacy global-order switch and is not SortMode.
 // A callback may return ErrTraverseLink to select one directory symlink.
 func WalkWithConfig(root string, cfg Config, fn WalkDirFunc) error {
 	inner := walkcfg.Config{
 		Follow: cfg.Follow, Sort: cfg.Sort, ToSlash: cfg.ToSlash,
 		ContentsFirst: cfg.ContentsFirst, DirsFirst: cfg.DirsFirst,
 		NumWorkers: cfg.NumWorkers, MaxDepth: cfg.MaxDepth,
+		SortMode: cfg.SortMode, FollowOutside: cfg.FollowOutside, KeepSkipAll: cfg.KeepSkipAll,
 	}
 	if cfg.NumWorkers == 0 || cfg.Sort {
 		return walkcfg.Serial(root, inner, fn)
@@ -239,8 +243,19 @@ func WalkWithConfig(root string, cfg Config, fn WalkDirFunc) error {
 	return walkcfg.Parallel(root, inner, fn)
 }
 
-func IgnoreDuplicateFiles(fn WalkDirFunc) WalkDirFunc { return walkcfg.IgnoreDuplicate(fn, false) }
-func IgnoreDuplicateDirs(fn WalkDirFunc) WalkDirFunc  { return walkcfg.IgnoreDuplicate(fn, true) }
+type EntryFilter = walkcfg.EntryFilter
+
+func NewEntryFilter() *EntryFilter { return walkcfg.NewEntryFilter() }
+
+func IgnoreDuplicateFiles(fn WalkDirFunc) WalkDirFunc {
+	return walkcfg.IgnoreDuplicateFiles(fn)
+}
+func IgnoreDuplicateDirs(fn WalkDirFunc) WalkDirFunc {
+	return walkcfg.IgnoreDuplicateDirs(fn)
+}
+func IgnorePermissionErrors(fn WalkDirFunc) WalkDirFunc {
+	return walkcfg.IgnorePermissionErrors(fn)
+}
 
 type File struct {
 	Location string

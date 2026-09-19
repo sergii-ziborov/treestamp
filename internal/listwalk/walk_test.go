@@ -300,6 +300,40 @@ func TestWalkMaxOpenOneVisitsNested(t *testing.T) {
 	}
 }
 
+func TestStreamVisitsOwnedChildren(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "a.txt"), "a")
+	mustWrite(t, filepath.Join(root, "z.txt"), "z")
+	var saved []fs.DirEntry
+	err := Stream(root, 1, func(e *Entry) error {
+		saved = append(saved, e)
+		return nil
+	})
+	if err != nil || len(saved) != 2 {
+		t.Fatalf("%d %v", len(saved), err)
+	}
+	for _, d := range saved {
+		if d.Name() == "" {
+			t.Fatal("cleared stream entry")
+		}
+	}
+}
+
+func TestStreamStopsEarly(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"a.txt", "b.txt", "c.txt"} {
+		mustWrite(t, filepath.Join(root, name), "x")
+	}
+	var n int
+	err := Stream(root, 1, func(*Entry) error {
+		n++
+		return errStop
+	})
+	if !errors.Is(err, errStop) || n != 1 {
+		t.Fatalf("n=%d err=%v", n, err)
+	}
+}
+
 func BenchmarkWalkLexical(b *testing.B) {
 	root := b.TempDir()
 	for i := 0; i < 64; i++ {

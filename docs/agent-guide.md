@@ -8,7 +8,8 @@ Use only the public module `github.com/sergii-ziborov/treestamp`.
 
 Working entry points: `ScanPathsWith`, `ScanWith`, `EachFile`, `ScanFS`,
 `EachFileFS`, `Compile`, `Explain`, `NewScanner`, `Walk`, `WalkDirs`,
-`WalkFS`, `ReadDirnames`, `DirScanner`.
+`WalkFS`, `WalkWithConfig`, `ReadDirnames`, `DirScanner`, `compat/fastwalk`.
+External import switch: [`consumer/`](../consumer).
 
 Recipes: [index.md](index.md). Examples: `dx/example_docs_test.go`.
 

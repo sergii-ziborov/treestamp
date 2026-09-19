@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing/fstest"
 
@@ -209,6 +210,33 @@ func ExampleWalkDirs() {
 	fmt.Println(strings.Join(names, ","))
 	// Output:
 	// keep.go
+}
+
+//endregion
+
+// region example-walk-fastwalk
+func ExampleWalkWithConfig() {
+	root := exampleTree(map[string]string{
+		"b.go": "package b\n",
+		"a.go": "package a\n",
+	})
+	defer os.RemoveAll(root)
+	var names []string
+	err := treestamp.WalkWithConfig(root, treestamp.Config{NumWorkers: 2}, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil || d == nil || d.IsDir() {
+			return err
+		}
+		names = append(names, d.Name())
+		return nil
+	})
+	if err != nil {
+		fmt.Println("error")
+		return
+	}
+	sort.Strings(names)
+	fmt.Println(strings.Join(names, ","))
+	// Output:
+	// a.go,b.go
 }
 
 //endregion

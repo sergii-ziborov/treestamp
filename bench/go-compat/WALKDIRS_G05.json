@@ -1,5 +1,5 @@
 {
-  "recorded": "2026-09-19",
+  "recorded": "2026-09-20",
   "official_benches": "NOT_RUN",
   "mixes_sorted_unsorted": false,
   "replaces_informal_ranking": false,
@@ -9,114 +9,114 @@
     "processor": "Intel64 Family 6 Model 181 Stepping 0, GenuineIntel",
     "go": "go1.26.5",
     "cgo": "0",
-    "note": "Loaded-host count=3 all-methods pass. Not a claimed ranking replacement for INFORMAL_RUN.json."
+    "note": "Same 20 September INFORMAL_RUN remasurement. Not a claimed ranking replacement."
   },
   "modules": {
     "github.com/karrick/godirwalk": "v1.17.0"
   },
-  "work": "TestGodirwalkAllMethodsParity PASS",
+  "work": "WalkDirs rows taken from INFORMAL_RUN.json 2026-09-20",
   "medians": [
     {
-      "name": "BenchmarkWalkDirsUnsortedTreestamp",
-      "ns_op": 221945.0,
-      "b_op": 156483,
-      "allocs_op": 1639
+      "name": "BenchmarkGodirwalkReadDirnames",
+      "ns_op": 1358119.0,
+      "b_op": 820760,
+      "allocs_op": 8022
     },
     {
-      "name": "BenchmarkWalkDirsSortedTreestamp",
-      "ns_op": 247472.0,
-      "b_op": 206970,
-      "allocs_op": 1642
+      "name": "BenchmarkTreestampReadDirnames",
+      "ns_op": 1350187.0,
+      "b_op": 820651,
+      "allocs_op": 8022
     },
     {
-      "name": "BenchmarkWalkDirsSortedGodirwalk",
-      "ns_op": 339449.0,
-      "b_op": 141075,
-      "allocs_op": 1631
+      "name": "BenchmarkGodirwalkReadDirents",
+      "ns_op": 1613150.0,
+      "b_op": 978265,
+      "allocs_op": 12023
     },
     {
-      "name": "BenchmarkWalkDirsSortedCompat",
-      "ns_op": 370813.0,
-      "b_op": 266152,
-      "allocs_op": 2447
+      "name": "BenchmarkTreestampReadDirentsScratch",
+      "ns_op": 1296095.0,
+      "b_op": 753155,
+      "allocs_op": 8021
     },
     {
-      "name": "BenchmarkWalkDirsUnsortedStopTreestamp",
-      "ns_op": 103762.0,
-      "b_op": 44117,
-      "allocs_op": 534
+      "name": "BenchmarkGodirwalkScanner",
+      "ns_op": 1446252.0,
+      "b_op": 577713,
+      "allocs_op": 12008
+    },
+    {
+      "name": "BenchmarkTreestampDirScanner",
+      "ns_op": 1296784.0,
+      "b_op": 663492,
+      "allocs_op": 8152
     },
     {
       "name": "BenchmarkWalkDirsSkipThisTreestamp",
-      "ns_op": 456066.0,
-      "b_op": 226194,
+      "ns_op": 512997.0,
+      "b_op": 226642,
       "allocs_op": 1649
     },
     {
       "name": "BenchmarkWalkDirsSkipThisGodirwalk",
-      "ns_op": 569422.0,
-      "b_op": 159641,
+      "ns_op": 510456.0,
+      "b_op": 159972,
       "allocs_op": 1635
     },
     {
       "name": "BenchmarkWalkDirsPostChildrenTreestamp",
-      "ns_op": 267303.0,
-      "b_op": 214306,
+      "ns_op": 302737.0,
+      "b_op": 214505,
       "allocs_op": 1649
     },
     {
       "name": "BenchmarkWalkDirsPostChildrenGodirwalk",
-      "ns_op": 294034.0,
-      "b_op": 232496,
+      "ns_op": 375269.0,
+      "b_op": 232545,
       "allocs_op": 2033
     },
     {
-      "name": "BenchmarkTreestampReadDirnames",
-      "ns_op": 1469243.0,
-      "b_op": 818995,
-      "allocs_op": 8022
-    },
-    {
-      "name": "BenchmarkGodirwalkReadDirnames",
-      "ns_op": 1447515.0,
-      "b_op": 818709,
-      "allocs_op": 8022
-    },
-    {
-      "name": "BenchmarkTreestampReadDirentsScratch",
-      "ns_op": 1237917.0,
-      "b_op": 753152,
-      "allocs_op": 8021
-    },
-    {
-      "name": "BenchmarkGodirwalkReadDirents",
-      "ns_op": 1565490.0,
-      "b_op": 978248,
-      "allocs_op": 12023
-    },
-    {
-      "name": "BenchmarkTreestampDirScanner",
-      "ns_op": 1168718.0,
-      "b_op": 663067,
-      "allocs_op": 8152
-    },
-    {
-      "name": "BenchmarkGodirwalkScanner",
-      "ns_op": 1258401.0,
-      "b_op": 577495,
-      "allocs_op": 12008
+      "name": "BenchmarkNewDirentGodirwalk",
+      "ns_op": 15138.0,
+      "b_op": 480,
+      "allocs_op": 4
     },
     {
       "name": "BenchmarkNewDirentCompat",
-      "ns_op": 11483.0,
+      "ns_op": 14951.0,
       "b_op": 464,
       "allocs_op": 4
     },
     {
-      "name": "BenchmarkNewDirentGodirwalk",
-      "ns_op": 11559.0,
-      "b_op": 480,
-      "allocs_op": 4
+      "name": "BenchmarkWalkDirsUnsortedTreestamp",
+      "ns_op": 237651.0,
+      "b_op": 156986,
+      "allocs_op": 1639
+    },
+    {
+      "name": "BenchmarkWalkDirsSortedTreestamp",
+      "ns_op": 232108.0,
+      "b_op": 208131,
+      "allocs_op": 1642
+    },
+    {
+      "name": "BenchmarkWalkDirsSortedGodirwalk",
+      "ns_op": 265109.0,
+      "b_op": 141710,
+      "allocs_op": 1631
+    },
+    {
+      "name": "BenchmarkWalkDirsSortedCompat",
+      "ns_op": 333131.0,
+      "b_op": 267165,
+      "allocs_op": 2447
+    },
+    {
+      "name": "BenchmarkWalkDirsUnsortedStopTreestamp",
+      "ns_op": 111670.0,
+      "b_op": 44285,
+      "allocs_op": 534
     }
   ],
   "skipped": [

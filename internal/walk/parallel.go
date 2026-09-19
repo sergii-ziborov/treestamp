@@ -34,8 +34,9 @@ func (p *ParallelWalker) Runtime(rt rtruntime.Runtime) *ParallelWalker { p.runti
 func (p *ParallelWalker) workerCount() int {
 	n := p.workers
 	if n <= 0 {
-		n = p.runtime.Parallelism()
-		if n > 8 {
+		// Native cap is 8 on every OS. This is not the fastwalk Darwin table
+		// and not a Linux getdents claim for Darwin or Windows.
+		if n = p.runtime.Parallelism(); n > 8 {
 			n = 8
 		}
 	}
@@ -282,7 +283,7 @@ func (s *concurrentState) applyDirPolicy(entry *WalkEntry, path string, job dirJ
 			}
 			return walkErr(path, entry.depth, OpCanonicalize, err)
 		}
-		if !pathx.UnderRoot(s.abs, canonical) {
+		if !options.FollowOutside && !pathx.UnderRoot(s.abs, canonical) {
 			entry.skip = SkipPathEscape
 			return nil
 		}
@@ -344,10 +345,18 @@ func (p *ParallelWalker) TryIntoIterOrderedBounded(capacity int) (*ParallelWalkI
 	}
 	ch := make(chan item, capacity)
 	quit := make(chan struct{})
-	iter := &ParallelWalkIter{ch: ch, token: &cancelFlag{fn: func() { close(quit) }}}
+	ctx, cancel := context.WithCancel(context.Background())
+	pull, err := startOrdered(state, opts, capacity, ctx, quit)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	iter := &ParallelWalkIter{ch: ch, token: &cancelFlag{fn: func() { close(quit); cancel() }}}
 	go func() {
 		defer close(ch)
-		runOrderedPull(state, opts, capacity, quit, ch)
+		defer cancel()
+		defer pull.stop()
+		emitOrdered(state, pull, ch)
 	}()
 	return iter, nil
 }
@@ -356,6 +365,7 @@ type listedDir struct {
 	entries  []*WalkEntry
 	descents []dirJob
 	err      error
+	bytes    int64
 }
 
 type orderedPull struct {
@@ -376,34 +386,7 @@ type orderedPull struct {
 	wg     sync.WaitGroup
 }
 
-func runOrderedPull(state *concurrentState, opts concurrentOpts, window int, quit <-chan struct{}, ch chan item) {
-	if state.rootEntry == nil {
-		return
-	}
-	clone := *state.rootEntry
-	if !sendOrdered(quit, ch, item{entry: &clone}) || !state.rootEntry.isDir || state.rootEntry.hasSkip() {
-		return
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go func() {
-		select {
-		case <-quit:
-			cancel()
-		case <-ctx.Done():
-		}
-	}()
-	p := startOrdered(state, opts, window, ctx, quit)
-	defer p.stop()
-	job := dirJob{path: state.abs}
-	if state.rootEntry.dirID != nil {
-		job.ancestors = []platformID{{fs: state.rootEntry.dirID.FileSystem, file: state.rootEntry.dirID.File}}
-	}
-	p.addJob(job, true)
-	p.emitDir(state.abs, ch)
-}
-
-func startOrdered(state *concurrentState, opts concurrentOpts, window int, ctx context.Context, quit <-chan struct{}) *orderedPull {
+func startOrdered(state *concurrentState, opts concurrentOpts, window int, ctx context.Context, quit <-chan struct{}) (*orderedPull, error) {
 	lim := rtruntime.DefaultLimits(opts.workers)
 	lim.Ready = window
 	p := &orderedPull{
@@ -412,33 +395,59 @@ func startOrdered(state *concurrentState, opts concurrentOpts, window int, ctx c
 		window: window, stopCh: make(chan struct{}),
 	}
 	p.cond = sync.NewCond(&p.mu)
+	var first error
 	n := 0
 	for i := 0; i < opts.workers; i++ {
 		p.wg.Add(1)
 		if err := opts.runtime.AdmitWait(p.worker); err != nil {
 			p.wg.Done()
+			if first == nil {
+				first = err
+			}
 			continue
 		}
 		n++
 	}
 	if n == 0 {
-		p.wg.Add(1)
-		go p.worker()
+		p.stop()
+		if first == nil {
+			first = rtruntime.ErrBusy
+		}
+		return nil, first
 	}
-	return p
+	context.AfterFunc(ctx, p.wake)
+	return p, nil
 }
+
+func (p *orderedPull) wake() { p.mu.Lock(); p.cond.Broadcast(); p.mu.Unlock() }
 
 func (p *orderedPull) worker() {
 	defer p.wg.Done()
 	for {
 		job, ok := p.take()
-		if !ok || p.budget.Admit(p.ctx, rtruntime.KindDirectory) != nil {
+		if !ok {
 			return
 		}
-		listed := p.list(job)
-		p.budget.Release(rtruntime.KindDirectory)
-		p.publish(job.path, listed)
+		p.publish(job.path, p.work(job))
 	}
+}
+
+func (p *orderedPull) work(job dirJob) *listedDir {
+	sched := func(err error) *listedDir {
+		return &listedDir{err: walkErr(job.path, job.depth+1, OpScheduleWorker, err)}
+	}
+	if err := p.budget.Admit(p.ctx, rtruntime.KindDirectory); err != nil {
+		return sched(err)
+	}
+	listed := p.list(job)
+	if listed.err == nil {
+		listed.bytes = listedBytes(listed)
+		if err := p.budget.HoldReady(p.ctx, listed.bytes); err != nil {
+			listed = sched(err)
+		}
+	}
+	p.budget.Release(rtruntime.KindDirectory)
+	return listed
 }
 
 func (p *orderedPull) list(job dirJob) *listedDir {
@@ -489,22 +498,20 @@ func (p *orderedPull) child(job dirJob, dent os.DirEntry) (*WalkEntry, *dirJob, 
 
 func (p *orderedPull) emitDir(path string, ch chan item) bool {
 	got := p.waitListed(path)
-	if got == nil {
-		return false
-	}
-	if got.err != nil {
-		return sendOrdered(p.quit, ch, item{err: got.err})
-	}
-	for _, entry := range got.entries {
-		clone := *entry
-		if !sendOrdered(p.quit, ch, item{entry: &clone}) {
-			return false
-		}
-		if entry.isDir && !entry.hasSkip() && !p.emitDir(entry.path, ch) {
-			return false
+	ok := got != nil
+	if got != nil && got.err != nil {
+		ok = sendOrdered(p.quit, ch, item{err: got.err})
+	} else if got != nil {
+		for _, entry := range got.entries {
+			clone := *entry
+			if !sendOrdered(p.quit, ch, item{entry: &clone}) || (entry.isDir && !entry.hasSkip() && !p.emitDir(entry.path, ch)) {
+				ok = false
+				break
+			}
 		}
 	}
-	return true
+	p.forget(path)
+	return ok
 }
 
 func (p *orderedPull) addJob(job dirJob, force bool) {
@@ -568,9 +575,7 @@ func (p *orderedPull) waitListed(path string) *listedDir {
 
 func (p *orderedPull) stop() {
 	p.once.Do(func() { close(p.stopCh) })
-	p.mu.Lock()
-	p.cond.Broadcast()
-	p.mu.Unlock()
+	p.wake()
 	p.budget.Close()
 	p.wg.Wait()
 }
@@ -581,16 +586,9 @@ func (p *orderedPull) done() bool {
 		return true
 	case <-p.quit:
 		return true
+	case <-p.ctx.Done():
+		return true
 	default:
 		return false
-	}
-}
-
-func sendOrdered(quit <-chan struct{}, ch chan item, it item) bool {
-	select {
-	case <-quit:
-		return false
-	case ch <- it:
-		return true
 	}
 }

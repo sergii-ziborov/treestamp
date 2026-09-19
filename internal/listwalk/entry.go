@@ -6,16 +6,18 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 )
 
-// Entry is a pooled directory entry with cached Info/Stat.
+// Entry is a persistable directory entry with cached Info/Stat.
 type Entry struct {
 	name, path string
 	typ        fs.FileMode
 	depth      int
 	source     fs.DirEntry
 	ready      fs.FileInfo
-	info, stat *statCache
+	info       atomic.Pointer[statCache]
+	stat       atomic.Pointer[statCache]
 }
 
 type statCache struct {
@@ -25,6 +27,16 @@ type statCache struct {
 }
 
 var pool = sync.Pool{New: func() any { return &Entry{} }}
+
+// Own returns a persistable entry. The caller may keep it; do not Release it.
+func Own(name, path string, typ fs.FileMode, depth int, ready fs.FileInfo) *Entry {
+	return &Entry{name: name, path: path, typ: typ, depth: depth, ready: ready}
+}
+
+// Deliver invokes fn with the owned entry. The callback may keep it.
+func Deliver(fn fs.WalkDirFunc, entry *Entry, toSlash bool) error {
+	return fn(Show(entry.path, toSlash), entry, nil)
+}
 
 // Acquire returns a pooled entry. Release it after the callback returns.
 func Acquire(name, path string, typ fs.FileMode, depth int, ready fs.FileInfo) *Entry {
@@ -54,37 +66,39 @@ func (e *Entry) Info() (fs.FileInfo, error) {
 	if e.ready != nil {
 		return e.ready, nil
 	}
-	if e.source != nil {
-		info, err := e.source.Info()
-		if err == nil {
-			e.ready = info
+	return e.loadInfo().do(func() (fs.FileInfo, error) {
+		if e.source != nil {
+			return e.source.Info()
 		}
-		return info, err
-	}
-	if e.info == nil {
-		e.info = &statCache{}
-	}
-	return e.info.load(e.path, true)
+		return os.Lstat(e.path)
+	})
 }
 
 func (e *Entry) Stat() (fs.FileInfo, error) {
 	if e.typ&os.ModeSymlink == 0 {
 		return e.Info()
 	}
-	if e.stat == nil {
-		e.stat = &statCache{}
-	}
-	return e.stat.load(e.path, false)
+	return e.loadStat().do(func() (fs.FileInfo, error) {
+		return os.Stat(e.path)
+	})
 }
 
-func (c *statCache) load(path string, lstat bool) (fs.FileInfo, error) {
-	c.once.Do(func() {
-		if lstat {
-			c.info, c.err = os.Lstat(path)
-			return
-		}
-		c.info, c.err = os.Stat(path)
-	})
+func (e *Entry) loadInfo() *statCache { return loadCache(&e.info) }
+func (e *Entry) loadStat() *statCache { return loadCache(&e.stat) }
+
+func loadCache(slot *atomic.Pointer[statCache]) *statCache {
+	if c := slot.Load(); c != nil {
+		return c
+	}
+	c := &statCache{}
+	if !slot.CompareAndSwap(nil, c) {
+		return slot.Load()
+	}
+	return c
+}
+
+func (c *statCache) do(load func() (fs.FileInfo, error)) (fs.FileInfo, error) {
+	c.once.Do(func() { c.info, c.err = load() })
 	return c.info, c.err
 }
 
@@ -101,9 +115,14 @@ func (e *Entry) Clone() *Entry {
 	if e == nil {
 		return nil
 	}
-	out := *e
-	out.info, out.stat = nil, nil
-	return &out
+	out := &Entry{name: e.name, path: e.path, typ: e.typ, depth: e.depth, source: e.source, ready: e.ready}
+	if c := e.info.Load(); c != nil {
+		out.info.Store(c)
+	}
+	if c := e.stat.Load(); c != nil {
+		out.stat.Store(c)
+	}
+	return out
 }
 
 // Call invokes fn with a persistable entry and no error.

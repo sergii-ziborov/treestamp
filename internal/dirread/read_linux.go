@@ -30,6 +30,62 @@ func OSEntries(dir string) ([]os.DirEntry, error) {
 	return OSEntriesScratch(dir, nil)
 }
 
+// Visit calls fn for each child from getdents blocks. dent is nil; Info
+// should use the constructed path. fn may stop the listing with an error.
+func Visit(dir string, scratch []byte, fn func(name string, typ os.FileMode, dent os.DirEntry) error) error {
+	if len(scratch) < MinimumScratch() {
+		var stack [blockSize]byte
+		scratch = stack[:]
+	}
+	fd, err := openRetry(dir)
+	if err != nil {
+		return &os.PathError{Op: "open", Path: dir, Err: err}
+	}
+	defer syscall.Close(fd)
+	for {
+		n, err := readRetry(fd, scratch)
+		if err != nil {
+			return os.NewSyscallError("readdirent", err)
+		}
+		if n <= 0 {
+			return nil
+		}
+		if err := visitBlock(dir, scratch[:n], fn); err != nil {
+			return err
+		}
+	}
+}
+
+func visitBlock(dir string, block []byte, fn func(string, os.FileMode, os.DirEntry) error) error {
+	for consumed := 0; consumed < len(block); {
+		adv, name, typ := parseLinux(block[consumed:])
+		if adv == 0 {
+			if consumed < len(block) {
+				return ErrTruncatedRecord
+			}
+			break
+		}
+		consumed += adv
+		if name == "" || name == "." || name == ".." {
+			continue
+		}
+		if typ == UnknownType {
+			resolved, err := resolveUnknown(dir, name)
+			if err != nil {
+				return err
+			}
+			if resolved == UnknownType {
+				continue
+			}
+			typ = resolved
+		}
+		if err := fn(name, typ, nil); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func OSEntriesScratch(dir string, scratch []byte) ([]os.DirEntry, error) {
 	recs, err := ReadScratch(dir, nil, scratch)
 	if err != nil {

@@ -38,6 +38,9 @@ func TestHiddenNameAndIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if fromInfo, ok := IdentityFromInfo(info); ok && !fromInfo.Equal(id) {
+		t.Fatal("IdentityFromInfo must match PathIdentity")
+	}
 	_ = HiddenFromInfo(path, info)
 	f, err := os.Open(path)
 	if err != nil {
@@ -109,5 +112,45 @@ func TestSameVolumeKeepsFileSystemID(t *testing.T) {
 	}
 	if rootInfo.FileSystem != childInfo.FileSystem {
 		t.Fatal("same volume must share filesystem id")
+	}
+}
+
+func TestEnumerationInfoDoesNotInventIdentity(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "e.txt")
+	if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dents, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var info os.FileInfo
+	for _, dent := range dents {
+		if dent.Name() != "e.txt" {
+			continue
+		}
+		info, err = dent.Info()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if info == nil {
+		t.Fatal("missing dirent")
+	}
+	id, ok := IdentityFromInfo(info)
+	opened, err := PathIdentity(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok && !id.Equal(opened) {
+		t.Fatal("enumeration identity must match a real handle")
+	}
+	if !ok && (id.FileSystem != 0 || id.File != 0) {
+		t.Fatal("missing identity must stay zero")
+	}
+	_ = HiddenFromInfo(path, info)
+	if info.Size() != 1 {
+		t.Fatalf("size %d", info.Size())
 	}
 }

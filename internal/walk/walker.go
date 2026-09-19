@@ -9,7 +9,6 @@ import (
 	"runtime"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/sergii-ziborov/treestamp/internal/dirread"
 	"github.com/sergii-ziborov/treestamp/internal/listwalk"
@@ -17,33 +16,24 @@ import (
 	"github.com/sergii-ziborov/treestamp/internal/platform"
 )
 
-// Walker is an iterative depth-first filesystem walker.
-// It does not call filepath.WalkDir.
 type Walker struct {
-	root          string
-	rootIsDir     bool
-	rootIsFile    bool
-	rootIsSymlink bool
-	rootBytes     *uint64
-	rootVersion   *FileVersion
-	rootFS        *uint64
-	rootInfo      *platform.Info
-	options       WalkOptions
-	frames        []dirFrame
-	openHandles   int
-	yieldRoot     bool
-	pending       *pendingDir
-	current       *WalkEntry
-	skipPending   bool
-	active        map[platform.Identity]int
-	finished      bool
-	sorter        func(a, b os.DirEntry) int
-	filter        func(*WalkEntry) bool
-	skipStdout    *platform.Identity
-	contentsFirst bool
-	deferred      *WalkEntry
-	plainEntries  bool
-	rootMeta      os.FileInfo
+	root                                                                                                string
+	rootBytes                                                                                           *uint64
+	rootVersion                                                                                         *FileVersion
+	rootFS                                                                                              *uint64
+	rootInfo                                                                                            *platform.Info
+	options                                                                                             WalkOptions
+	frames                                                                                              []dirFrame
+	openHandles                                                                                         int
+	pending                                                                                             *pendingDir
+	current                                                                                             *WalkEntry
+	active                                                                                              map[platform.Identity]int
+	sorter                                                                                              func(a, b os.DirEntry) int
+	filter                                                                                              func(*WalkEntry) bool
+	skipStdout                                                                                          *platform.Identity
+	deferred                                                                                            *WalkEntry
+	rootMeta                                                                                            os.FileInfo
+	rootIsDir, rootIsFile, rootIsSymlink, yieldRoot, skipPending, finished, contentsFirst, plainEntries bool
 }
 
 type dirFrame struct {
@@ -153,7 +143,7 @@ func rootFileMeta(canonical string, meta os.FileInfo, options WalkOptions) (*uin
 		return nil, nil
 	}
 	size := uint64(meta.Size())
-	ver := versionFromInfo(canonical, meta)
+	ver := versionFromInfo(meta)
 	return &size, &ver
 }
 
@@ -175,7 +165,6 @@ func (w *Walker) SkipCurrentDir() {
 	}
 }
 
-// TraverseCurrentSymlink follows the symlink returned by the last Next call.
 func (w *Walker) TraverseCurrentSymlink() error {
 	entry := w.current
 	if entry == nil {
@@ -321,7 +310,7 @@ func (w *Walker) direntMeta(path string, dirent os.DirEntry, mode os.FileMode) (
 		return nil, nil, nil, walkErr(path, 0, OpReadMetadata, infoErr)
 	}
 	size := uint64(info.Size())
-	ver := versionFromInfo(path, info)
+	ver := versionFromInfo(info)
 	h := platform.HiddenFromInfo(path, info)
 	return &size, &ver, &h, nil
 }
@@ -440,33 +429,27 @@ func (w *Walker) yieldError(err *WalkError) (*WalkEntry, error) {
 	return nil, err
 }
 
-func versionFromInfo(path string, info os.FileInfo) FileVersion {
-	var ver FileVersion
-	if !info.ModTime().IsZero() && info.ModTime().After(time.Unix(0, 0)) {
-		ns := uint64(info.ModTime().UnixNano())
-		ver.ModifiedNS = &ns
-	}
-	if id, err := platform.PathIdentity(path); err == nil {
-		ver.Identity = &id
-	}
-	return ver
-}
-
 type callbackWork struct {
-	root    string
-	fn      fs.WalkDirFunc
-	toSlash bool
-	queue   *dirQueue
-	mu      sync.Mutex
-	err     error
-	quit    atomic.Bool
+	root                                string
+	fn                                  fs.WalkDirFunc
+	toSlash, keepSkipAll, followOutside bool
+	localSort                           int
+	queue                               *dirQueue
+	mu                                  sync.Mutex
+	err                                 error
+	quit                                atomic.Bool
 }
 
 func WalkCallbackParallel(root string, workers int, fn fs.WalkDirFunc, toSlash bool) error {
-	abs, descend, err := prepareCallback(root, fn, toSlash)
+	return WalkCallbackParallelOpts(root, fn, ParallelCallback{Workers: workers, ToSlash: toSlash})
+}
+
+func WalkCallbackParallelOpts(root string, fn fs.WalkDirFunc, opts ParallelCallback) error {
+	abs, descend, err := prepareCallback(root, fn, opts)
 	if err != nil || !descend {
 		return err
 	}
+	workers := opts.Workers
 	if workers <= 0 {
 		workers = runtime.GOMAXPROCS(0)
 		if workers > 8 {
@@ -476,7 +459,10 @@ func WalkCallbackParallel(root string, workers int, fn fs.WalkDirFunc, toSlash b
 	if workers < 1 {
 		workers = 1
 	}
-	work := &callbackWork{root: abs, fn: fn, toSlash: toSlash, queue: newDirQueue()}
+	work := &callbackWork{
+		root: abs, fn: fn, toSlash: opts.ToSlash, keepSkipAll: opts.KeepSkipAll,
+		followOutside: opts.FollowOutside, localSort: opts.LocalSort, queue: newDirQueue(),
+	}
 	work.queue.push(dirJob{path: abs, depth: 0})
 	var wg sync.WaitGroup
 	wg.Add(workers)
@@ -487,21 +473,23 @@ func WalkCallbackParallel(root string, workers int, fn fs.WalkDirFunc, toSlash b
 	return work.err
 }
 
-func prepareCallback(root string, fn fs.WalkDirFunc, toSlash bool) (string, bool, error) {
+func prepareCallback(root string, fn fs.WalkDirFunc, opts ParallelCallback) (string, bool, error) {
 	abs, err := filepath.Abs(root)
 	if err != nil {
 		return "", false, fn(root, nil, err)
 	}
 	info, err := os.Lstat(abs)
 	if err != nil {
-		return "", false, fn(showPath(abs, toSlash), nil, err)
+		return "", false, fn(showPath(abs, opts.ToSlash), nil, err)
 	}
-	entry := listwalk.Acquire(info.Name(), abs, info.Mode().Type(), 0, info)
-	cbErr := listwalk.Call(fn, entry, toSlash)
+	entry := listwalk.Own(info.Name(), abs, info.Mode().Type(), 0, info)
+	cbErr := listwalk.Deliver(fn, entry, opts.ToSlash)
 	typ := entry.Type()
-	listwalk.Release(entry)
 	if cbErr != nil {
-		if errors.Is(cbErr, fs.SkipAll) || errors.Is(cbErr, fs.SkipDir) || errors.Is(cbErr, ErrSkipThis) {
+		if errors.Is(cbErr, fs.SkipAll) {
+			return "", false, keepSkipAllErr(opts.KeepSkipAll)
+		}
+		if errors.Is(cbErr, fs.SkipDir) || errors.Is(cbErr, ErrSkipThis) {
 			return "", false, nil
 		}
 		return "", false, cbErr
@@ -531,11 +519,16 @@ func (w *callbackWork) visitDir(job dirJob) {
 	if w.quit.Load() {
 		return
 	}
+	if w.localSort == LocalSortNone {
+		w.streamDir(job)
+		return
+	}
 	dents, err := dirread.OSEntries(job.path)
 	if err != nil {
 		w.reportRead(job.path, err)
 		return
 	}
+	sortDirents(dents, w.localSort)
 	skipFiles := false
 	for i := range dents {
 		if w.quit.Load() {
@@ -544,12 +537,9 @@ func (w *callbackWork) visitDir(job dirJob) {
 		if skipFiles && dents[i].Type().IsRegular() {
 			continue
 		}
-		entry := listwalk.Acquire(dents[i].Name(), childPath(job.path, dents[i].Name()), dents[i].Type(), job.depth+1, nil)
+		entry := listwalk.Own(dents[i].Name(), childPath(job.path, dents[i].Name()), dents[i].Type(), job.depth+1, nil)
 		entry.Bind(dents[i])
-		cbErr := listwalk.Call(w.fn, entry, w.toSlash)
-		stop := w.control(cbErr, entry, job, &skipFiles)
-		listwalk.Release(entry)
-		if stop {
+		if w.control(listwalk.Deliver(w.fn, entry, w.toSlash), entry, job, &skipFiles) {
 			return
 		}
 	}
@@ -565,7 +555,7 @@ func (w *callbackWork) control(err error, entry *listwalk.Entry, job dirJob, ski
 	case errors.Is(err, fs.SkipDir):
 		return !entry.IsDir()
 	case errors.Is(err, fs.SkipAll):
-		w.stop(nil)
+		w.stop(keepSkipAllErr(w.keepSkipAll))
 		return true
 	case errors.Is(err, ErrSkipFiles):
 		*skipFiles = true
@@ -584,10 +574,17 @@ func (w *callbackWork) reportRead(path string, err error) {
 		return
 	}
 	if errors.Is(cbErr, fs.SkipAll) {
-		w.stop(nil)
+		w.stop(keepSkipAllErr(w.keepSkipAll))
 		return
 	}
 	w.stop(cbErr)
+}
+
+func keepSkipAllErr(keep bool) error {
+	if keep {
+		return fs.SkipAll
+	}
+	return nil
 }
 
 func (w *callbackWork) stop(err error) {

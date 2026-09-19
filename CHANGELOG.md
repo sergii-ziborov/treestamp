@@ -2,6 +2,67 @@
 
 ## Unreleased
 
+Windows serial listings now keep FindFirstFile `FileInfo` on `Record` and
+`Scanner`, so callback `Stat` does not `Lstat` every name. Informal
+`bench/go-compat` medians were remasured on 20 September 2026 and written
+into README. Official B01–B14 first-campaign JSON is unchanged. This is
+not a claimed 15–25% win over fastwalk v1.0.14.
+
+Comparative release notes pin the existing official B01–B14 receipt and
+the 20 September informal remasurement. Official B01–B14 JSON is not rewritten.
+The README leads with a walk, then those receipts, then scan/CLI.
+`compat/fastwalk` is the import migration; `consumer/` walks that
+import without a competitor require. The main module still requires
+only `golang.org/x/sys`. This is not a claimed 15–25% win over
+fastwalk v1.0.14. `v0.1.4` is not retagged.
+
+`CollectMetadata` takes size, mtime, hidden, and identity from the
+enumeration `FileInfo` when that value already carries them. It does
+not open a second handle only to fill `FileVersion.Identity`. Windows
+FindFirstFile/Lstat has no file index, so identity stays unset there
+until a real handle path (`PathIdentity`, follow, same-filesystem).
+Content inspect copies identity from the already-open hash handle so
+hardlink reuse still works on Windows.
+Darwin and Windows keep the stdlib `ReadDir` batch path; Linux
+getdents is not claimed on those OS. Native walk worker default stays
+capped at 8 on every OS and is not the fastwalk Darwin 4/6/10 table.
+`go 1.21.0` is unchanged. This is not a claimed speed win.
+
+`IntoIterOrderedBounded` no longer starts a bypass goroutine when
+the executor rejects every worker; `TryIntoIterOrderedBounded`
+returns that admission error. Consumed directory listings are
+dropped after emit, and ready-byte credits are released on
+consume. Cancel wakes cond waiters, closes the budget, and waits
+for workers. `Close` is safe on a failed iterator. A single
+listing larger than the ready-byte cap fails instead of growing
+past the limit. This is not a claimed speed win.
+
+Parallel unsorted callback walk streams a getdents or `ReadDir`
+batch into an owned persistable entry and invokes the callback
+without a `[]Record` copy, a second `[]DirEntry` slice, or a
+pool `Clone`. `SortMode` still buffers that directory so it can
+reorder it. This is not a claimed speed win over fastwalk.
+
+`compat/fastwalk` is an import-compatible entry for charlievieth/fastwalk
+v1.0.14 on this engine: `Walk(*Config, root, fn)`, `SortMode`,
+`DefaultNumWorkers`, `DefaultToSlash`, `Config.Copy`, `DirEntry`,
+`EntryFilter`, and the `Ignore*` wrappers. `fs.SkipAll` is returned as
+an error there. `Follow` may leave the original root. Native
+`Config.Sort` (bool) is still serial global DFS; `Config.SortMode` is
+local and may stay parallel. Native `Walk()` is unchanged (serial).
+`KeepSkipAll` and `FollowOutside` are the explicit engine knobs.
+
+Walk `IgnoreDuplicateFiles` / `IgnoreDuplicateDirs` now key on native
+file identity (device+inode, or Windows volume/index), not path+mtime.
+`IgnoreDuplicateDirs` still shows a directory alias and requests
+`ErrTraverseLink`; it does not walk the same object twice. A second
+hardlink is one object; two files with the same bytes stay two files.
+`NewEntryFilter` is the reusable form. Identity errors are not treated
+as proof of a duplicate. `listwalk.Entry` caches Info/Stat success and
+error under an atomic cache; `Clone` does not copy sync objects.
+Parallel `ErrSkipFiles` reads the skip map under the same mutex as
+writes.
+
 README, GitHub About, and the CLI release notes now name the library,
 `cmd/treestamp`, and `cmd/treestamp-driver` separately, with install
 commands and a pkg.go.dev link. The driver is documented as a fixture

@@ -38,5 +38,6 @@ func (s *Scanner) Scan() bool {
 	s.pending = s.pending[1:]
 	s.name = dent.Name()
 	s.typ = dent.Type()
+	s.info, _ = dent.Info()
 	return true
 }

@@ -139,7 +139,7 @@ func inspectOne(ctx context.Context, c candidate, opts Options, index map[string
 		applyMemo(&file, hit, opts)
 		return file, nil, CacheStats{ReusedHashes: 1}, nil
 	}
-	file, _, skip, stat, err := hashOpened(ctx, c, opts, file, false)
+	file, _, skip, stat, err := hashOpened(ctx, c, opts, file, false, memo)
 	if err == nil && skip == nil {
 		memo.store(file)
 	}
@@ -255,7 +255,7 @@ func confineCandidate(c candidate, opts Options) (string, *Skipped) {
 	return "", &Skipped{Relative: c.rel, Kind: kind, Detail: err.Error()}
 }
 
-func hashOpened(ctx context.Context, c candidate, opts Options, file ScannedFile, keep bool) (ScannedFile, []byte, *Skipped, CacheStats, error) {
+func hashOpened(ctx context.Context, c candidate, opts Options, file ScannedFile, keep bool, memo *contentMemo) (ScannedFile, []byte, *Skipped, CacheStats, error) {
 	path, skip := confineCandidate(c, opts)
 	if skip != nil {
 		return file, nil, skip, CacheStats{}, nil
@@ -265,6 +265,16 @@ func hashOpened(ctx context.Context, c candidate, opts Options, file ScannedFile
 		return file, nil, &Skipped{Relative: c.rel, Kind: selection.SkipIOError, Detail: err.Error()}, CacheStats{}, nil
 	}
 	defer f.Close()
+	if id, idErr := platform.FileIdentityFromFile(f); idErr == nil {
+		file.Version.Identity = &id
+		c.version.Identity = &id
+	}
+	if !keep {
+		if hit, ok := memo.lookup(c); ok {
+			applyMemo(&file, hit, opts)
+			return file, nil, nil, CacheStats{ReusedHashes: 1}, nil
+		}
+	}
 	if skip := checkContentSize(f, c, opts); skip != nil {
 		return file, nil, skip, CacheStats{}, nil
 	}

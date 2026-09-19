@@ -148,6 +148,13 @@ def main() -> int:
         errors.append("go.mod must pin golang.org/x/sys v0.30.0 for Go 1.21")
     if "github.com/fsnotify/fsnotify" in go_mod:
         errors.append("fsnotify must not be a main-module dependency")
+    for dep in (
+        "github.com/charlievieth/fastwalk",
+        "github.com/karrick/godirwalk",
+        "github.com/boyter/gocodewalker",
+    ):
+        if dep in go_mod:
+            errors.append(f"{dep} must not be a main-module dependency")
     ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     for version in ('"1.21.x"', '"1.22.x"', '"1.23.x"', '"1.24.x"', '"1.25.x"', '"1.26.x"'):
         if version not in ci:

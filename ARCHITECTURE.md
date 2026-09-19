@@ -100,13 +100,26 @@ into memory and closed. `File.ReadDir` is batched; the walker does not call
 `filepath.WalkDir`.
 
 A file root is a single yielded file, matching the Rust walker.
+Linux `getdents` lives only in the Linux dirread backend. Darwin and
+Windows stream `File.ReadDir` batches and reuse enumeration `FileInfo`
+(size, mtime, attributes) without a second identity open. Native
+parallel default workers cap at 8 on every OS; `compat/fastwalk`
+keeps the competitor Darwin table for import compatibility.
 
 `WalkBuilder` adds serial multi-root, name sort, filters, contents-first, and
 stdout-skip. `ParallelWalker` adds unordered visit, collect, and a bounded
-pull iterator. `Walk` / `WalkUnsorted` / `WalkDirs` / `ReadDirents` / `DirScanner` are the
+pull iterator. Ordered pull admits workers through the executor
+(no bypass goroutine), forgets consumed listings, and accounts
+ready results in bytes until the consumer takes them. `Walk` / `WalkUnsorted` / `WalkDirs` / `ReadDirents` / `DirScanner` are the
 Go-market callback surfaces. `WalkDirs` is the godirwalk-shaped walk:
 lexical DFS unless `Unsorted`, owned persistable entries, `SkipThis`.
-`compat/godirwalk` is an import alias on that engine. Their callback
+`compat/godirwalk` is an import alias on that engine.
+`compat/fastwalk` is the charlievieth/fastwalk v1.0.14 alias: local
+`SortMode`, `SkipAll` as an error, `Follow` may leave the root. The
+main module does not require that competitor. `consumer/` is an
+external import-switch example. Native
+`Config.Sort` stays serial global DFS. Parallel unsorted
+callbacks stream listing blocks into owned entries. Their callback
 entries cache target `Stat` results and depth. `WalkFS` and `NewFSWalker`
 provide lexical, no-follow traversal for arbitrary `fs.FS` implementations
 without OS identity claims.

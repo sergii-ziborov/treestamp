@@ -36,12 +36,7 @@ func (b *Builder) ContentsFirst(enabled bool) *Builder           { b.contentsFir
 func (b *Builder) SkipStdout(enabled bool) *Builder              { b.skipStdout = enabled; return b }
 func (b *Builder) FilterEntry(fn func(*WalkEntry) bool) *Builder { b.filter = fn; return b }
 func (b *Builder) FilterDirectories(fn func(*WalkEntry) bool) *Builder {
-	b.filter = func(entry *WalkEntry) bool {
-		if !entry.IsDir() {
-			return true
-		}
-		return fn(entry)
-	}
+	b.filter = func(entry *WalkEntry) bool { return !entry.IsDir() || fn(entry) }
 	return b
 }
 
@@ -360,17 +355,13 @@ func WalkParallel(root string, workers int, fn WalkFunc) error {
 
 func CollectParallel(root string, workers int, sortPaths bool) ([]*WalkEntry, error) {
 	walker := NewParallelWalker(root).WithParallelism(workers)
-	if !sortPaths {
-		return collectParallelUnsorted(walker)
+	if sortPaths {
+		report, err := walker.Walk()
+		if err != nil {
+			return nil, err
+		}
+		return report.Entries, nil
 	}
-	report, err := walker.Walk()
-	if err != nil {
-		return nil, err
-	}
-	return report.Entries, nil
-}
-
-func collectParallelUnsorted(walker *ParallelWalker) ([]*WalkEntry, error) {
 	var mu sync.Mutex
 	var entries []*WalkEntry
 	_, err := walker.Visit(func(ev WalkEvent) WalkControl {
@@ -384,19 +375,6 @@ func collectParallelUnsorted(walker *ParallelWalker) ([]*WalkEntry, error) {
 		return WalkContinue
 	})
 	return entries, err
-}
-
-func (v FileVersion) Reusable(other FileVersion) bool {
-	if v.ModifiedNS == nil || other.ModifiedNS == nil || *v.ModifiedNS != *other.ModifiedNS {
-		return false
-	}
-	if v.ChangedNS != nil && other.ChangedNS != nil && *v.ChangedNS != *other.ChangedNS {
-		return false
-	}
-	if v.Identity != nil && other.Identity != nil && !v.Identity.Equal(*other.Identity) {
-		return false
-	}
-	return true
 }
 
 type ParallelWalkIter struct {
@@ -495,8 +473,12 @@ func (it *ParallelWalkIter) Close() error {
 		return nil
 	}
 	it.once.Do(func() {
-		it.token.cancel()
-		for range it.ch {
+		if it.token != nil {
+			it.token.cancel()
+		}
+		if it.ch != nil {
+			for range it.ch {
+			}
 		}
 		it.closed = true
 	})
@@ -560,6 +542,9 @@ func (q *dirQueue) close() {
 }
 
 func orderDirents(entries []os.DirEntry, opts WalkOptions) []os.DirEntry {
+	if opts.LocalSort != LocalSortNone {
+		sortDirents(entries, opts.LocalSort)
+	}
 	if !opts.ContentsFirst && !opts.DirsFirst {
 		return entries
 	}
@@ -568,6 +553,33 @@ func orderDirents(entries []os.DirEntry, opts WalkOptions) []os.DirEntry {
 		return append(append(files, other...), dirs...)
 	}
 	return append(append(dirs, other...), files...)
+}
+
+func emitOrdered(state *concurrentState, p *orderedPull, ch chan item) {
+	if state.rootEntry == nil {
+		return
+	}
+	clone := *state.rootEntry
+	if !sendOrdered(p.quit, ch, item{entry: &clone}) || !state.rootEntry.isDir || state.rootEntry.hasSkip() {
+		return
+	}
+	job := dirJob{path: state.abs}
+	if id := state.rootEntry.dirID; id != nil {
+		job.ancestors = []platformID{{fs: id.FileSystem, file: id.File}}
+	}
+	p.addJob(job, true)
+	p.emitDir(state.abs, ch)
+}
+
+func (p *orderedPull) forget(path string) {
+	p.mu.Lock()
+	got := p.listed[path]
+	delete(p.listed, path)
+	delete(p.jobs, path)
+	p.mu.Unlock()
+	if got != nil && got.bytes > 0 {
+		p.budget.DropReady(got.bytes)
+	}
 }
 
 func splitDirents(entries []os.DirEntry) (files, dirs, other []os.DirEntry) {

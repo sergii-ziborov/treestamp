@@ -586,7 +586,7 @@ func ownedOne(ctx context.Context, c candidate, opts Options, index map[string]C
 
 func readOwned(ctx context.Context, c candidate, opts Options, _ map[string]CacheEntry, memo *contentMemo) (ScannedFile, []byte, *Skipped, CacheStats, error) {
 	file := ScannedFile{Absolute: c.abs, Relative: c.rel, Bytes: c.size, Version: c.version}
-	file, data, skip, stat, err := hashOpened(ctx, c, opts, file, true)
+	file, data, skip, stat, err := hashOpened(ctx, c, opts, file, true, memo)
 	if err == nil && skip == nil {
 		memo.store(file)
 	}
