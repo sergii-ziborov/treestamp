@@ -10,7 +10,14 @@ records separated by NUL. `scan` lists selected names when there are
 after a full in-memory manifest. `--profile artifact` hashes binaries,
 drops the 1.5MiB cap, and skips gitignore files while keeping standard
 skips. Default `repo` stays the Weavatrix source profile. This is not
-a hashdeep codec.
+a hashdeep codec. Human `scan` lists selected names above `Dropped`,
+hides the revision unless `--output` is set, and drops the save hint.
+`explain` says `Would keep` when the path is not on disk. `paths` /
+`explain` / `config` no longer advertise scan-only flags. Human `scan`
+names dropped files under `Dropped`. Default `config` omits
+`Hash contents` when hashing is on. README CLI cards match that
+human output; examples show CI, `explain`, `paths`, and artifact
+scans.
 
 ## Library 0.1.4 / CLI 0.1.4 (2026-09-19)
 

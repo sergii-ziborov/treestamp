@@ -129,9 +129,10 @@ func writeHuman(env *app.Env, sel policy.Select, man store.Manifest) error {
 			env.Set(status.Partial)
 		}
 	}
-	card := render.Card{Status: title, Detail: scanDetail(man), Tone: tone, Rows: scanRows(sel, man), Items: scanNames(man)}
-	if !sel.Quiet && sel.Output == "" {
-		card.Next = []string{"Save a baseline:  treestamp scan <root> --output FILE"}
+	card := render.Card{
+		Status: title, Detail: scanDetail(man), Tone: tone,
+		Lead: scanNames(man), Rows: scanRows(sel, man),
+		Items: render.Preview(man.Dropped, maxScanNames),
 	}
 	return render.WriteCard(env.Out, pal, card)
 }
@@ -139,35 +140,39 @@ func writeHuman(env *app.Env, sel policy.Select, man store.Manifest) error {
 const maxScanNames = 20
 
 func scanNames(man store.Manifest) []string {
-	if len(man.Files) == 0 || len(man.Files) > maxScanNames {
+	if len(man.Files) == 0 {
 		return nil
 	}
 	out := make([]string, 0, len(man.Files))
 	for _, file := range man.Files {
 		out = append(out, file.Relative)
 	}
-	return out
+	return render.Preview(out, maxScanNames)
 }
 
 func scanDetail(man store.Manifest) string {
-	n := render.Comma(man.Summary.Selected)
-	if man.Summary.Selected == 0 {
+	n := man.Summary.Selected
+	if n == 0 {
 		return "no files selected"
 	}
-	if man.Summary.Hashed == man.Summary.Selected {
-		if man.Policy.Profile == policy.ProfileArtifact {
-			return n + " files selected and hashed, including binaries"
-		}
-		return n + " files selected and hashed"
+	unit := render.Comma(n) + " files"
+	if n == 1 {
+		unit = "1 file"
+	}
+	if man.Summary.Hashed == n {
+		return unit + " selected and hashed"
 	}
 	if man.Summary.Hashed == 0 {
-		return n + " files selected (not hashed)"
+		return unit + " selected (not hashed)"
 	}
-	return n + " selected, " + render.Comma(man.Summary.Hashed) + " hashed"
+	return unit + " selected, " + render.Comma(man.Summary.Hashed) + " hashed"
 }
 
 func scanRows(sel policy.Select, man store.Manifest) []render.Row {
-	rows := []render.Row{{Key: "Revision", Value: man.Revisions.Legacy}}
+	var rows []render.Row
+	if sel.Output != "" {
+		rows = append(rows, render.Row{Key: "Revision", Value: man.Revisions.Legacy})
+	}
 	if man.Policy.Profile == policy.ProfileArtifact {
 		rows = append(rows, render.Row{Key: "Profile", Value: policy.DisplayProfile(man.Policy.Profile)})
 	}

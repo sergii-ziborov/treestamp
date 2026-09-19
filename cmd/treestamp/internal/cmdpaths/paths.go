@@ -18,6 +18,7 @@ func New(env *app.Env) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "paths [ROOT]",
 		Short: "List selected paths without reading file bytes",
+		Long:  "Prints names after ignore and filters. Binary and size checks run only when scan hashes.",
 		Example: "  treestamp paths . --ext go\n" +
 			"  treestamp paths . --ext go --json",
 		Args: cobra.MaximumNArgs(1),
@@ -29,7 +30,8 @@ func New(env *app.Env) *cobra.Command {
 			return run(cmd.Context(), env, sel, root, nul, absolute)
 		},
 	}
-	sel.Bind(cmd)
+	sel.BindPolicy(cmd)
+	sel.BindJSON(cmd)
 	cmd.Flags().BoolVar(&nul, "null", false, "separate names with a NUL (safe for spaces)")
 	cmd.Flags().BoolVar(&absolute, "absolute", false, "print absolute paths")
 	return cmd

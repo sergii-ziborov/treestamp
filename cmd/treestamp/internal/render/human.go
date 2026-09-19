@@ -13,6 +13,7 @@ type Row struct {
 type Card struct {
 	Status, Detail string
 	Tone           string
+	Lead           []string
 	Rows           []Row
 	Items          []string
 	Next           []string
@@ -45,24 +46,24 @@ func WriteCard(w io.Writer, pal Palette, card Card) error {
 	if card.Detail != "" {
 		fmt.Fprintf(ew, "%s\n", pal.Paint(pal.Dim, card.Detail))
 	}
-	rows := filledRows(card.Rows)
-	if len(rows) > 0 {
+	lead, rows := nonempty(card.Lead), filledRows(card.Rows)
+	if len(lead) > 0 || len(rows) > 0 {
 		fmt.Fprintln(ew)
-		width := 0
-		for _, row := range rows {
-			if n := len(row.Key); n > width {
-				width = n
-			}
-		}
-		for _, row := range rows {
-			fmt.Fprintf(ew, "%s  %s\n", pal.Paint(pal.Cyan, pad(row.Key, width)), row.Value)
+	}
+	writeItems(ew, lead)
+	if len(lead) > 0 && len(rows) > 0 {
+		fmt.Fprintln(ew)
+	}
+	width := 0
+	for _, row := range rows {
+		if n := len(row.Key); n > width {
+			width = n
 		}
 	}
-	for _, item := range card.Items {
-		if item != "" {
-			fmt.Fprintf(ew, "  %s\n", item)
-		}
+	for _, row := range rows {
+		fmt.Fprintf(ew, "%s  %s\n", pal.Paint(pal.Cyan, pad(row.Key, width)), row.Value)
 	}
+	writeItems(ew, nonempty(card.Items))
 	if len(card.Next) > 0 {
 		fmt.Fprintln(ew)
 		for _, line := range card.Next {
@@ -70,6 +71,22 @@ func WriteCard(w io.Writer, pal Palette, card Card) error {
 		}
 	}
 	return ew.err
+}
+
+func writeItems(ew *errWriter, items []string) {
+	for _, item := range items {
+		fmt.Fprintf(ew, "  %s\n", item)
+	}
+}
+
+func nonempty(items []string) []string {
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 func filledRows(rows []Row) []Row {

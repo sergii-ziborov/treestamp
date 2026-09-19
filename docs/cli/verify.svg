@@ -1,19 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="720" height="280" viewBox="0 0 720 280">
-  <rect width="720" height="280" rx="12" fill="#111827"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="260" viewBox="0 0 720 260">
+  <rect width="720" height="260" rx="12" fill="#111827"/>
   <circle cx="28" cy="24" r="6" fill="#f87171"/>
   <circle cx="48" cy="24" r="6" fill="#fbbf24"/>
   <circle cx="68" cy="24" r="6" fill="#34d399"/>
-  <text x="96" y="29" fill="#9ca3af" font-family="monospace" font-size="14">treestamp verify</text>
-  <text x="32" y="72" fill="#f87171" font-family="monospace" font-size="16">DIFFER</text>
-  <text x="32" y="96" fill="#9ca3af" font-family="monospace" font-size="14">selected-content-and-policy</text>
-  <text x="32" y="136" fill="#67e8f9" font-family="monospace" font-size="14">Added</text>
-  <text x="180" y="136" fill="#f9fafb" font-family="monospace" font-size="14">1</text>
-  <text x="32" y="164" fill="#67e8f9" font-family="monospace" font-size="14">Removed</text>
-  <text x="180" y="164" fill="#f9fafb" font-family="monospace" font-size="14">0</text>
-  <text x="32" y="192" fill="#67e8f9" font-family="monospace" font-size="14">Changed</text>
-  <text x="180" y="192" fill="#f9fafb" font-family="monospace" font-size="14">0</text>
-  <text x="32" y="220" fill="#67e8f9" font-family="monospace" font-size="14">Renamed</text>
-  <text x="180" y="220" fill="#f9fafb" font-family="monospace" font-size="14">0</text>
-  <text x="32" y="256" fill="#6b7280" font-family="monospace" font-size="13">Fast cache was not used as content proof.</text>
+  <text x="96" y="29" fill="#9ca3af" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14">treestamp verify</text>
+  <text x="32" y="64" fill="#6b7280" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13">$ treestamp verify ./baselines/cli.tstamp.json --root ./cmd/treestamp</text>
+  <text x="32" y="100" fill="#f87171" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="16">Differ</text>
+  <text x="32" y="124" fill="#9ca3af" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14">Selected files changed</text>
+  <text x="32" y="164" fill="#67e8f9" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14">Added</text>
+  <text x="104" y="164" fill="#f9fafb" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14">1</text>
+  <text x="32" y="200" fill="#f9fafb" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14">  + extra.go</text>
 </svg>

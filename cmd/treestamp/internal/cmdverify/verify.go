@@ -18,6 +18,7 @@ type request struct {
 	Root     string
 	JSON     bool
 	Null     bool
+	Color    string
 }
 
 func New(env *app.Env) *cobra.Command {
@@ -36,6 +37,7 @@ func New(env *app.Env) *cobra.Command {
 	cmd.Flags().StringVar(&req.Root, "root", "", "folder to read (required; not taken from the snapshot)")
 	cmd.Flags().BoolVar(&req.JSON, "json", false, "print JSON instead of the human summary")
 	cmd.Flags().BoolVar(&req.Null, "null", false, "print every changed path, NUL-separated")
+	cmd.Flags().StringVar(&req.Color, "color", "auto", "auto, always, or never")
 	return cmd
 }
 
@@ -93,7 +95,7 @@ func finish(env *app.Env, current *treestamp.ScanReport, delta treestamp.ScanDel
 		if err := render.WriteNull(env.Out, render.OfDelta(delta).Lines()); err != nil {
 			return env.Fail(status.Publish, "stdout: %v", err)
 		}
-	} else if err := writeHuman(env, delta, current); err != nil {
+	} else if err := writeHuman(env, delta, current, req.Color); err != nil {
 		return env.Fail(status.Publish, "stdout: %v", err)
 	}
 	if env.Code == status.Partial {
@@ -105,8 +107,8 @@ func finish(env *app.Env, current *treestamp.ScanReport, delta treestamp.ScanDel
 	return nil
 }
 
-func writeHuman(env *app.Env, delta treestamp.ScanDelta, current *treestamp.ScanReport) error {
-	pal := render.Detect(env.Out, "auto")
+func writeHuman(env *app.Env, delta treestamp.ScanDelta, current *treestamp.ScanReport, color string) error {
+	pal := render.Detect(env.Out, color)
 	card := render.Card{Status: "Match", Detail: "Selected files match the snapshot", Tone: "ok"}
 	if env.Code == status.Partial {
 		card.Status, card.Detail, card.Tone = "Partial", "Walk did not finish", "warn"

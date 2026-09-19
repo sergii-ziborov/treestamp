@@ -10,6 +10,33 @@ go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.4
 Nested-module docs:
 [pkg.go.dev/github.com/sergii-ziborov/treestamp/cmd/treestamp](https://pkg.go.dev/github.com/sergii-ziborov/treestamp/cmd/treestamp).
 
+## When to use it
+
+The library is for Go. The CLI is for CI, a shell, and a person asking
+why a path missed the baseline. It is the same scanner.
+
+| Situation | Command |
+| --- | --- |
+| Gate CI on selected bytes | `verify --root` |
+| Save that gate in Git | `scan --output` on a subtree |
+| Compare two job artifacts | `diff --exit-code` |
+| Names into another tool | `paths --null` |
+| Why a path was dropped | `explain` |
+| Hash a release tree as shipped | `scan --profile artifact` |
+
+Do not use it as `find`, a daemon, or a hashdeep codec. `paths` can
+list a binary that `scan` later drops.
+
+```text
+treestamp scan ./examples/docquickstart --ext go
+treestamp explain testdata/generated/model.go --root .
+treestamp verify ./baselines/cli.tstamp.json --root ./cmd/treestamp
+```
+
+![treestamp scan](../cli/scan.svg)
+![treestamp explain](../cli/explain.svg)
+![treestamp verify](../cli/verify.svg)
+
 ## Baseline you can commit
 
 `--output` must sit outside the scan root. To keep a manifest in the
@@ -48,6 +75,14 @@ every added, removed, changed, and renamed path. `--null` writes those
 records with a NUL after each one (`--json` and `--null` cannot be
 combined).
 
+```yaml
+- uses: actions/setup-go@v5
+  with:
+    go-version: "1.21.x"
+- run: go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.4
+- run: treestamp verify ./baselines/cli.tstamp.json --root ./cmd/treestamp --json
+```
+
 When two jobs already produced manifests and the trees are gone:
 
 ```text
@@ -58,7 +93,8 @@ treestamp diff ./baselines/before.tstamp.json ./baselines/after.tstamp.json --js
 
 ## Selected paths without hashing
 
-Same ignore and filter rules as `scan`:
+Same ignore and filter rules as `scan`. `paths` does not apply binary
+or size checks; those run when `scan` hashes.
 
 ```text
 treestamp paths . --ext go --null | xargs -0 gofmt -l

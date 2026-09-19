@@ -15,6 +15,39 @@ Library: [`github.com/sergii-ziborov/treestamp`](https://pkg.go.dev/github.com/s
 
 A bare `treestamp` prints help and does not hash the current directory.
 
+## When to use this, not the library
+
+Write Go against `ScanWith` / `EachFile` / `Explain`. Use this binary
+when the caller is CI, a shell, PowerShell, or a person at a terminal.
+
+| Situation | Command | Do not |
+| --- | --- | --- |
+| Fail a job if selected sources change | `verify --root` | Treat exit `3` as clean |
+| Commit that gate next to the subtree | `scan --output` on a subtree | Redirect JSON into the scan root |
+| Two jobs already wrote manifests | `diff --exit-code` | Expect `diff` to open the tree |
+| Pipe names into `gofmt` / `xargs` | `paths --null` | Assume `paths` skipped binaries |
+| “Why is this file missing?” | `explain` | Treat excluded as a failed command |
+| Hash `dist/` as shipped | `scan --profile artifact` | Change default `repo` scans |
+| Watch hashes in a log | `scan --format ndjson` | Parse it as a finished manifest |
+
+```text
+treestamp scan ./examples/docquickstart --ext go
+```
+
+![treestamp scan](../../docs/cli/scan.svg)
+
+```text
+treestamp explain testdata/generated/model.go --root .
+```
+
+![treestamp explain](../../docs/cli/explain.svg)
+
+```text
+treestamp verify ./baselines/cli.tstamp.json --root ./cmd/treestamp
+```
+
+![treestamp verify](../../docs/cli/verify.svg)
+
 ## Keep a baseline Git can store
 
 `--output` inside the scan root is refused. Redirecting `scan --json`
@@ -64,6 +97,17 @@ should gate on. `verify` re-walks `--root` with the policy saved in the
 manifest. It does not take the root from the file (so a copied artifact
 cannot silently point at the wrong tree).
 
+```yaml
+- uses: actions/setup-go@v5
+  with:
+    go-version: "1.21.x"
+- run: go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.4
+- run: treestamp verify ./baselines/cli.tstamp.json --root ./cmd/treestamp --json
+```
+
+Exit `0` keeps the job green. Exit `1` is a finished difference. Exit
+`3` is a partial walk — do not allow that as success.
+
 ## Compare two CI artifacts without opening the tree
 
 After two jobs each wrote a manifest:
@@ -104,7 +148,8 @@ baselines keep skipping binaries.
 ## Feed selected names to another tool (no hashing)
 
 `paths` applies the same ignore and filter rules as `scan` and does not
-read file bytes. `--null` is for names that contain spaces or newlines:
+read file bytes. It can list a binary that `scan` later drops. `--null`
+is for names that contain spaces or newlines:
 
 ```text
 treestamp paths . --ext go --null | xargs -0 gofmt -l

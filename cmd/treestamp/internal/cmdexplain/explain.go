@@ -1,6 +1,8 @@
 package cmdexplain
 
 import (
+	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/sergii-ziborov/treestamp"
@@ -24,7 +26,8 @@ func New(env *app.Env) *cobra.Command {
 			return run(env, sel, root, args[0])
 		},
 	}
-	sel.Bind(cmd)
+	sel.BindPolicy(cmd)
+	sel.BindJSON(cmd)
 	cmd.Flags().StringVar(&root, "root", ".", "scan root; the path is root-relative")
 	return cmd
 }
@@ -51,12 +54,22 @@ func run(env *app.Env, sel policy.Select, root, rel string) error {
 	}
 	pal := render.Detect(env.Out, sel.Color)
 	title, tone := explainTitle(why.Outcome)
+	rows := explainRows(why)
+	if title == "Kept" && missingOnDisk(root, rel) {
+		title = "Would keep"
+		rows = append(rows, render.Row{Key: "Why", Value: "not on disk"})
+	}
 	if err := render.WriteCard(env.Out, pal, render.Card{
-		Status: title, Detail: why.Relative, Tone: tone, Rows: explainRows(why),
+		Status: title, Detail: why.Relative, Tone: tone, Rows: rows,
 	}); err != nil {
 		return env.Fail(status.Publish, "stdout: %v", err)
 	}
 	return nil
+}
+
+func missingOnDisk(root, rel string) bool {
+	_, err := os.Lstat(filepath.Join(root, filepath.FromSlash(rel)))
+	return os.IsNotExist(err)
 }
 
 func explainTitle(outcome string) (string, string) {

@@ -47,6 +47,9 @@ func TestScanHelpShowsCommittedBaseline(t *testing.T) {
 	if !strings.Contains(text, "../repo.tstamp.json") {
 		t.Fatalf("missing sibling-baseline example %q", text)
 	}
+	if strings.Contains(text, "--quiet") {
+		t.Fatalf("quiet still advertised %q", text)
+	}
 }
 
 func TestUnknownCommandIsUsage(t *testing.T) {
@@ -173,10 +176,83 @@ func TestScanHumanOmitsLecture(t *testing.T) {
 	if !strings.Contains(text, "Complete") || !strings.Contains(text, "a.go") {
 		t.Fatalf("%s", text)
 	}
-	for _, junk := range []string{"within selected scope", "Policy exclusions", "repo-v1", "Failures"} {
+	if !strings.Contains(text, "1 file selected and hashed") {
+		t.Fatalf("%s", text)
+	}
+	for _, junk := range []string{
+		"within selected scope", "Policy exclusions", "repo-v1", "Failures",
+		"Save a baseline", "Revision", "1 files",
+	} {
 		if strings.Contains(text, junk) {
 			t.Fatalf("leaked %q: %s", junk, text)
 		}
+	}
+}
+
+func TestScanHumanListsNamesBeforeDropped(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "note.txt"), "hello\n")
+	writeFile(t, filepath.Join(root, "payload.bin"), "a\x00b")
+	var out, errb bytes.Buffer
+	code := Run(context.Background(), []string{"scan", root}, bytes.NewReader(nil), &out, &errb)
+	if code != 0 {
+		t.Fatalf("scan %d %s", code, errb.String())
+	}
+	text := out.String()
+	note, dropped, bin := strings.Index(text, "note.txt"), strings.Index(text, "Dropped"), strings.Index(text, "payload.bin")
+	if note < 0 || dropped < 0 || bin < 0 || note > dropped || dropped > bin {
+		t.Fatalf("names under dropped: %s", text)
+	}
+}
+
+func TestExplainMissingWouldKeep(t *testing.T) {
+	root := t.TempDir()
+	var out, errb bytes.Buffer
+	code := Run(context.Background(), []string{"explain", "nope.go", "--root", root}, bytes.NewReader(nil), &out, &errb)
+	if code != 0 {
+		t.Fatalf("explain %d %s", code, errb.String())
+	}
+	text := out.String()
+	if !strings.Contains(text, "Would keep") || !strings.Contains(text, "not on disk") {
+		t.Fatalf("%s", text)
+	}
+	if strings.Contains(text, "Kept") {
+		t.Fatalf("said kept: %s", text)
+	}
+}
+
+func TestNonScanHelpOmitsScanFlags(t *testing.T) {
+	for _, name := range []string{"paths", "explain", "config"} {
+		var out, errb bytes.Buffer
+		if code := Run(context.Background(), []string{name, "--help"}, bytes.NewReader(nil), &out, &errb); code != 0 {
+			t.Fatalf("%s help %d %s", name, code, errb.String())
+		}
+		text := out.String()
+		if name == "paths" && !strings.Contains(text, "Binary and size checks") {
+			t.Fatalf("missing honesty %q", text)
+		}
+		for _, junk := range []string{"--output", "--metadata-only", "--quiet", "ndjson"} {
+			if strings.Contains(text, junk) {
+				t.Fatalf("%s leaked %q: %s", name, junk, text)
+			}
+		}
+	}
+}
+
+func TestConfigHumanHidesOracleIgnore(t *testing.T) {
+	var out, errb bytes.Buffer
+	if code := Run(context.Background(), []string{"config"}, bytes.NewReader(nil), &out, &errb); code != 0 {
+		t.Fatalf("config %d %s", code, errb.String())
+	}
+	text := out.String()
+	if strings.Contains(text, "weavatrix") {
+		t.Fatalf("oracle leak %s", text)
+	}
+	if !strings.Contains(text, ".gitignore") {
+		t.Fatalf("%s", text)
+	}
+	if strings.Contains(text, "Hash contents") {
+		t.Fatalf("default hash row %s", text)
 	}
 }
 

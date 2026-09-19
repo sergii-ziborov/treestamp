@@ -54,20 +54,29 @@ type fileConfig struct {
 	Profile      string   `json:"profile"`
 }
 
-func (s *Select) Bind(cmd *cobra.Command) {
+func (s *Select) BindPolicy(cmd *cobra.Command) {
 	cmd.Flags().StringSliceVar(&s.Exts, "ext", nil, "only these extensions (go, md; dots optional)")
 	cmd.Flags().StringSliceVar(&s.Scope, "scope", nil, "only this part of the tree (.gitignore still applies)")
 	cmd.Flags().StringSliceVar(&s.Exclude, "exclude", nil, "drop relative paths that contain this text")
 	cmd.Flags().BoolVar(&s.NoIgnore, "no-ignore", false, "do not read gitignore files")
-	cmd.Flags().BoolVar(&s.MetadataOnly, "metadata-only", false, "names and sizes only; verify will refuse")
 	cmd.Flags().IntVar(&s.Jobs, "jobs", 0, "parallel walkers (0 = default)")
 	cmd.Flags().StringVar(&s.Config, "config", "", "shared policy file (treestamp.policy/v1)")
-	cmd.Flags().StringVar(&s.Format, "format", "text", "text, json, or ndjson")
-	cmd.Flags().BoolVar(&s.JSON, "json", false, "print JSON instead of the human summary")
-	cmd.Flags().StringVar(&s.Output, "output", "", "write the snapshot here; must be outside the scan folder")
 	cmd.Flags().StringVar(&s.Color, "color", "auto", "auto, always, or never")
-	cmd.Flags().BoolVar(&s.Quiet, "quiet", false, "skip next-step hints")
 	cmd.Flags().StringVar(&s.Profile, "profile", "", "repo (default) or artifact")
+}
+
+func (s *Select) BindJSON(cmd *cobra.Command) {
+	cmd.Flags().BoolVar(&s.JSON, "json", false, "print JSON instead of the human summary")
+}
+
+func (s *Select) Bind(cmd *cobra.Command) {
+	s.BindPolicy(cmd)
+	s.BindJSON(cmd)
+	cmd.Flags().BoolVar(&s.MetadataOnly, "metadata-only", false, "names and sizes only; verify will refuse")
+	cmd.Flags().StringVar(&s.Format, "format", "text", "text, json, or ndjson")
+	cmd.Flags().StringVar(&s.Output, "output", "", "write the snapshot here; must be outside the scan folder")
+	cmd.Flags().BoolVar(&s.Quiet, "quiet", false, "accepted for compatibility; has no effect")
+	_ = cmd.Flags().MarkHidden("quiet")
 }
 
 func (s *Select) ApplyConfig() error {

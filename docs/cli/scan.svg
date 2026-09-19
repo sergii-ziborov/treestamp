@@ -1,21 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="720" height="340" viewBox="0 0 720 340">
-  <rect width="720" height="340" rx="12" fill="#111827"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="220" viewBox="0 0 720 220">
+  <rect width="720" height="220" rx="12" fill="#111827"/>
   <circle cx="28" cy="24" r="6" fill="#f87171"/>
   <circle cx="48" cy="24" r="6" fill="#fbbf24"/>
   <circle cx="68" cy="24" r="6" fill="#34d399"/>
-  <text x="96" y="29" fill="#9ca3af" font-family="monospace" font-size="14">treestamp scan</text>
-  <text x="32" y="72" fill="#6ee7b7" font-family="monospace" font-size="16">COMPLETE</text>
-  <text x="32" y="96" fill="#9ca3af" font-family="monospace" font-size="14">within selected scope</text>
-  <text x="32" y="136" fill="#67e8f9" font-family="monospace" font-size="14">Selected</text>
-  <text x="160" y="136" fill="#f9fafb" font-family="monospace" font-size="14">3 files</text>
-  <text x="32" y="164" fill="#67e8f9" font-family="monospace" font-size="14">Hashed</text>
-  <text x="160" y="164" fill="#f9fafb" font-family="monospace" font-size="14">3 files</text>
-  <text x="32" y="192" fill="#67e8f9" font-family="monospace" font-size="14">Excluded</text>
-  <text x="160" y="192" fill="#f9fafb" font-family="monospace" font-size="14">0</text>
-  <text x="32" y="220" fill="#67e8f9" font-family="monospace" font-size="14">Profile</text>
-  <text x="160" y="220" fill="#f9fafb" font-family="monospace" font-size="14">repo-v1</text>
-  <text x="32" y="248" fill="#67e8f9" font-family="monospace" font-size="14">Revision</text>
-  <text x="160" y="248" fill="#f9fafb" font-family="monospace" font-size="14">sha256</text>
-  <text x="32" y="292" fill="#6b7280" font-family="monospace" font-size="13">Policy exclusions are not operational failures.</text>
+  <text x="96" y="29" fill="#9ca3af" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14">treestamp scan</text>
+  <text x="32" y="64" fill="#6b7280" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13">$ treestamp scan ./examples/docquickstart --ext go</text>
+  <text x="32" y="100" fill="#6ee7b7" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="16">Complete</text>
+  <text x="32" y="124" fill="#9ca3af" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14">1 file selected and hashed</text>
+  <text x="32" y="160" fill="#f9fafb" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14">  main.go</text>
 </svg>

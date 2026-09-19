@@ -35,6 +35,25 @@ func DisplayProfile(name string) string {
 	return "repo"
 }
 
+func DisplayIgnore(files []string) string {
+	if sameStrings(files, treestamp.DefaultOptions().IgnoreFiles) {
+		return ".gitignore, .ignore"
+	}
+	return strings.Join(files, ", ")
+}
+
+func sameStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func applyArtifact(opts *treestamp.Options) {
 	opts.DetectBinaryFiles = false
 	opts.MaxFileBytes = 0

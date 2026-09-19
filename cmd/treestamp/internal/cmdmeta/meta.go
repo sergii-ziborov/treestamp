@@ -43,7 +43,7 @@ func Doctor(env *app.Env) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pal := render.Detect(env.Out, "auto")
 			if err := render.WriteCard(env.Out, pal, render.Card{
-				Status: "DOCTOR", Detail: "no network, no source mutation", Tone: "ok",
+				Status: "Doctor", Detail: "no network, no source mutation", Tone: "ok",
 				Rows: []render.Row{
 					{Key: "CLI", Value: policy.CLIVersion},
 					{Key: "Core", Value: treestamp.Version},
@@ -69,7 +69,8 @@ func Config(env *app.Env) *cobra.Command {
 		Short: "Show the effective scan policy without walking the tree",
 		RunE:  func(cmd *cobra.Command, args []string) error { return runConfig(env, sel) },
 	}
-	sel.Bind(cmd)
+	sel.BindPolicy(cmd)
+	sel.BindJSON(cmd)
 	show := &cobra.Command{
 		Use:    "show",
 		Hidden: true,
@@ -98,15 +99,15 @@ func runConfig(env *app.Env, sel policy.Select) error {
 			{Key: "Extensions", Value: strings.Join(snap.Extensions, ", ")},
 			{Key: "Scope", Value: strings.Join(snap.Scope, ", ")},
 			{Key: "Exclude", Value: strings.Join(snap.Exclude, ", ")},
-			{Key: "Ignore files", Value: strings.Join(snap.IgnoreFiles, ", ")},
-			{Key: "Hash contents", Value: yesNo(snap.HashContents)},
+			{Key: "Ignore files", Value: policy.DisplayIgnore(snap.IgnoreFiles)},
+			{Key: "Hash contents", Value: hashContentsRow(snap.HashContents)},
 		},
 	})
 }
 
-func yesNo(v bool) string {
+func hashContentsRow(v bool) string {
 	if v {
-		return "yes"
+		return ""
 	}
 	return "no"
 }

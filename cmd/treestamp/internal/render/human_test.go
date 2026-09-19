@@ -29,6 +29,22 @@ func TestWriteCardSkipsEmptyRows(t *testing.T) {
 	}
 }
 
+func TestWriteCardLeadBeforeRows(t *testing.T) {
+	var buf bytes.Buffer
+	err := WriteCard(&buf, Palette{}, Card{
+		Status: "Complete",
+		Lead:   []string{"note.txt"},
+		Rows:   []Row{{Key: "Dropped", Value: "1"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := buf.String()
+	if strings.Index(text, "note.txt") > strings.Index(text, "Dropped") {
+		t.Fatalf("lead after rows: %q", text)
+	}
+}
+
 func TestPreviewCapsList(t *testing.T) {
 	got := Preview([]string{"a", "b", "c"}, 2)
 	if len(got) != 3 || got[2] != "… 1 more" {

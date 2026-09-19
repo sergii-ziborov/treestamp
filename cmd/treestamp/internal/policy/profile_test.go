@@ -1,6 +1,11 @@
 package policy
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"github.com/sergii-ziborov/treestamp"
+)
 
 func TestNormalizeProfile(t *testing.T) {
 	cases := []struct {
@@ -26,6 +31,10 @@ func TestNormalizeProfile(t *testing.T) {
 	}
 	if DisplayProfile(ProfileArtifact) != "artifact" || DisplayProfile(ProfileRepo) != "repo" {
 		t.Fatal("display")
+	}
+	ign := DisplayIgnore(treestamp.DefaultOptions().IgnoreFiles)
+	if ign != ".gitignore, .ignore" || strings.Contains(ign, "weavatrix") {
+		t.Fatalf("ignore %q", ign)
 	}
 }
 

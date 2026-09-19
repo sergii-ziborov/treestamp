@@ -67,24 +67,62 @@ service, or daemon.
 
 ## Command line
 
-The same scanner. Not a second engine.
+Same scanner as the library. Use the CLI when you are not writing Go,
+or when CI must gate on an exit code. Do not use it as `find`, a
+watcher, or a hashdeep replacement.
 
-```text
-treestamp scan ./cmd/treestamp --ext go --json --output ./baselines/cli.tstamp.json
-treestamp verify ./baselines/cli.tstamp.json --root ./cmd/treestamp
-treestamp paths . --ext go --null | xargs -0 gofmt -l
-treestamp explain skip.txt --root . --ext go
-```
+| You need | Run |
+| --- | --- |
+| Pin selected sources and fail CI if they move | `scan --output` then `verify --root` |
+| Compare two already-written manifests; trees are gone | `diff --exit-code` |
+| Feed names to `gofmt` / another tool | `paths --null` |
+| Why a path never entered the baseline | `explain` |
+| Hash a release tree, including binaries | `scan --profile artifact` |
+| Log each hash as it finishes | `scan --format ndjson` |
 
 `--output` cannot sit inside the scan root. Scan a subtree if the
 manifest must live in the same repository. `verify` re-applies the
-saved policy; `diff` only compares two already-written manifests.
-`--profile artifact` hashes binaries and skips gitignore; default
-`scan` stays the repo profile.
+saved policy; it does not take the root from the file.
+
+```text
+# Pin the CLI package, not the whole checkout
+treestamp scan ./cmd/treestamp --ext go --json --output ./baselines/cli.tstamp.json
+treestamp verify ./baselines/cli.tstamp.json --root ./cmd/treestamp
+
+# Why generated code is absent from that baseline
+treestamp explain testdata/generated/model.go --root .
+
+# Names only; paths does not apply binary or size checks
+treestamp paths . --ext go --null | xargs -0 gofmt -l
+
+# Whole-repo baseline lives beside the checkout
+treestamp scan . --ext go --json --output ../repo.tstamp.json
+
+# Dist / release tree
+treestamp scan ./dist --profile artifact --json --output ../dist.tstamp.json
+```
+
+```text
+treestamp scan ./examples/docquickstart --ext go
+```
 
 ![treestamp scan](docs/cli/scan.svg)
+
+```text
+treestamp explain testdata/generated/model.go --root .
+```
+
 ![treestamp explain](docs/cli/explain.svg)
+
+```text
+treestamp verify ./baselines/cli.tstamp.json --root ./cmd/treestamp
+```
+
 ![treestamp verify](docs/cli/verify.svg)
+
+The verify card is the differ shape: every `+` / `-` / `~` / rename is
+listed. A clean job prints `Match`. Gate CI on the exit code, not the
+card.
 
 CLI README: [cmd/treestamp/README.md](cmd/treestamp/README.md).
 Guide: [docs/guides/cli.md](docs/guides/cli.md).

@@ -73,7 +73,7 @@ func run(env *app.Env, before, after string, asJSON, exitCode, nul bool) error {
 
 func writeHuman(env *app.Env, delta treestamp.ScanDelta) error {
 	pal := render.Detect(env.Out, "auto")
-	card := render.Card{Status: "Equal", Detail: "The two snapshots match", Tone: "ok"}
+	card := render.Card{Status: "Match", Detail: "The two snapshots match", Tone: "ok"}
 	if !delta.IsEmpty() {
 		view := render.OfDelta(delta)
 		card.Status, card.Detail, card.Tone = "Differ", "The two snapshots differ", "warn"

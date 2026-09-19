@@ -29,6 +29,7 @@ type Manifest struct {
 	IgnoreSources []IgnoreSource  `json:"ignore_sources,omitempty"`
 	Revisions     Revisions       `json:"revisions"`
 	Summary       Summary         `json:"summary"`
+	Dropped       []string        `json:"-"`
 }
 
 type IgnoreSource struct {
@@ -90,6 +91,9 @@ func FromReport(rep *treestamp.ScanReport, snap policy.Snapshot) Manifest {
 		})
 	}
 	for _, skipped := range rep.Skipped {
+		if skipped.Relative != "" {
+			out.Dropped = append(out.Dropped, skipped.Relative)
+		}
 		if skipped.Kind == treestamp.SkipIOError || skipped.Kind == treestamp.SkipConcurrentModification {
 			out.Summary.Failures++
 		}
