@@ -81,3 +81,54 @@ func TestRejectsDuplicateAndDotDot(t *testing.T) {
 		t.Fatal("dup")
 	}
 }
+
+func TestLoadRequiresDocumentEnd(t *testing.T) {
+	base := `{"schema":"treestamp.manifest/v1","producer":{},"policy":{},"observation":{"evidence":"sha256"},"files":[],"revisions":{},"summary":{}}`
+	if _, err := loadManifest(t, base+"  \n\t"); err != nil {
+		t.Fatalf("whitespace eof: %v", err)
+	}
+	empty := `{"schema":"treestamp.manifest/v1","producer":{},"policy":{},"observation":{"complete":true,"evidence":"sha256"},"files":[],"revisions":{},"summary":{}}`
+	if _, err := loadManifest(t, empty); err != nil {
+		t.Fatalf("empty hashed: %v", err)
+	}
+	for _, tail := range []string{"]", "}", "] leftover", "{}", "1", "null", "xxx", "\xff"} {
+		if _, err := loadManifest(t, base+tail); err == nil {
+			t.Fatalf("accepted trailing %q", tail)
+		}
+	}
+}
+
+func TestLoadRejectsContradictoryObservation(t *testing.T) {
+	cases := []string{
+		`{"schema":"treestamp.manifest/v1","producer":{},"policy":{},"observation":{"complete":true,"termination":"timeout","evidence":"sha256"},"files":[],"revisions":{},"summary":{}}`,
+		`{"schema":"treestamp.manifest/v1","producer":{},"policy":{},"observation":{"complete":true,"termination":"cancelled","evidence":"sha256"},"files":[],"revisions":{},"summary":{}}`,
+		`{"schema":"treestamp.manifest/v1","producer":{},"policy":{},"observation":{"complete":true,"evidence":"sha256"},"files":[],"revisions":{},"summary":{"failures":1}}`,
+		`{"schema":"treestamp.manifest/v1","producer":{},"policy":{},"observation":{"evidence":"md5"},"files":[],"revisions":{},"summary":{}}`,
+		`{"schema":"treestamp.manifest/v1","producer":{},"policy":{"profile":"artifact-v1"},"observation":{"evidence":"sha256"},"files":[],"revisions":{},"summary":{}}`,
+		`{"schema":"treestamp.manifest/v1","producer":{},"policy":{},"observation":{"evidence":"sha256"},"files":[],"revisions":{},"summary":{"selected":2}}`,
+	}
+	for _, body := range cases {
+		if _, err := loadManifest(t, body); err == nil {
+			t.Fatalf("accepted %s", body)
+		}
+	}
+}
+
+func TestAsReportKeepsTermination(t *testing.T) {
+	man := Manifest{
+		Schema: Schema, Observation: Observation{Termination: "timeout", Evidence: "sha256"},
+	}
+	got := man.AsReport()
+	if got.Termination != treestamp.TerminationTimeout {
+		t.Fatalf("term %v", got.Termination)
+	}
+}
+
+func loadManifest(t *testing.T, body string) (Manifest, error) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "m.json")
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return Load(path)
+}

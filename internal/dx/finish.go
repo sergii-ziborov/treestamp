@@ -37,10 +37,17 @@ func Check(ctx context.Context, o Outcome) error {
 	case TermTimeout:
 		return context.DeadlineExceeded
 	}
-	if o.Unread || (!o.Complete && o.Term != TermMaxEntries && o.Term != TermMaxTotalBytes) {
+	if o.Unread || !o.Complete {
 		return ErrPartial
 	}
 	return nil
+}
+
+func Finish(ctx context.Context, o Outcome, stopped bool) error {
+	if stopped {
+		return nil
+	}
+	return Check(ctx, o)
 }
 
 func Classify(err error) string {

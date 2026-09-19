@@ -4,14 +4,14 @@ Command-line app for the Treestamp library. Same scanner as
 `go get github.com/sergii-ziborov/treestamp` — not a second engine.
 
 ```text
-go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.3
+go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.4
 ```
 
 Requires **Go 1.21** or newer. `CGO_ENABLED=0`. People without Go should
 use a GitHub release binary.
 
 Library: [`github.com/sergii-ziborov/treestamp`](https://pkg.go.dev/github.com/sergii-ziborov/treestamp)
-(tag `v0.1.3`).
+(tag `v0.1.4`).
 
 A bare `treestamp` prints help and does not hash the current directory.
 

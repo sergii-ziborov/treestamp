@@ -67,7 +67,7 @@ Windows/Linux/macOS CI matrix. Ledger: `compat/ledger.json`.
 
 1. Larger official sizes (10k / 100k / 1M) against fastwalk, gocodewalker,
    and the rust oracle when a dedicated host is available.
-2. Library tag is `v0.1.3`. CLI tag is `cmd/treestamp/v0.1.3` and must
+2. Library tag is `v0.1.4`. CLI tag is `cmd/treestamp/v0.1.4` and must
    require that published library. Do not retag an immutable version.
 
 ## Local checks

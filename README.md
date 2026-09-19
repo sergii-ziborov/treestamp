@@ -8,13 +8,13 @@ explains why a path was kept or dropped, and verifies the next tree.
 Docs: [pkg.go.dev/github.com/sergii-ziborov/treestamp](https://pkg.go.dev/github.com/sergii-ziborov/treestamp)
 
 ```text
-go get github.com/sergii-ziborov/treestamp@v0.1.3
+go get github.com/sergii-ziborov/treestamp@v0.1.4
 ```
 
 Requires **Go 1.21** or newer (CI compiles 1.21 through 1.26). `CGO_ENABLED=0`. The CLI is a nested module:
 
 ```text
-go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.3
+go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.4
 ```
 
 ```go

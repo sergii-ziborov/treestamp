@@ -132,6 +132,11 @@ jobs:
       - name: CLI module tests
         working-directory: cmd/treestamp
         run: go test ./...
+      - name: CLI module tests (GOWORK=off)
+        working-directory: cmd/treestamp
+        env:
+          GOWORK: "off"
+        run: go test ./...
       - name: CLI help smoke
         working-directory: cmd/treestamp
         run: go run . version --json

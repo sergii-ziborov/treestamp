@@ -8,7 +8,7 @@ Minimum Go: 1.21.0. `CGO_ENABLED=0` for the intended runtime.
 | Manifest with hashes | `ScanWith` or `Scanner.Scan` | Watcher, search, parse |
 | Owned file bytes for an indexer | `EachFile` | Replay after a callback error |
 | Why a path was ignored | `Explain` / `Scanner.Explain` | Content, size, or binary verification |
-| Stream without retaining files | `ScanInto` / `ScanIntoErr` | A complete in-memory manifest |
+| Stream without retaining files | `ScanInto` / `ScanIntoErr` / `Plan.Files` | A complete in-memory manifest |
 | Reuse hashes | `ScanCached` + `ToCache` | A promised speedup |
 | Raw directory walk | `Walk`, `WalkFS`, `DirScanner` | Repository ignore unless you add it |
 | Incremental events | `ApplyWatchPlan` | Recursive fsnotify (not in this module) |

@@ -7,8 +7,8 @@ Do not publish this project from the Weavatrix or EdgeHawk organizations.
 
 ## Current
 
-- Library: `v0.1.3` → `go get github.com/sergii-ziborov/treestamp@v0.1.3`
-- CLI: `cmd/treestamp/v0.1.3` → `go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.3`
+- Library: `v0.1.4` → `go get github.com/sergii-ziborov/treestamp@v0.1.4`
+- CLI: `cmd/treestamp/v0.1.4` → `go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.4`
 
 Those tags stay immutable. A later library bump is a new tag. The published
 CLI `go.mod` must not contain a `replace` of the library.

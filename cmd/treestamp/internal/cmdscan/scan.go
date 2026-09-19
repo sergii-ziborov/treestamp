@@ -68,11 +68,15 @@ func run(ctx context.Context, env *app.Env, sel policy.Select, root string) erro
 }
 
 func publish(env *app.Env, sel policy.Select, man store.Manifest, scanErr error) error {
-	payload, err := json.MarshalIndent(man, "", "  ")
-	if err != nil {
-		return env.Fail(status.Publish, "encode: %v", err)
+	format := sel.FormatName()
+	var payload []byte
+	if sel.Output != "" || format == "json" {
+		encoded, err := encodeManifest(man)
+		if err != nil {
+			return env.Fail(status.Publish, "encode: %v", err)
+		}
+		payload = encoded
 	}
-	payload = append(bytes.TrimRight(payload, "\n"), '\n')
 	if sel.Output != "" {
 		if !man.Observation.Complete || env.Code == status.Partial {
 			fmt.Fprintln(env.Err, "output baseline was not replaced")
@@ -80,7 +84,25 @@ func publish(env *app.Env, sel policy.Select, man store.Manifest, scanErr error)
 			return env.Fail(status.Publish, "write output: %v", err)
 		}
 	}
-	switch sel.FormatName() {
+	if err := writeScan(env, sel, man, format, payload); err != nil {
+		return err
+	}
+	if scanErr != nil && env.Code == 0 {
+		env.Set(status.Partial)
+	}
+	return nil
+}
+
+func encodeManifest(man store.Manifest) ([]byte, error) {
+	payload, err := json.MarshalIndent(man, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(bytes.TrimRight(payload, "\n"), '\n'), nil
+}
+
+func writeScan(env *app.Env, sel policy.Select, man store.Manifest, format string, payload []byte) error {
+	switch format {
 	case "json":
 		if _, err := env.Out.Write(payload); err != nil {
 			return env.Fail(status.Publish, "stdout: %v", err)
@@ -92,10 +114,7 @@ func publish(env *app.Env, sel policy.Select, man store.Manifest, scanErr error)
 			return env.Fail(status.Publish, "stdout: %v", err)
 		}
 	default:
-		return env.Fail(status.Usage, "unknown format %q", sel.FormatName())
-	}
-	if scanErr != nil && env.Code == 0 {
-		env.Set(status.Partial)
+		return env.Fail(status.Usage, "unknown format %q", format)
 	}
 	return nil
 }

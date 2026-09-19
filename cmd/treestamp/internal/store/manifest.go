@@ -142,7 +142,8 @@ func (m Manifest) AsReport() *treestamp.ScanReport {
 	}
 	return &treestamp.ScanReport{
 		Files: files, Revision: m.Revisions.Legacy, Complete: m.Observation.Complete,
-		Portable: m.Observation.Portable, IgnoreSources: sources,
+		Termination: observationTerm(m.Observation.Termination),
+		Portable:    m.Observation.Portable, IgnoreSources: sources,
 		Descriptor: treestamp.ScanDescriptor{
 			Version: m.Policy.Descriptor.Version, Policy: m.Policy.Descriptor.Policy,
 		},
@@ -175,13 +176,25 @@ func Load(path string) (Manifest, error) {
 	if err := dec.Decode(&m); err != nil {
 		return Manifest{}, err
 	}
-	if dec.More() {
-		return Manifest{}, fmt.Errorf("trailing data after manifest document")
+	if err := requireDocumentEnd(dec); err != nil {
+		return Manifest{}, err
 	}
 	if err := m.validate(); err != nil {
 		return Manifest{}, err
 	}
 	return m, nil
+}
+
+func requireDocumentEnd(dec *json.Decoder) error {
+	var extra json.RawMessage
+	err := dec.Decode(&extra)
+	if err == io.EOF {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("trailing data after manifest document: %w", err)
+	}
+	return fmt.Errorf("trailing data after manifest document")
 }
 
 func (m Manifest) validate() error {
@@ -216,7 +229,49 @@ func (m Manifest) validate() error {
 	if m.Observation.Evidence == "sha256" && m.Summary.Hashed != hashed {
 		return fmt.Errorf("hashed count %d does not match %d file hashes", m.Summary.Hashed, hashed)
 	}
+	if m.Summary.Selected != len(m.Files) {
+		return fmt.Errorf("selected count %d does not match %d files", m.Summary.Selected, len(m.Files))
+	}
+	return m.validateObservation()
+}
+
+func (m Manifest) validateObservation() error {
+	ev := m.Observation.Evidence
+	if ev != "" && ev != "sha256" && ev != "metadata" {
+		return fmt.Errorf("unknown evidence %q", ev)
+	}
+	if profile := m.Policy.Profile; profile != "" && profile != policy.Profile {
+		return fmt.Errorf("unknown profile %q", profile)
+	}
+	term := m.Observation.Termination
+	if term != "" && term != "none" && observationTerm(term) == treestamp.TerminationNone {
+		return fmt.Errorf("unknown termination %q", term)
+	}
+	if m.Observation.Complete && term != "" && term != "none" {
+		return fmt.Errorf("complete observation cannot terminate with %s", term)
+	}
+	if m.Observation.Complete && m.Summary.Failures > 0 {
+		return fmt.Errorf("complete observation cannot have %d required failures", m.Summary.Failures)
+	}
+	if ev == "metadata" && m.Summary.Hashed > 0 {
+		return fmt.Errorf("metadata evidence cannot list hashed files")
+	}
 	return nil
+}
+
+func observationTerm(s string) treestamp.ScanTermination {
+	switch s {
+	case "max_entries":
+		return treestamp.TerminationMaxEntries
+	case "max_total_bytes":
+		return treestamp.TerminationMaxTotalBytes
+	case "timeout":
+		return treestamp.TerminationTimeout
+	case "cancelled":
+		return treestamp.TerminationCancelled
+	default:
+		return treestamp.TerminationNone
+	}
 }
 
 func validContentHash(h string) bool {

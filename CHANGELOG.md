@@ -2,10 +2,26 @@
 
 ## Unreleased
 
-CLI human output drops empty rows, jargon cards, and the leftover
-`completion` command. `config` prints the policy without a `show`
-subcommand. CI cancels stale runs and tags `cmd/treestamp/v*` publish
-binaries.
+## Library 0.1.4 / CLI 0.1.4 (2026-09-19)
+
+High-level scan now reports incompleteness on every facade: `Plan.Scan`,
+`Plan.Files`, `ScanIntoErr`, and `EachFile` share the same finish check.
+A `MaxEntries=0` walk on a non-empty tree yields `ErrPartial` instead of
+a silent end. A deliberate iterator break or `ErrStop` is still not a
+failure. `EachFile` uses the same `ScannedFile` converter as `Scan` and
+counts hashed bytes in the visit summary.
+
+CLI `Load` requires a second JSON decode to `EOF`, so a trailing `]`,
+`}`, second document, or garbage after a valid manifest is rejected.
+Contradictory baselines (`complete` plus timeout/cancel/required
+failures, unknown evidence/profile, mismatched counts) fail at load.
+`AsReport` keeps `Termination`. Text-only `scan` no longer
+`MarshalIndent`s a manifest that will not be written. CI runs the CLI
+module with `GOWORK=off` against the declared require.
+
+CLI human output from 0.1.3 stays: empty rows and leftover `completion`
+are gone; `config` has no `show` subcommand. Tags `v0.1.3` and
+`cmd/treestamp/v0.1.3` stay immutable.
 
 ## Library 0.1.3 / CLI 0.1.3 (2026-09-17)
 

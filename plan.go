@@ -60,13 +60,9 @@ func (p *Plan) EachFile(ctx context.Context, root string, consume func(ScannedFi
 		n++
 		read += uint64(len(data))
 		noteProgress(p.progress, &pace, start, n, read)
-		return consume(ScannedFile{Absolute: file.Absolute, Relative: file.Relative, Bytes: file.Bytes, ContentHash: file.ContentHash}, data)
+		return consume(publicFile(file), data)
 	})
-	var pub *ContentVisitReport
-	if inner != nil {
-		pub = fromContentReport(inner)
-	}
-	return finishEach(ctx, p, root, pub, err)
+	return finishEach(ctx, p, root, inner, err)
 }
 
 func (p *Plan) Explain(root, relative string) (PathExplanation, error) {
@@ -97,15 +93,15 @@ func (p *Plan) Files(ctx context.Context, root string) func(func(ScannedFile, er
 			return
 		}
 		stop := false
-		_, err = s.ScanInto(ctx, ScanSinkFunc(func(f *ScannedFile) ScanSinkControl {
+		stream, err := s.ScanInto(ctx, ScanSinkFunc(func(f *ScannedFile) ScanSinkControl {
 			if !yield(*f, nil) {
 				stop = true
 				return ScanSinkStop
 			}
 			return ScanSinkContinue
 		}))
-		if !stop && err != nil {
-			yield(ScannedFile{}, wrap(err, "Files", root))
+		if ferr := finishStream(ctx, "Files", root, stream, err, stop); ferr != nil {
+			yield(ScannedFile{}, ferr)
 		}
 	}
 }
@@ -141,7 +137,7 @@ func ScanIntoErr(ctx context.Context, root string, fn func(*ScannedFile) error, 
 	if sinkErr != nil {
 		return rep, &Error{Code: CodeCallback, Op: "ScanInto", Path: root, Err: sinkErr}
 	}
-	return rep, err
+	return rep, finishStream(ctx, "ScanInto", root, rep, err, false)
 }
 
 func (s ScanSummary) LogValue() slog.Value {
@@ -165,8 +161,12 @@ func finishScan(ctx context.Context, op, root string, rep *ScanReport, err error
 	return rep, nil
 }
 
-func finishEach(ctx context.Context, p *Plan, root string, rep *ContentVisitReport, err error) (*ScanSummary, error) {
-	sum := visitSummary(rep)
+func finishEach(ctx context.Context, p *Plan, root string, inner *scan.ContentVisitReport, err error) (*ScanSummary, error) {
+	var pub *ContentVisitReport
+	if inner != nil {
+		pub = fromContentReport(inner)
+	}
+	sum := visitSummary(pub, inner)
 	if errors.Is(err, ErrStop) {
 		sum.Stopped, sum.Complete = true, false
 		p.logFinish(ctx, "each.finished", slog.String("status", "stopped"))
@@ -175,7 +175,7 @@ func finishEach(ctx context.Context, p *Plan, root string, rep *ContentVisitRepo
 	if err != nil {
 		return &sum, &Error{Code: CodeCallback, Op: "EachFile", Path: root, Err: err}
 	}
-	if ferr := dx.Check(ctx, visitOutcome(rep)); ferr != nil {
+	if ferr := dx.Check(ctx, visitOutcome(pub)); ferr != nil {
 		sum.Complete = false
 		p.logFinish(ctx, "each.finished", slog.String("status", "partial"))
 		return &sum, wrap(ferr, "EachFile", root)
@@ -184,7 +184,7 @@ func finishEach(ctx context.Context, p *Plan, root string, rep *ContentVisitRepo
 	return &sum, nil
 }
 
-func visitSummary(rep *ContentVisitReport) ScanSummary {
+func visitSummary(rep *ContentVisitReport, inner *scan.ContentVisitReport) ScanSummary {
 	if rep == nil {
 		return ScanSummary{}
 	}
@@ -196,7 +196,36 @@ func visitSummary(rep *ContentVisitReport) ScanSummary {
 	for _, skipped := range rep.Skipped {
 		sum.SkippedByKind[skipped.Kind]++
 	}
+	countOwned(&sum, inner)
 	return sum
+}
+
+func countOwned(sum *ScanSummary, inner *scan.ContentVisitReport) {
+	if inner == nil || inner.Manifest == nil {
+		return
+	}
+	for _, file := range inner.Manifest.Files {
+		sum.SelectedBytes += file.Bytes
+		if file.ContentHash() != "" {
+			sum.HashedFiles++
+		}
+		if file.Content != nil && file.Content.BinaryChecked {
+			sum.BinaryCheckedFiles++
+		}
+	}
+}
+
+func finishStream(ctx context.Context, op, root string, stream *ScanStreamReport, err error, stopped bool) error {
+	if stopped {
+		return nil
+	}
+	if err != nil {
+		return wrap(err, op, root)
+	}
+	if ferr := dx.Check(ctx, streamOutcome(stream)); ferr != nil {
+		return wrap(ferr, op, root)
+	}
+	return nil
 }
 
 func reportOutcome(rep *ScanReport) dx.Outcome {
@@ -207,6 +236,13 @@ func reportOutcome(rep *ScanReport) dx.Outcome {
 }
 
 func visitOutcome(rep *ContentVisitReport) dx.Outcome {
+	if rep == nil {
+		return dx.Outcome{}
+	}
+	return dx.Outcome{Complete: rep.Complete && !rep.Stopped, Term: int(rep.Termination), Unread: unreadKinds(rep.Skipped)}
+}
+
+func streamOutcome(rep *ScanStreamReport) dx.Outcome {
 	if rep == nil {
 		return dx.Outcome{}
 	}

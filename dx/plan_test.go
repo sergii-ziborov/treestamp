@@ -257,6 +257,124 @@ func TestPlanFilesYieldsSelected(t *testing.T) {
 	}
 }
 
+func TestPlanFilesReportsIncompleteLimit(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "a.go"), "package a\n")
+	plan, err := treestamp.Compile(treestamp.Using(treestamp.DefaultOptions().WithMaxEntries(0)), treestamp.WithExtensions("go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := plan.Scan(ctx, root); !errors.Is(err, treestamp.ErrPartial) {
+		t.Fatalf("scan %v", err)
+	}
+	var yielded error
+	n := 0
+	plan.Files(ctx, root)(func(file treestamp.ScannedFile, yieldErr error) bool {
+		if yieldErr != nil {
+			yielded = yieldErr
+			return false
+		}
+		n++
+		return true
+	})
+	if n != 0 || !errors.Is(yielded, treestamp.ErrPartial) {
+		t.Fatalf("files n=%d err=%v", n, yielded)
+	}
+	if _, err := treestamp.ScanIntoErr(ctx, root, nil, treestamp.Using(treestamp.DefaultOptions().WithMaxEntries(0)), treestamp.WithExtensions("go")); !errors.Is(err, treestamp.ErrPartial) {
+		t.Fatalf("into %v", err)
+	}
+}
+
+func TestPlanFilesUserBreakIsNotPartial(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "a.go"), "package a\n")
+	mustWrite(t, filepath.Join(root, "b.go"), "package b\n")
+	plan, err := treestamp.Compile(treestamp.WithExtensions("go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	plan.Files(context.Background(), root)(func(file treestamp.ScannedFile, yieldErr error) bool {
+		if yieldErr != nil {
+			t.Fatal(yieldErr)
+		}
+		n++
+		return false
+	})
+	if n != 1 {
+		t.Fatalf("got %d", n)
+	}
+}
+
+func TestPlanFilesCancelledContext(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "a.go"), "package a\n")
+	plan, err := treestamp.Compile(treestamp.WithExtensions("go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var yielded error
+	plan.Files(ctx, root)(func(file treestamp.ScannedFile, yieldErr error) bool {
+		yielded = yieldErr
+		return false
+	})
+	if !errors.Is(yielded, context.Canceled) {
+		t.Fatalf("%v", yielded)
+	}
+}
+
+func TestEachFileEvidenceMatchesScanWith(t *testing.T) {
+	root := t.TempDir()
+	body := []byte("package a\n")
+	mustWrite(t, filepath.Join(root, "a.go"), string(body))
+	ctx := context.Background()
+	rep, err := treestamp.ScanWith(ctx, root, treestamp.WithExtensions("go"))
+	if err != nil || len(rep.Files) != 1 {
+		t.Fatalf("scan %v files=%d", err, len(rep.Files))
+	}
+	want := rep.Files[0]
+	wantHash := "sha256:" + hex.EncodeToString(sha256Sum(body))
+	var got treestamp.ScannedFile
+	sum, err := treestamp.EachFile(ctx, root, func(file treestamp.ScannedFile, data []byte) error {
+		got = file
+		if !bytes.Equal(data, body) {
+			t.Fatalf("bytes %q", data)
+		}
+		if file.ContentHash != wantHash {
+			t.Fatalf("hash %s", file.ContentHash)
+		}
+		return nil
+	}, treestamp.WithExtensions("go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ContentHash != want.ContentHash || got.ContentFingerprint != want.ContentFingerprint || got.BinaryChecked != want.BinaryChecked {
+		t.Fatalf("evidence %+v vs %+v", got, want)
+	}
+	if got.Version.ModifiedNS == nil || want.Version.ModifiedNS == nil || *got.Version.ModifiedNS != *want.Version.ModifiedNS {
+		t.Fatalf("version %+v vs %+v", got.Version, want.Version)
+	}
+	scanSum := rep.Summary()
+	if sum.HashedFiles != scanSum.HashedFiles || sum.SelectedBytes != scanSum.SelectedBytes || sum.BinaryCheckedFiles != scanSum.BinaryCheckedFiles {
+		t.Fatalf("summary %+v vs %+v", sum, scanSum)
+	}
+	meta := treestamp.DefaultOptions()
+	meta.HashFileContents = false
+	meta.DetectBinaryFiles = false
+	_, err = treestamp.EachFile(ctx, root, func(file treestamp.ScannedFile, data []byte) error {
+		if file.ContentHash != "" || file.BinaryChecked {
+			t.Fatalf("metadata leaked %+v", file)
+		}
+		return nil
+	}, treestamp.Using(meta), treestamp.WithExtensions("go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func rels(r *treestamp.ScanReport) []string {
 	var out []string
 	for _, f := range r.Files {
