@@ -380,6 +380,26 @@ func TestKillerFileWalkerAndSkipFiles(t *testing.T) {
 	}
 }
 
+func TestFileWalkerCustomIgnorePatternsIgnore(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "keep.go"), "package keep")
+	mustWriteFile(t, filepath.Join(root, "drop.tmp"), "tmp")
+	ch := make(chan *File, 8)
+	w := NewFileWalker(root, ch)
+	w.CustomIgnorePatterns = []string{"*.tmp"}
+	if err := w.Start(); err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for file := range ch {
+		names = append(names, file.Filename)
+	}
+	joined := strings.Join(names, ",")
+	if !strings.Contains(joined, "keep.go") || strings.Contains(joined, "drop.tmp") {
+		t.Fatalf("%q", names)
+	}
+}
+
 func TestKillerDescriptorAndMetadataOnly(t *testing.T) {
 	root := t.TempDir()
 	mustWriteFile(t, filepath.Join(root, "a.txt"), "abc")

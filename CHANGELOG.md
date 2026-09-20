@@ -1,6 +1,26 @@
 # Changelog
 
-## Unreleased
+## Library 0.1.5 (2026-09-20)
+
+Walk and listing close-out after published `v0.1.4`. Published tags stay
+immutable; this tree is `0.1.5` until tagged. Official B01–B14 JSON is
+unchanged. This is not a claimed 15–25% or 50% win over fastwalk v1.0.14.
+
+`Walk` / `WalkDirs` keep persistable listing entries (WalkDirs uses one
+`[]Entry`). Parallel unsorted walk streams those entries and attaches
+listing `FileInfo` without `Stat` on a Linux lazy dent. Workers start
+only when more than one directory remains; an explicit `NumWorkers` is
+not clipped to the native default cap of 8. `ReadDirnames` uses
+`Readdirnames(-1)`. Local `SortMode` includes `SortDirsFirst` (directory,
+regular file, other) and serial `Walk` honors it. Ordered pull reserves
+a ready count slot before listing, then adds bytes; `ParallelWalkIter.Err`
+surfaces a failed `IntoIterOrderedBounded` admit. `Options.IgnoreRules`
+and `FileWalker.CustomIgnorePatterns` are ignore patterns, not inverted
+overrides. Empty `IgnoreRules` keep the oracle descriptor v2 hash.
+`compat/fastwalk` keeps a relative root relative and always sets
+`FollowOutside` so `ErrTraverseLink` can leave the root. Informal
+`bench/go-compat` medians were remasured on this tree and written into
+README.
 
 Serial `Walk` / `WalkDirs` now keep persistable listing entries instead of
 `Clone` on every callback. Parallel unsorted walk attaches listing

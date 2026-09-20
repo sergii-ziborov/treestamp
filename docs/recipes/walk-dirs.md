@@ -24,3 +24,4 @@ import godirwalk "github.com/sergii-ziborov/treestamp/compat/godirwalk"
 That import is the same engine, not `karrick/godirwalk`. Prefer
 `WalkDirs` when you do not need the old type names. `ReadDirnames` and
 `DirScanner` list one directory; they do not walk the tree.
+`ReadDirnames` uses `Readdirnames(-1)`.

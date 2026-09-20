@@ -89,6 +89,20 @@ func (b *Budget) HoldReady(ctx context.Context, bytes int64) error {
 	})
 }
 
+// AddReadyBytes grows an already-held ready slot. Call HoldReady(ctx, 0)
+// before listing so the count is reserved without the directory bytes.
+func (b *Budget) AddReadyBytes(ctx context.Context, bytes int64) error {
+	if bytes <= 0 {
+		return nil
+	}
+	if b != nil && b.lim.ReadyBytes > 0 && bytes > b.lim.ReadyBytes {
+		return ErrReadyLimit
+	}
+	return b.wait(ctx, func() bool {
+		return b.lim.ReadyBytes <= 0 || b.readyB+bytes <= b.lim.ReadyBytes
+	}, func() { b.readyB += bytes })
+}
+
 func (b *Budget) DropReady(bytes int64) {
 	if b == nil {
 		return

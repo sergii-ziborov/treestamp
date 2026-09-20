@@ -319,7 +319,7 @@ func reportStatus(rep *ScanReport, err error) slog.Attr {
 
 func cloneOptions(o Options) Options {
 	o.Cancellation = nil
-	o.IgnoreFiles, o.OverrideRules, o.Extensions = dx.Clone(o.IgnoreFiles), dx.Clone(o.OverrideRules), dx.Clone(o.Extensions)
+	o.IgnoreFiles, o.OverrideRules, o.IgnoreRules, o.Extensions = dx.Clone(o.IgnoreFiles), dx.Clone(o.OverrideRules), dx.Clone(o.IgnoreRules), dx.Clone(o.Extensions)
 	o.Filters = cloneFilters(o.Filters)
 	if o.Limits.MaxEntries != nil {
 		v := *o.Limits.MaxEntries

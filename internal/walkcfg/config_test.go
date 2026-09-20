@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -177,6 +178,181 @@ func TestOrderedPullCloseUnblocks(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("Close hung")
+	}
+}
+
+func TestParallelUsesWorkersBelowSingleChild(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "src")
+	if err := os.Mkdir(src, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 8; i++ {
+		dir := filepath.Join(src, "d"+string(rune('0'+i)))
+		if err := os.Mkdir(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "f.txt"), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var current, peak atomic.Int32
+	err := Parallel(root, Config{NumWorkers: 4}, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil || d == nil || d.IsDir() {
+			return err
+		}
+		n := current.Add(1)
+		for {
+			old := peak.Load()
+			if n <= old || peak.CompareAndSwap(old, n) {
+				break
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+		current.Add(-1)
+		return nil
+	})
+	if err != nil || peak.Load() < 2 {
+		t.Fatalf("peak=%d err=%v", peak.Load(), err)
+	}
+}
+
+func TestParallelDirsFirstPutsRegularBeforeSymlink(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "dir"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "z-file.go"), []byte("z"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "z-file.go"), filepath.Join(root, "a-link")); err != nil {
+		t.Skip(err)
+	}
+	var kids []string
+	err := Parallel(root, Config{NumWorkers: 1, SortMode: walk.LocalSortDirsFirst}, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d == nil {
+			return err
+		}
+		if filepath.Dir(path) == root {
+			kids = append(kids, d.Name())
+		}
+		return nil
+	})
+	want := []string{"dir", "z-file.go", "a-link"}
+	if err != nil || len(kids) != 3 || kids[0] != want[0] || kids[1] != want[1] || kids[2] != want[2] {
+		t.Fatalf("kids=%q err=%v", kids, err)
+	}
+}
+
+func drainOrdered(t *testing.T, iter *walk.ParallelWalkIter) int {
+	t.Helper()
+	done := make(chan int, 1)
+	go func() {
+		n := 0
+		for {
+			_, err := iter.Next()
+			if err == io.EOF {
+				done <- n
+				return
+			}
+			if err != nil {
+				done <- -1
+				return
+			}
+			n++
+		}
+	}()
+	select {
+	case n := <-done:
+		if n < 0 {
+			t.Fatal("ordered pull error")
+		}
+		return n
+	case <-time.After(3 * time.Second):
+		_ = iter.Close()
+		t.Fatal("ordered pull hung")
+	}
+	return 0
+}
+
+func TestOrderedPullCapacityOneNested(t *testing.T) {
+	for _, workers := range []int{1, 2} {
+		t.Run(string(rune('0'+workers)), func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.Mkdir(filepath.Join(root, "sub"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, "sub", "file.txt"), []byte("x"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			iter, err := walk.NewParallelWalker(root).WithParallelism(workers).TryIntoIterOrderedBounded(1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer iter.Close()
+			if n := drainOrdered(t, iter); n < 3 {
+				t.Fatalf("entries=%d workers=%d", n, workers)
+			}
+		})
+	}
+}
+
+func TestOrderedPullEmptyDirCapacityOne(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "empty"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	iter, err := walk.NewParallelWalker(root).WithParallelism(1).TryIntoIterOrderedBounded(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+	if n := drainOrdered(t, iter); n < 3 {
+		t.Fatalf("entries=%d", n)
+	}
+}
+
+func TestSerialSortModeDirsFirst(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "dir"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "z-file.go"), []byte("z"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "a-file.go"), []byte("a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var kids []string
+	err := Serial(root, Config{SortMode: walk.LocalSortDirsFirst}, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d == nil {
+			return err
+		}
+		if filepath.Dir(path) == root {
+			kids = append(kids, d.Name())
+		}
+		return nil
+	})
+	if err != nil || len(kids) != 3 || kids[0] != "dir" || kids[1] != "a-file.go" || kids[2] != "z-file.go" {
+		t.Fatalf("kids=%q err=%v", kids, err)
+	}
+}
+
+func TestIntoIterOrderedBoundedSurfacesAdmitError(t *testing.T) {
+	rt := rtruntime.Owned(rejectExec{}).WithAdmitTimeout(15 * time.Millisecond)
+	iter := walk.NewParallelWalker(t.TempDir()).Runtime(rt).IntoIterOrderedBounded(1)
+	_, err := iter.Next()
+	if iter.Err() == nil {
+		t.Fatal("missing constructor error")
+	}
+	if !errors.Is(err, iter.Err()) {
+		t.Fatalf("Next %v Err %v", err, iter.Err())
+	}
+	if !errors.Is(err, rtruntime.ErrAdmitTimeout) && !errors.Is(err, rtruntime.ErrBusy) {
+		t.Fatalf("admit %v", err)
 	}
 }
 

@@ -620,3 +620,25 @@ func TestParallelRootSkipAndMaxDepthZero(t *testing.T) {
 		}
 	}
 }
+
+type rankDent struct {
+	name string
+	mode fs.FileMode
+}
+
+func (r rankDent) Name() string               { return r.name }
+func (r rankDent) IsDir() bool                { return r.mode.IsDir() }
+func (r rankDent) Type() fs.FileMode          { return r.mode }
+func (r rankDent) Info() (fs.FileInfo, error) { return nil, fs.ErrInvalid }
+
+func TestDirentRankDirsFirst(t *testing.T) {
+	dents := []os.DirEntry{
+		rankDent{"a-link", fs.ModeSymlink},
+		rankDent{"dir", fs.ModeDir},
+		rankDent{"z-file.go", 0},
+	}
+	sortDirents(dents, LocalSortDirsFirst)
+	if dents[0].Name() != "dir" || dents[1].Name() != "z-file.go" || dents[2].Name() != "a-link" {
+		t.Fatalf("%s %s %s", dents[0].Name(), dents[1].Name(), dents[2].Name())
+	}
+}

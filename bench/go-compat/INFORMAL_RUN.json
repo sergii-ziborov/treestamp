@@ -1,5 +1,5 @@
 {
-  "output": "goos: windows\ngoarch: amd64\npkg: github.com/sergii-ziborov/treestamp/bench/go-compat\ncpu: Intel(R) Core(TM) Ultra 7 255U\nBenchmarkArbitraryFSWalkDir-14                    \t     831\t   1643729 ns/op\t  233569 B/op\t    2678 allocs/op\nBenchmarkArbitraryFSWalkDir-14                    \t     870\t   1387573 ns/op\t  233568 B/op\t    2678 allocs/op\nBenchmarkArbitraryFSWalkDir-14                    \t     945\t   1234498 ns/op\t  233568 B/op\t    2678 allocs/op\nBenchmarkArbitraryFSWalkFS-14                     \t     712\t   1721994 ns/op\t  233568 B/op\t    2678 allocs/op\nBenchmarkArbitraryFSWalkFS-14                     \t     796\t   1822595 ns/op\t  233569 B/op\t    2678 allocs/op\nBenchmarkArbitraryFSWalkFS-14                     \t     673\t   1700757 ns/op\t  233568 B/op\t    2678 allocs/op\nBenchmarkGodirwalkReadDirnames-14                 \t     618\t   1684431 ns/op\t  819693 B/op\t    8022 allocs/op\nBenchmarkGodirwalkReadDirnames-14                 \t     939\t   1446586 ns/op\t  818911 B/op\t    8022 allocs/op\nBenchmarkGodirwalkReadDirnames-14                 \t     466\t   2245755 ns/op\t  820615 B/op\t    8022 allocs/op\nBenchmarkTreestampReadDirnames-14                 \t     603\t   1668777 ns/op\t  819499 B/op\t    8022 allocs/op\nBenchmarkTreestampReadDirnames-14                 \t     662\t   2123225 ns/op\t  819922 B/op\t    8022 allocs/op\nBenchmarkTreestampReadDirnames-14                 \t     498\t   2091288 ns/op\t  820755 B/op\t    8022 allocs/op\nBenchmarkGodirwalkReadDirents-14                  \t     494\t   2243450 ns/op\t  978344 B/op\t   12023 allocs/op\nBenchmarkGodirwalkReadDirents-14                  \t     501\t   2095705 ns/op\t  978714 B/op\t   12023 allocs/op\nBenchmarkGodirwalkReadDirents-14                  \t     566\t   2009644 ns/op\t  978314 B/op\t   12023 allocs/op\nBenchmarkTreestampReadDirentsScratch-14           \t     602\t   1883501 ns/op\t  753198 B/op\t    8021 allocs/op\nBenchmarkTreestampReadDirentsScratch-14           \t     670\t   2017895 ns/op\t  753188 B/op\t    8021 allocs/op\nBenchmarkTreestampReadDirentsScratch-14           \t     685\t   1747750 ns/op\t  753186 B/op\t    8021 allocs/op\nBenchmarkGodirwalkScanner-14                      \t     564\t   2032415 ns/op\t  577962 B/op\t   12008 allocs/op\nBenchmarkGodirwalkScanner-14                      \t     614\t   1946220 ns/op\t  577674 B/op\t   12008 allocs/op\nBenchmarkGodirwalkScanner-14                      \t     512\t   2008478 ns/op\t  577672 B/op\t   12008 allocs/op\nBenchmarkTreestampDirScanner-14                   \t     669\t   1741794 ns/op\t  663395 B/op\t    8152 allocs/op\nBenchmarkTreestampDirScanner-14                   \t     622\t   1712628 ns/op\t  663364 B/op\t    8152 allocs/op\nBenchmarkTreestampDirScanner-14                   \t     716\t   1691277 ns/op\t  663882 B/op\t    8152 allocs/op\nBenchmarkWalkDirsSkipThisTreestamp-14             \t    1261\t    837041 ns/op\t  231305 B/op\t    1259 allocs/op\nBenchmarkWalkDirsSkipThisTreestamp-14             \t    1532\t    755294 ns/op\t  230829 B/op\t    1259 allocs/op\nBenchmarkWalkDirsSkipThisTreestamp-14             \t    1399\t    831601 ns/op\t  231011 B/op\t    1259 allocs/op\nBenchmarkWalkDirsSkipThisGodirwalk-14             \t    1617\t    693466 ns/op\t  160276 B/op\t    1635 allocs/op\nBenchmarkWalkDirsSkipThisGodirwalk-14             \t    1726\t    707245 ns/op\t  159919 B/op\t    1635 allocs/op\nBenchmarkWalkDirsSkipThisGodirwalk-14             \t    1726\t    721656 ns/op\t  160718 B/op\t    1635 allocs/op\nBenchmarkWalkDirsPostChildrenTreestamp-14         \t    2917\t    379790 ns/op\t  219061 B/op\t    1259 allocs/op\nBenchmarkWalkDirsPostChildrenTreestamp-14         \t    3570\t    345035 ns/op\t  218845 B/op\t    1259 allocs/op\nBenchmarkWalkDirsPostChildrenTreestamp-14         \t    3567\t    373129 ns/op\t  218854 B/op\t    1259 allocs/op\nBenchmarkWalkDirsPostChildrenGodirwalk-14         \t    2787\t    489090 ns/op\t  232629 B/op\t    2033 allocs/op\nBenchmarkWalkDirsPostChildrenGodirwalk-14         \t    2570\t    447361 ns/op\t  232349 B/op\t    2033 allocs/op\nBenchmarkWalkDirsPostChildrenGodirwalk-14         \t    2797\t    438744 ns/op\t  232546 B/op\t    2033 allocs/op\nBenchmarkNewDirentGodirwalk-14                    \t   52837\t     21899 ns/op\t     464 B/op\t       4 allocs/op\nBenchmarkNewDirentGodirwalk-14                    \t   57914\t     22073 ns/op\t     480 B/op\t       4 allocs/op\nBenchmarkNewDirentGodirwalk-14                    \t   56148\t     22539 ns/op\t     480 B/op\t       4 allocs/op\nBenchmarkNewDirentCompat-14                       \t   57820\t     22341 ns/op\t     464 B/op\t       4 allocs/op\nBenchmarkNewDirentCompat-14                       \t   54782\t     20628 ns/op\t     464 B/op\t       4 allocs/op\nBenchmarkNewDirentCompat-14                       \t   55669\t     20197 ns/op\t     464 B/op\t       4 allocs/op\nBenchmarkSelectTreestamp-14                       \t     236\t   4822654 ns/op\t   99847 B/op\t    1338 allocs/op\nBenchmarkSelectTreestamp-14                       \t     236\t   4891705 ns/op\t  101241 B/op\t    1338 allocs/op\nBenchmarkSelectTreestamp-14                       \t     240\t   5132238 ns/op\t  100603 B/op\t    1338 allocs/op\nBenchmarkSelectGocodewalker-14                    \t     210\t   6150671 ns/op\t  135747 B/op\t    1667 allocs/op\nBenchmarkSelectGocodewalker-14                    \t     219\t   5325469 ns/op\t  132811 B/op\t    1667 allocs/op\nBenchmarkSelectGocodewalker-14                    \t     223\t   5033366 ns/op\t  133882 B/op\t    1667 allocs/op\nBenchmarkCachedStatRegularTreestamp-14            \t    3668\t    341274 ns/op\t  167958 B/op\t    1252 allocs/op\nBenchmarkCachedStatRegularTreestamp-14            \t    3658\t    361490 ns/op\t  168106 B/op\t    1252 allocs/op\nBenchmarkCachedStatRegularTreestamp-14            \t    3427\t    346151 ns/op\t  168014 B/op\t    1252 allocs/op\nBenchmarkCachedStatRegularTreestampParallel-14    \t    3518\t    319815 ns/op\t  163919 B/op\t    1237 allocs/op\nBenchmarkCachedStatRegularTreestampParallel-14    \t    4164\t    318986 ns/op\t  163874 B/op\t    1237 allocs/op\nBenchmarkCachedStatRegularTreestampParallel-14    \t    3775\t    320122 ns/op\t  164028 B/op\t    1237 allocs/op\nBenchmarkCachedStatRegularFastwalk-14             \t    3165\t    419376 ns/op\t  142480 B/op\t    1641 allocs/op\nBenchmarkCachedStatRegularFastwalk-14             \t    2524\t    404138 ns/op\t  143076 B/op\t    1641 allocs/op\nBenchmarkCachedStatRegularFastwalk-14             \t    2638\t    405177 ns/op\t  142857 B/op\t    1641 allocs/op\nBenchmarkCachedStatRegularFastwalkSerial-14       \t    3032\t    365522 ns/op\t  142682 B/op\t    1640 allocs/op\nBenchmarkCachedStatRegularFastwalkSerial-14       \t    2948\t    370345 ns/op\t  142123 B/op\t    1640 allocs/op\nBenchmarkCachedStatRegularFastwalkSerial-14       \t    2893\t    377412 ns/op\t  142026 B/op\t    1640 allocs/op\nBenchmarkCachedStatRegularOsStat-14               \t      56\t  21321507 ns/op\t  461255 B/op\t    2861 allocs/op\nBenchmarkCachedStatRegularOsStat-14               \t      52\t  23279108 ns/op\t  455829 B/op\t    2860 allocs/op\nBenchmarkCachedStatRegularOsStat-14               \t      46\t  26333728 ns/op\t  456664 B/op\t    2860 allocs/op\nBenchmarkRawWalkTreestampSerial-14                \t    2557\t    411006 ns/op\t  161493 B/op\t    1248 allocs/op\nBenchmarkRawWalkTreestampSerial-14                \t    3732\t    353778 ns/op\t  161423 B/op\t    1248 allocs/op\nBenchmarkRawWalkTreestampSerial-14                \t    3362\t    364548 ns/op\t  161613 B/op\t    1248 allocs/op\nBenchmarkRawWalkTreestampParallel-14              \t    3352\t    322658 ns/op\t  160847 B/op\t    1233 allocs/op\nBenchmarkRawWalkTreestampParallel-14              \t    3343\t    310942 ns/op\t  160990 B/op\t    1233 allocs/op\nBenchmarkRawWalkTreestampParallel-14              \t    3996\t    328693 ns/op\t  160789 B/op\t    1233 allocs/op\nBenchmarkRawWalkTreestampParallelBushy-14         \t    1761\t    922639 ns/op\t  314362 B/op\t    1997 allocs/op\nBenchmarkRawWalkTreestampParallelBushy-14         \t    1260\t    977042 ns/op\t  314352 B/op\t    1997 allocs/op\nBenchmarkRawWalkTreestampParallelBushy-14         \t    1216\t    967768 ns/op\t  317694 B/op\t    1997 allocs/op\nBenchmarkRawWalkFastwalkBushy-14                  \t    1155\t   1055088 ns/op\t  309712 B/op\t    2513 allocs/op\nBenchmarkRawWalkFastwalkBushy-14                  \t    1093\t   1065411 ns/op\t  320634 B/op\t    2514 allocs/op\nBenchmarkRawWalkFastwalkBushy-14                  \t    1184\t   1039434 ns/op\t  322450 B/op\t    2514 allocs/op\nBenchmarkRawWalkFastwalk-14                       \t    2911\t    387590 ns/op\t  147195 B/op\t    1652 allocs/op\nBenchmarkRawWalkFastwalk-14                       \t    2965\t    399659 ns/op\t  147769 B/op\t    1652 allocs/op\nBenchmarkRawWalkFastwalk-14                       \t    2424\t    464471 ns/op\t  148079 B/op\t    1652 allocs/op\nBenchmarkRawWalkGodirwalk-14                      \t    2016\t    589756 ns/op\t  213559 B/op\t    2031 allocs/op\nBenchmarkRawWalkGodirwalk-14                      \t    2011\t    504535 ns/op\t  213471 B/op\t    2031 allocs/op\nBenchmarkRawWalkGodirwalk-14                      \t    2491\t    470455 ns/op\t  213239 B/op\t    2031 allocs/op\nBenchmarkWalkDirsUnsortedTreestamp-14             \t    2940\t    363023 ns/op\t  161756 B/op\t    1249 allocs/op\nBenchmarkWalkDirsUnsortedTreestamp-14             \t    3409\t    340975 ns/op\t  161536 B/op\t    1249 allocs/op\nBenchmarkWalkDirsUnsortedTreestamp-14             \t    3060\t    348235 ns/op\t  161818 B/op\t    1249 allocs/op\nBenchmarkWalkDirsSortedTreestamp-14               \t    3656\t    339648 ns/op\t  212732 B/op\t    1252 allocs/op\nBenchmarkWalkDirsSortedTreestamp-14               \t    3656\t    368348 ns/op\t  212571 B/op\t    1252 allocs/op\nBenchmarkWalkDirsSortedTreestamp-14               \t    2972\t    375924 ns/op\t  212758 B/op\t    1252 allocs/op\nBenchmarkWalkDirsSortedGodirwalk-14               \t    2814\t    415751 ns/op\t  141564 B/op\t    1631 allocs/op\nBenchmarkWalkDirsSortedGodirwalk-14               \t    2935\t    437718 ns/op\t  141561 B/op\t    1631 allocs/op\nBenchmarkWalkDirsSortedGodirwalk-14               \t    3000\t    419081 ns/op\t  141491 B/op\t    1631 allocs/op\nBenchmarkWalkDirsSortedCompat-14                  \t    2646\t    467728 ns/op\t  271812 B/op\t    2057 allocs/op\nBenchmarkWalkDirsSortedCompat-14                  \t    2157\t    485502 ns/op\t  271749 B/op\t    2057 allocs/op\nBenchmarkWalkDirsSortedCompat-14                  \t    2362\t    581662 ns/op\t  272063 B/op\t    2057 allocs/op\nBenchmarkWalkDirsUnsortedStopTreestamp-14         \t    6178\t    187663 ns/op\t   47474 B/op\t     534 allocs/op\nBenchmarkWalkDirsUnsortedStopTreestamp-14         \t    6238\t    178133 ns/op\t   47521 B/op\t     534 allocs/op\nBenchmarkWalkDirsUnsortedStopTreestamp-14         \t    6621\t    206608 ns/op\t   47514 B/op\t     534 allocs/op\nPASS\nok  \tgithub.com/sergii-ziborov/treestamp/bench/go-compat\t315.172s\n",
+  "output": "goos: windows\ngoarch: amd64\npkg: github.com/sergii-ziborov/treestamp/bench/go-compat\ncpu: Intel(R) Core(TM) Ultra 7 255U\nBenchmarkArbitraryFSWalkDir-14                    \t     429\t   4300121 ns/op\t  233569 B/op\t    2678 allocs/op\nBenchmarkArbitraryFSWalkDir-14                    \t     536\t   4449455 ns/op\t  233575 B/op\t    2678 allocs/op\nBenchmarkArbitraryFSWalkDir-14                    \t     423\t   2769609 ns/op\t  233569 B/op\t    2678 allocs/op\nBenchmarkArbitraryFSWalkFS-14                     \t     429\t   2448815 ns/op\t  233569 B/op\t    2678 allocs/op\nBenchmarkArbitraryFSWalkFS-14                     \t     535\t   2211536 ns/op\t  233568 B/op\t    2678 allocs/op\nBenchmarkArbitraryFSWalkFS-14                     \t     558\t   2013973 ns/op\t  233569 B/op\t    2678 allocs/op\nBenchmarkGodirwalkReadDirnames-14                 \t     486\t   2328655 ns/op\t  820266 B/op\t    8022 allocs/op\nBenchmarkGodirwalkReadDirnames-14                 \t     604\t   1807000 ns/op\t  820271 B/op\t    8022 allocs/op\nBenchmarkGodirwalkReadDirnames-14                 \t     676\t   1544662 ns/op\t  819515 B/op\t    8022 allocs/op\nBenchmarkTreestampReadDirnames-14                 \t     823\t   1656248 ns/op\t  305448 B/op\t    4020 allocs/op\nBenchmarkTreestampReadDirnames-14                 \t     583\t   6215747 ns/op\t  305791 B/op\t    4020 allocs/op\nBenchmarkTreestampReadDirnames-14                 \t     594\t   1927757 ns/op\t  305318 B/op\t    4020 allocs/op\nBenchmarkGodirwalkReadDirents-14                  \t     525\t   3802053 ns/op\t  979108 B/op\t   12023 allocs/op\nBenchmarkGodirwalkReadDirents-14                  \t     465\t   4350648 ns/op\t  978927 B/op\t   12023 allocs/op\nBenchmarkGodirwalkReadDirents-14                  \t     436\t   2396038 ns/op\t  978367 B/op\t   12023 allocs/op\nBenchmarkTreestampReadDirentsScratch-14           \t     529\t   2948301 ns/op\t  753472 B/op\t    8021 allocs/op\nBenchmarkTreestampReadDirentsScratch-14           \t     402\t   4503218 ns/op\t  753774 B/op\t    8021 allocs/op\nBenchmarkTreestampReadDirentsScratch-14           \t     468\t   2573781 ns/op\t  753370 B/op\t    8021 allocs/op\nBenchmarkGodirwalkScanner-14                      \t     320\t   3722312 ns/op\t  578690 B/op\t   12008 allocs/op\nBenchmarkGodirwalkScanner-14                      \t     570\t   1856857 ns/op\t  577607 B/op\t   12008 allocs/op\nBenchmarkGodirwalkScanner-14                      \t     620\t   1740857 ns/op\t  577347 B/op\t   12008 allocs/op\nBenchmarkTreestampDirScanner-14                   \t     706\t   1541670 ns/op\t  663534 B/op\t    8152 allocs/op\nBenchmarkTreestampDirScanner-14                   \t     702\t   2013765 ns/op\t  662892 B/op\t    8152 allocs/op\nBenchmarkTreestampDirScanner-14                   \t     658\t   2310086 ns/op\t  662816 B/op\t    8152 allocs/op\nBenchmarkWalkDirsSkipThisTreestamp-14             \t    1369\t    858007 ns/op\t  229495 B/op\t    1249 allocs/op\nBenchmarkWalkDirsSkipThisTreestamp-14             \t    1406\t    783554 ns/op\t  228959 B/op\t    1249 allocs/op\nBenchmarkWalkDirsSkipThisTreestamp-14             \t    1850\t    643286 ns/op\t  228987 B/op\t    1249 allocs/op\nBenchmarkWalkDirsSkipThisGodirwalk-14             \t    1491\t    832485 ns/op\t  160058 B/op\t    1635 allocs/op\nBenchmarkWalkDirsSkipThisGodirwalk-14             \t    1540\t    677742 ns/op\t  160279 B/op\t    1635 allocs/op\nBenchmarkWalkDirsSkipThisGodirwalk-14             \t    1850\t    612712 ns/op\t  159998 B/op\t    1635 allocs/op\nBenchmarkWalkDirsPostChildrenTreestamp-14         \t    3726\t    316499 ns/op\t  216473 B/op\t    1249 allocs/op\nBenchmarkWalkDirsPostChildrenTreestamp-14         \t    3847\t    327733 ns/op\t  216610 B/op\t    1249 allocs/op\nBenchmarkWalkDirsPostChildrenTreestamp-14         \t    3969\t    353900 ns/op\t  216490 B/op\t    1249 allocs/op\nBenchmarkWalkDirsPostChildrenGodirwalk-14         \t    2514\t    402621 ns/op\t  232500 B/op\t    2033 allocs/op\nBenchmarkWalkDirsPostChildrenGodirwalk-14         \t    3064\t    401815 ns/op\t  232598 B/op\t    2033 allocs/op\nBenchmarkWalkDirsPostChildrenGodirwalk-14         \t    2893\t    413331 ns/op\t  232849 B/op\t    2033 allocs/op\nBenchmarkNewDirentGodirwalk-14                    \t   74202\t     16713 ns/op\t     480 B/op\t       4 allocs/op\nBenchmarkNewDirentGodirwalk-14                    \t   76102\t     16460 ns/op\t     480 B/op\t       4 allocs/op\nBenchmarkNewDirentGodirwalk-14                    \t   68730\t     17502 ns/op\t     480 B/op\t       4 allocs/op\nBenchmarkNewDirentCompat-14                       \t   60777\t     19895 ns/op\t     464 B/op\t       4 allocs/op\nBenchmarkNewDirentCompat-14                       \t   56856\t     21910 ns/op\t     464 B/op\t       4 allocs/op\nBenchmarkNewDirentCompat-14                       \t   55410\t     20460 ns/op\t     464 B/op\t       4 allocs/op\nBenchmarkSelectTreestamp-14                       \t     244\t   4610752 ns/op\t  103697 B/op\t    1338 allocs/op\nBenchmarkSelectTreestamp-14                       \t     252\t   5600611 ns/op\t  101069 B/op\t    1338 allocs/op\nBenchmarkSelectTreestamp-14                       \t     169\t   6199709 ns/op\t  100968 B/op\t    1338 allocs/op\nBenchmarkSelectGocodewalker-14                    \t     160\t   7034566 ns/op\t  137473 B/op\t    1668 allocs/op\nBenchmarkSelectGocodewalker-14                    \t     162\t   8175713 ns/op\t  136673 B/op\t    1667 allocs/op\nBenchmarkSelectGocodewalker-14                    \t     100\t  12938992 ns/op\t  137716 B/op\t    1668 allocs/op\nBenchmarkCachedStatRegularTreestamp-14            \t    2763\t    445980 ns/op\t  167863 B/op\t    1252 allocs/op\nBenchmarkCachedStatRegularTreestamp-14            \t    3042\t    398703 ns/op\t  167883 B/op\t    1252 allocs/op\nBenchmarkCachedStatRegularTreestamp-14            \t    2869\t    424072 ns/op\t  167926 B/op\t    1252 allocs/op\nBenchmarkCachedStatRegularTreestampParallel-14    \t    3200\t    420362 ns/op\t  159950 B/op\t    1640 allocs/op\nBenchmarkCachedStatRegularTreestampParallel-14    \t    2894\t    365129 ns/op\t  160110 B/op\t    1640 allocs/op\nBenchmarkCachedStatRegularTreestampParallel-14    \t    2840\t    382746 ns/op\t  160118 B/op\t    1640 allocs/op\nBenchmarkCachedStatRegularFastwalk-14             \t    2989\t    409407 ns/op\t  142322 B/op\t    1641 allocs/op\nBenchmarkCachedStatRegularFastwalk-14             \t    2809\t    406293 ns/op\t  142338 B/op\t    1641 allocs/op\nBenchmarkCachedStatRegularFastwalk-14             \t    3092\t    453112 ns/op\t  142475 B/op\t    1641 allocs/op\nBenchmarkCachedStatRegularFastwalkSerial-14       \t    2005\t    584592 ns/op\t  142902 B/op\t    1640 allocs/op\nBenchmarkCachedStatRegularFastwalkSerial-14       \t    2481\t    507999 ns/op\t  142550 B/op\t    1640 allocs/op\nBenchmarkCachedStatRegularFastwalkSerial-14       \t    2400\t    513890 ns/op\t  142750 B/op\t    1640 allocs/op\nBenchmarkCachedStatRegularOsStat-14               \t      49\t  24544241 ns/op\t  460312 B/op\t    2860 allocs/op\nBenchmarkCachedStatRegularOsStat-14               \t      44\t  23484116 ns/op\t  455570 B/op\t    2860 allocs/op\nBenchmarkCachedStatRegularOsStat-14               \t      63\t  27996449 ns/op\t  453559 B/op\t    2860 allocs/op\nBenchmarkRawWalkTreestampSerial-14                \t    2568\t    567373 ns/op\t  161499 B/op\t    1248 allocs/op\nBenchmarkRawWalkTreestampSerial-14                \t    2203\t    570672 ns/op\t  161638 B/op\t    1248 allocs/op\nBenchmarkRawWalkTreestampSerial-14                \t    1630\t    620754 ns/op\t  161754 B/op\t    1248 allocs/op\nBenchmarkRawWalkTreestampParallel-14              \t    2706\t    446972 ns/op\t  156931 B/op\t    1637 allocs/op\nBenchmarkRawWalkTreestampParallel-14              \t    3130\t    380211 ns/op\t  156937 B/op\t    1637 allocs/op\nBenchmarkRawWalkTreestampParallel-14              \t    3219\t    395451 ns/op\t  156706 B/op\t    1637 allocs/op\nBenchmarkRawWalkTreestampParallelBushy-14         \t     861\t   1765198 ns/op\t  294945 B/op\t    2504 allocs/op\nBenchmarkRawWalkTreestampParallelBushy-14         \t     613\t   1701891 ns/op\t  299342 B/op\t    2504 allocs/op\nBenchmarkRawWalkTreestampParallelBushy-14         \t     957\t   1269211 ns/op\t  290025 B/op\t    2504 allocs/op\nBenchmarkRawWalkFastwalkBushy-14                  \t     872\t   1257814 ns/op\t  329504 B/op\t    2514 allocs/op\nBenchmarkRawWalkFastwalkBushy-14                  \t     865\t   1248502 ns/op\t  321512 B/op\t    2514 allocs/op\nBenchmarkRawWalkFastwalkBushy-14                  \t     996\t   1284299 ns/op\t  343181 B/op\t    2515 allocs/op\nBenchmarkRawWalkFastwalk-14                       \t    3301\t    318902 ns/op\t  146067 B/op\t    1652 allocs/op\nBenchmarkRawWalkFastwalk-14                       \t    3567\t    327284 ns/op\t  146385 B/op\t    1652 allocs/op\nBenchmarkRawWalkFastwalk-14                       \t    3098\t    362340 ns/op\t  145684 B/op\t    1652 allocs/op\nBenchmarkRawWalkGodirwalk-14                      \t    2220\t    489200 ns/op\t  213210 B/op\t    2031 allocs/op\nBenchmarkRawWalkGodirwalk-14                      \t    2490\t    480864 ns/op\t  213363 B/op\t    2031 allocs/op\nBenchmarkRawWalkGodirwalk-14                      \t    1964\t    515187 ns/op\t  213594 B/op\t    2031 allocs/op\nBenchmarkWalkDirsUnsortedTreestamp-14             \t    3127\t    392528 ns/op\t  161642 B/op\t    1249 allocs/op\nBenchmarkWalkDirsUnsortedTreestamp-14             \t    3476\t    351272 ns/op\t  161512 B/op\t    1249 allocs/op\nBenchmarkWalkDirsUnsortedTreestamp-14             \t    3507\t    359738 ns/op\t  161630 B/op\t    1249 allocs/op\nBenchmarkWalkDirsSortedTreestamp-14               \t    3475\t    348623 ns/op\t  210344 B/op\t    1242 allocs/op\nBenchmarkWalkDirsSortedTreestamp-14               \t    3393\t    433857 ns/op\t  210541 B/op\t    1242 allocs/op\nBenchmarkWalkDirsSortedTreestamp-14               \t    3403\t    326564 ns/op\t  210994 B/op\t    1242 allocs/op\nBenchmarkWalkDirsSortedGodirwalk-14               \t    3349\t    400458 ns/op\t  141720 B/op\t    1631 allocs/op\nBenchmarkWalkDirsSortedGodirwalk-14               \t    3458\t    335190 ns/op\t  141703 B/op\t    1631 allocs/op\nBenchmarkWalkDirsSortedGodirwalk-14               \t    3478\t    333508 ns/op\t  141689 B/op\t    1631 allocs/op\nBenchmarkWalkDirsSortedCompat-14                  \t    2910\t    458823 ns/op\t  269752 B/op\t    2047 allocs/op\nBenchmarkWalkDirsSortedCompat-14                  \t    2674\t    406894 ns/op\t  270153 B/op\t    2047 allocs/op\nBenchmarkWalkDirsSortedCompat-14                  \t    3244\t    541299 ns/op\t  270148 B/op\t    2047 allocs/op\nBenchmarkWalkDirsUnsortedStopTreestamp-14         \t    5719\t    187916 ns/op\t   47372 B/op\t     534 allocs/op\nBenchmarkWalkDirsUnsortedStopTreestamp-14         \t    7076\t    175479 ns/op\t   47357 B/op\t     534 allocs/op\nBenchmarkWalkDirsUnsortedStopTreestamp-14         \t    7129\t    173753 ns/op\t   47362 B/op\t     534 allocs/op\nPASS\nok  \tgithub.com/sergii-ziborov/treestamp/bench/go-compat\t374.715s\n",
   "host": {
     "os": "Windows",
     "arch": "AMD64",
@@ -16,206 +16,206 @@
   },
   "process": {
     "note": "RSS/CPU are from the compiled test binary, not go test",
-    "compiled_test_peak_working_set_bytes": 58769408,
-    "compiled_test_cpu_seconds": 129.15625,
+    "compiled_test_peak_working_set_bytes": 57708544,
+    "compiled_test_cpu_seconds": 144.875,
     "compiled_test_command": "go test -c -o compat.test.exe . && ./compat.test.exe -test.bench=. -test.benchmem -test.count=1"
   },
   "medians": [
     {
       "name": "BenchmarkArbitraryFSWalkDir",
-      "ns_op": 1387573.0,
-      "b_op": 233568,
+      "ns_op": 4300121.0,
+      "b_op": 233569,
       "allocs_op": 2678
     },
     {
       "name": "BenchmarkArbitraryFSWalkFS",
-      "ns_op": 1721994.0,
+      "ns_op": 2211536.0,
       "b_op": 233568,
       "allocs_op": 2678
     },
     {
       "name": "BenchmarkGodirwalkReadDirnames",
-      "ns_op": 1684431.0,
-      "b_op": 819693,
+      "ns_op": 1807000.0,
+      "b_op": 820271,
       "allocs_op": 8022
     },
     {
       "name": "BenchmarkTreestampReadDirnames",
-      "ns_op": 2091288.0,
-      "b_op": 820755,
-      "allocs_op": 8022
+      "ns_op": 1927757.0,
+      "b_op": 305318,
+      "allocs_op": 4020
     },
     {
       "name": "BenchmarkGodirwalkReadDirents",
-      "ns_op": 2095705.0,
-      "b_op": 978714,
+      "ns_op": 3802053.0,
+      "b_op": 979108,
       "allocs_op": 12023
     },
     {
       "name": "BenchmarkTreestampReadDirentsScratch",
-      "ns_op": 1883501.0,
-      "b_op": 753198,
+      "ns_op": 2948301.0,
+      "b_op": 753472,
       "allocs_op": 8021
     },
     {
       "name": "BenchmarkGodirwalkScanner",
-      "ns_op": 2008478.0,
-      "b_op": 577672,
+      "ns_op": 1856857.0,
+      "b_op": 577607,
       "allocs_op": 12008
     },
     {
       "name": "BenchmarkTreestampDirScanner",
-      "ns_op": 1712628.0,
-      "b_op": 663364,
+      "ns_op": 2013765.0,
+      "b_op": 662892,
       "allocs_op": 8152
     },
     {
       "name": "BenchmarkWalkDirsSkipThisTreestamp",
-      "ns_op": 831601.0,
-      "b_op": 231011,
-      "allocs_op": 1259
+      "ns_op": 783554.0,
+      "b_op": 228959,
+      "allocs_op": 1249
     },
     {
       "name": "BenchmarkWalkDirsSkipThisGodirwalk",
-      "ns_op": 707245.0,
-      "b_op": 159919,
+      "ns_op": 677742.0,
+      "b_op": 160279,
       "allocs_op": 1635
     },
     {
       "name": "BenchmarkWalkDirsPostChildrenTreestamp",
-      "ns_op": 373129.0,
-      "b_op": 218854,
-      "allocs_op": 1259
+      "ns_op": 327733.0,
+      "b_op": 216610,
+      "allocs_op": 1249
     },
     {
       "name": "BenchmarkWalkDirsPostChildrenGodirwalk",
-      "ns_op": 447361.0,
-      "b_op": 232349,
+      "ns_op": 402621.0,
+      "b_op": 232500,
       "allocs_op": 2033
     },
     {
       "name": "BenchmarkNewDirentGodirwalk",
-      "ns_op": 22073.0,
+      "ns_op": 16713.0,
       "b_op": 480,
       "allocs_op": 4
     },
     {
       "name": "BenchmarkNewDirentCompat",
-      "ns_op": 20628.0,
+      "ns_op": 20460.0,
       "b_op": 464,
       "allocs_op": 4
     },
     {
       "name": "BenchmarkSelectTreestamp",
-      "ns_op": 4891705.0,
-      "b_op": 101241,
+      "ns_op": 5600611.0,
+      "b_op": 101069,
       "allocs_op": 1338
     },
     {
       "name": "BenchmarkSelectGocodewalker",
-      "ns_op": 5325469.0,
-      "b_op": 132811,
+      "ns_op": 8175713.0,
+      "b_op": 136673,
       "allocs_op": 1667
     },
     {
       "name": "BenchmarkCachedStatRegularTreestamp",
-      "ns_op": 346151.0,
-      "b_op": 168014,
+      "ns_op": 424072.0,
+      "b_op": 167926,
       "allocs_op": 1252
     },
     {
       "name": "BenchmarkCachedStatRegularTreestampParallel",
-      "ns_op": 319815.0,
-      "b_op": 163919,
-      "allocs_op": 1237
+      "ns_op": 382746.0,
+      "b_op": 160118,
+      "allocs_op": 1640
     },
     {
       "name": "BenchmarkCachedStatRegularFastwalk",
-      "ns_op": 405177.0,
-      "b_op": 142857,
+      "ns_op": 409407.0,
+      "b_op": 142322,
       "allocs_op": 1641
     },
     {
       "name": "BenchmarkCachedStatRegularFastwalkSerial",
-      "ns_op": 370345.0,
-      "b_op": 142123,
+      "ns_op": 513890.0,
+      "b_op": 142750,
       "allocs_op": 1640
     },
     {
       "name": "BenchmarkCachedStatRegularOsStat",
-      "ns_op": 23279108.0,
-      "b_op": 455829,
+      "ns_op": 24544241.0,
+      "b_op": 460312,
       "allocs_op": 2860
     },
     {
       "name": "BenchmarkRawWalkTreestampSerial",
-      "ns_op": 364548.0,
-      "b_op": 161613,
+      "ns_op": 570672.0,
+      "b_op": 161638,
       "allocs_op": 1248
     },
     {
       "name": "BenchmarkRawWalkTreestampParallel",
-      "ns_op": 322658.0,
-      "b_op": 160847,
-      "allocs_op": 1233
+      "ns_op": 395451.0,
+      "b_op": 156706,
+      "allocs_op": 1637
     },
     {
       "name": "BenchmarkRawWalkTreestampParallelBushy",
-      "ns_op": 967768.0,
-      "b_op": 317694,
-      "allocs_op": 1997
+      "ns_op": 1701891.0,
+      "b_op": 299342,
+      "allocs_op": 2504
     },
     {
       "name": "BenchmarkRawWalkFastwalkBushy",
-      "ns_op": 1055088.0,
-      "b_op": 309712,
-      "allocs_op": 2513
+      "ns_op": 1257814.0,
+      "b_op": 329504,
+      "allocs_op": 2514
     },
     {
       "name": "BenchmarkRawWalkFastwalk",
-      "ns_op": 399659.0,
-      "b_op": 147769,
+      "ns_op": 327284.0,
+      "b_op": 146385,
       "allocs_op": 1652
     },
     {
       "name": "BenchmarkRawWalkGodirwalk",
-      "ns_op": 504535.0,
-      "b_op": 213471,
+      "ns_op": 489200.0,
+      "b_op": 213210,
       "allocs_op": 2031
     },
     {
       "name": "BenchmarkWalkDirsUnsortedTreestamp",
-      "ns_op": 348235.0,
-      "b_op": 161818,
+      "ns_op": 359738.0,
+      "b_op": 161630,
       "allocs_op": 1249
     },
     {
       "name": "BenchmarkWalkDirsSortedTreestamp",
-      "ns_op": 368348.0,
-      "b_op": 212571,
-      "allocs_op": 1252
+      "ns_op": 348623.0,
+      "b_op": 210344,
+      "allocs_op": 1242
     },
     {
       "name": "BenchmarkWalkDirsSortedGodirwalk",
-      "ns_op": 419081.0,
-      "b_op": 141491,
+      "ns_op": 335190.0,
+      "b_op": 141703,
       "allocs_op": 1631
     },
     {
       "name": "BenchmarkWalkDirsSortedCompat",
-      "ns_op": 485502.0,
-      "b_op": 271749,
-      "allocs_op": 2057
+      "ns_op": 458823.0,
+      "b_op": 269752,
+      "allocs_op": 2047
     },
     {
       "name": "BenchmarkWalkDirsUnsortedStopTreestamp",
-      "ns_op": 187663.0,
-      "b_op": 47474,
+      "ns_op": 175479.0,
+      "b_op": 47357,
       "allocs_op": 534
     }
   ],
   "official_benches": "NOT_RUN",
   "mixes_sorted_unsorted": false,
   "date": "2026-09-20",
-  "note": "Informal remasurement after persistable listing entries (no per-callback Clone), lazy parallel workers, and listing-ready FileInfo. Medians of three go test -benchmem -count=3 runs. output matches medians. Official B01-B14 first campaign stays compat/results/official-benches.json. Not a 10k/100k/1M ranking or a 15-25 percent claim."
+  "note": "Informal remasurement after persistable WalkDirs, Readdirnames, listing FileInfo, ordered ready reserve, IgnoreRules, and compat FollowOutside. Medians of three go test -benchmem -count=3 runs. output matches medians. Official B01-B14 first campaign stays compat/results/official-benches.json. Not a 10k/100k/1M ranking or a 15-25 percent claim."
 }

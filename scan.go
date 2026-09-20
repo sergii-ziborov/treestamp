@@ -577,6 +577,7 @@ type RepositoryMatcher struct {
 
 func NewRepositoryMatcher(root string, opts Options) (*RepositoryMatcher, error) {
 	eng := ignore.NewEngine(opts.IgnoreFiles, opts.IgnoreCase, opts.OverrideRules)
+	eng.AddIgnoreRules(opts.IgnoreRules)
 	eng.SetGitModules(opts.GitModules)
 	if opts.IgnorePolicy.inner.Specified() {
 		eng.ApplyPolicy(root, opts.IgnorePolicy.inner)

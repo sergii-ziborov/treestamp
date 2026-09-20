@@ -451,24 +451,21 @@ func WalkCallbackParallelOpts(root string, fn fs.WalkDirFunc, opts ParallelCallb
 }
 
 func (w *callbackWork) finish(workers int) error {
-	jobs := w.queue.takeAll()
 	n := parallelWorkers(workers)
+	jobs := w.queue.takeAll()
+	for n > 1 && len(jobs) == 1 && !w.quit.Load() {
+		w.visitDir(jobs[0]); jobs = w.queue.takeAll()
+	}
 	if n > 1 && len(jobs) > 1 {
-		for _, job := range jobs {
-			w.queue.push(job)
-		}
+		for _, job := range jobs { w.queue.push(job) }
 		var wg sync.WaitGroup
 		wg.Add(n)
-		for i := 0; i < n; i++ {
-			go func() { defer wg.Done(); w.run() }()
-		}
+		for i := 0; i < n; i++ { go func() { defer wg.Done(); w.run() }() }
 		wg.Wait()
 		return w.err
 	}
 	for len(jobs) > 0 && !w.quit.Load() {
-		for _, job := range jobs {
-			w.visitDir(job)
-		}
+		for _, job := range jobs { w.visitDir(job) }
 		jobs = w.queue.takeAll()
 	}
 	return w.err
@@ -476,26 +473,19 @@ func (w *callbackWork) finish(workers int) error {
 func parallelWorkers(n int) int {
 	if n <= 0 {
 		n = runtime.GOMAXPROCS(0)
+		if n > 8 { n = 8 }
 	}
-	if n < 1 {
-		return 1
-	}
-	if n > 8 {
-		return 8
-	}
+	if n < 1 { return 1 }
 	return n
 }
 
 func prepareCallback(root string, fn fs.WalkDirFunc, opts ParallelCallback) (string, bool, error) {
-	abs, err := filepath.Abs(root)
+	start := filepath.Clean(root)
+	info, err := os.Lstat(start)
 	if err != nil {
-		return "", false, fn(root, nil, err)
+		return "", false, fn(showPath(start, opts.ToSlash), nil, err)
 	}
-	info, err := os.Lstat(abs)
-	if err != nil {
-		return "", false, fn(showPath(abs, opts.ToSlash), nil, err)
-	}
-	entry := listwalk.Own(info.Name(), abs, info.Mode().Type(), 0, info)
+	entry := listwalk.Own(info.Name(), start, info.Mode().Type(), 0, info)
 	cbErr := listwalk.Deliver(fn, entry, opts.ToSlash)
 	typ := entry.Type()
 	if cbErr != nil {
@@ -507,13 +497,13 @@ func prepareCallback(root string, fn fs.WalkDirFunc, opts ParallelCallback) (str
 		return "", false, cbErr
 	}
 	if typ.IsDir() {
-		return abs, true, nil
+		return start, true, nil
 	}
 	if typ&os.ModeSymlink == 0 {
-		return abs, false, nil
+		return start, false, nil
 	}
-	target, err := os.Stat(abs)
-	return abs, err == nil && target.IsDir(), nil
+	target, err := os.Stat(start)
+	return start, err == nil && target.IsDir(), nil
 }
 
 func (w *callbackWork) run() {

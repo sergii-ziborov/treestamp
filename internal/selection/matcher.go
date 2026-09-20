@@ -87,6 +87,7 @@ type Config struct {
 	IgnoreCase    bool
 	IgnorePolicy  ignore.Policy
 	OverrideRules []string
+	IgnoreRules   []string
 	Extensions    []string
 	FileTypes     *filetypes.NamedFileTypes
 	SkipHidden    bool
@@ -135,6 +136,7 @@ func newMatcher(root string, cfg Config, loadRoot bool) (*Matcher, error) {
 		return nil, err
 	}
 	eng := ignore.NewEngine(cfg.IgnoreFiles, cfg.IgnoreCase, cfg.OverrideRules)
+	eng.AddIgnoreRules(cfg.IgnoreRules)
 	eng.SetGitModules(cfg.GitModules)
 	if cfg.IgnorePolicy.Specified() {
 		eng.ApplyPolicy(abs, cfg.IgnorePolicy)
@@ -158,6 +160,7 @@ func NewVirtualMatcher(root string, cfg Config) (*Matcher, error) {
 		root = "."
 	}
 	eng := ignore.NewEngine(cfg.IgnoreFiles, cfg.IgnoreCase, cfg.OverrideRules)
+	eng.AddIgnoreRules(cfg.IgnoreRules)
 	eng.SetGitModules(cfg.GitModules)
 	if cfg.IgnorePolicy.Specified() {
 		eng.SetPolicy(cfg.IgnorePolicy)

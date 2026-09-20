@@ -17,7 +17,7 @@ runtime module. Worked external consumer: [`consumer/`](consumer).
 | Topic | fastwalk v1.0.14 | Native `Walk` / `WalkWithConfig` | `compat/fastwalk` |
 | --- | --- | --- | --- |
 | `SkipAll` | returned as an error | successful stop unless `KeepSkipAll` | error (`KeepSkipAll`) |
-| `Follow` | may leave the original root | stays inside unless `FollowOutside` | `FollowOutside` follows `Follow` |
+| `Follow` | may leave the original root | stays inside unless `FollowOutside` | `FollowOutside` is always on so `ErrTraverseLink` can leave the root |
 | `Sort` | local `SortMode`, walk stays parallel | bool `Sort` is serial global DFS | `Config.Sort` is `SortMode` |
 | Dedup | device+inode (Windows volume/index) | `NewEntryFilter` / `IgnoreDuplicate*` | same wrappers |
 | Default workers | Darwin 4/6/10; else clamp 4–32 | cap 8 on every OS | competitor table |
@@ -49,7 +49,9 @@ import fastwalk "github.com/sergii-ziborov/treestamp/compat/fastwalk"
 That import matches charlievieth/fastwalk v1.0.14 names on this engine.
 It is not a runtime dependency on that module. `Walk` stats a missing
 root before the callback, uses `DefaultNumWorkers` when `NumWorkers <= 0`,
-keeps `SkipAll` as an error, and lets `Follow` leave the original root.
+keeps `SkipAll` as an error, and lets a relative root stay relative.
+`FollowOutside` is always on: `Follow` still decides auto-follow of every
+directory symlink, while `ErrTraverseLink` may leave the original root.
 Prefer `treestamp.WalkWithConfig` for new code. Parallel unsorted
 walk now delivers owned callback entries from the listing block;
 local `SortMode` still buffers one directory.

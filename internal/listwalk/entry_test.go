@@ -7,6 +7,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	"github.com/sergii-ziborov/treestamp/internal/dirread"
 )
 
 type countDent struct {
@@ -20,6 +22,16 @@ func (c *countDent) Name() string               { return c.name }
 func (c *countDent) IsDir() bool                { return c.typ.IsDir() }
 func (c *countDent) Type() fs.FileMode          { return c.typ }
 func (c *countDent) Info() (fs.FileInfo, error) { c.n.Add(1); return nil, c.err }
+
+func TestListingInfoSkipsLazyDent(t *testing.T) {
+	if listingInfo(nil) != nil || listingInfo(dirread.Dent{}) != nil {
+		t.Fatal("lazy listing must not Stat")
+	}
+	src := &countDent{name: "a.txt", err: fs.ErrPermission}
+	if listingInfo(src) != nil || src.n.Load() != 1 {
+		t.Fatalf("ready dent calls=%d", src.n.Load())
+	}
+}
 
 func TestPutKeepsName(t *testing.T) {
 	var e Entry

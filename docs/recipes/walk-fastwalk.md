@@ -13,7 +13,9 @@ Expected: `a.go,b.go`.
 
 `Walk` is serial. `Config.Sort` is legacy serial global DFS.
 `SortMode` is local directory order and may stay parallel. `fs.SkipAll`
-stops successfully unless `KeepSkipAll` is set.
+stops successfully unless `KeepSkipAll` is set. A relative root stays
+relative. `compat/fastwalk` always sets `FollowOutside` so
+`ErrTraverseLink` can leave the root; `Follow` still decides auto-follow.
 
 ```go
 import fastwalk "github.com/sergii-ziborov/treestamp/compat/fastwalk"

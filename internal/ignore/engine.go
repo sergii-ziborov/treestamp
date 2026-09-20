@@ -84,6 +84,21 @@ func NewEngine(ignoreFiles []string, caseInsensitive bool, overrides []string) *
 	return eng
 }
 
+// AddIgnoreRules appends gitignore-shaped patterns that ignore, not include.
+// OverrideRules invert; FileWalker CustomIgnorePatterns must not.
+func (e *Engine) AddIgnoreRules(patterns []string) {
+	if e == nil || len(patterns) == 0 {
+		return
+	}
+	rules, _ := parseFile(strings.Join(patterns, "\n"), e.caseInsensitive)
+	e.overrides = append(e.overrides, rules...)
+	e.sources = append(e.sources, Source{
+		Kind:        SourceOverride,
+		Location:    "<ignore-rules>",
+		ContentHash: hashx.SHA256Prefix([]byte(strings.Join(patterns, "\n"))),
+	})
+}
+
 // SetPolicy records ignore-source flags without reading OS policy files.
 func (e *Engine) SetPolicy(policy Policy) {
 	if e != nil {

@@ -391,6 +391,7 @@ type CallbackOptions struct {
 	After            fs.WalkDirFunc
 	ToSlash          bool
 	ContentsFirst    bool
+	DirsFirst        bool
 	Sort             bool
 	Follow           bool
 	Scratch          []byte
@@ -428,7 +429,7 @@ func WalkCallback(root string, fn fs.WalkDirFunc, toSlash bool) error {
 
 func WalkCallbackHooks(root string, fn fs.WalkDirFunc, opts CallbackOptions) error {
 	return listwalk.Walk(root, fn, listwalk.Config{
-		After: opts.After, ToSlash: opts.ToSlash, ContentsFirst: opts.ContentsFirst,
+		After: opts.After, ToSlash: opts.ToSlash, ContentsFirst: opts.ContentsFirst, DirsFirst: opts.DirsFirst,
 		Sort: opts.Sort, Follow: opts.Follow, Scratch: opts.Scratch,
 		RequireDirectory: opts.RequireDirectory, MaxOpen: opts.MaxOpen, Context: opts.Context,
 		SkipFiles: ErrSkipFiles, TraverseLink: ErrTraverseLink, SkipThis: ErrSkipThis,
@@ -523,9 +524,9 @@ func sortDirents(dents []os.DirEntry, mode int) {
 }
 
 func direntRank(d os.DirEntry, mode int) int {
-	dir, file := 2, 0
+	dir, file, other := 2, 0, 1
 	if mode == LocalSortDirsFirst {
-		dir, file = 0, 1
+		dir, file, other = 0, 1, 2
 	}
 	if d.IsDir() {
 		return dir
@@ -533,7 +534,7 @@ func direntRank(d os.DirEntry, mode int) int {
 	if d.Type().IsRegular() {
 		return file
 	}
-	return 1
+	return other
 }
 
 func chainHasID(root, dir string, id platform.Identity, depth int) (bool, *WalkError) {

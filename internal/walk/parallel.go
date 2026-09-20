@@ -34,8 +34,6 @@ func (p *ParallelWalker) Runtime(rt rtruntime.Runtime) *ParallelWalker { p.runti
 func (p *ParallelWalker) workerCount() int {
 	n := p.workers
 	if n <= 0 {
-		// Native cap is 8 on every OS. This is not the fastwalk Darwin table
-		// and not a Linux getdents claim for Darwin or Windows.
 		if n = p.runtime.Parallelism(); n > 8 {
 			n = 8
 		}
@@ -366,6 +364,7 @@ type listedDir struct {
 	descents []dirJob
 	err      error
 	bytes    int64
+	held     bool
 }
 
 type orderedPull struct {
@@ -439,14 +438,19 @@ func (p *orderedPull) work(job dirJob) *listedDir {
 	if err := p.budget.Admit(p.ctx, rtruntime.KindDirectory); err != nil {
 		return sched(err)
 	}
-	listed := p.list(job)
-	if listed.err == nil {
-		listed.bytes = listedBytes(listed)
-		if err := p.budget.HoldReady(p.ctx, listed.bytes); err != nil {
-			listed = sched(err)
-		}
+	defer p.budget.Release(rtruntime.KindDirectory)
+	if err := p.budget.HoldReady(p.ctx, 0); err != nil {
+		return sched(err)
 	}
-	p.budget.Release(rtruntime.KindDirectory)
+	listed := p.list(job)
+	listed.held = true
+	if listed.err != nil {
+		return listed
+	}
+	listed.bytes = listedBytes(listed)
+	if err := p.budget.AddReadyBytes(p.ctx, listed.bytes); err != nil {
+		return &listedDir{err: walkErr(job.path, job.depth+1, OpScheduleWorker, err), held: true}
+	}
 	return listed
 }
 
@@ -498,20 +502,20 @@ func (p *orderedPull) child(job dirJob, dent os.DirEntry) (*WalkEntry, *dirJob, 
 
 func (p *orderedPull) emitDir(path string, ch chan item) bool {
 	got := p.waitListed(path)
-	ok := got != nil
-	if got != nil && got.err != nil {
-		ok = sendOrdered(p.quit, ch, item{err: got.err})
-	} else if got != nil {
-		for _, entry := range got.entries {
-			clone := *entry
-			if !sendOrdered(p.quit, ch, item{entry: &clone}) || (entry.isDir && !entry.hasSkip() && !p.emitDir(entry.path, ch)) {
-				ok = false
-				break
-			}
+	p.forget(path)
+	if got == nil {
+		return false
+	}
+	if got.err != nil {
+		return sendOrdered(p.quit, ch, item{err: got.err})
+	}
+	for _, entry := range got.entries {
+		clone := *entry
+		if !sendOrdered(p.quit, ch, item{entry: &clone}) || (entry.isDir && !entry.hasSkip() && !p.emitDir(entry.path, ch)) {
+			return false
 		}
 	}
-	p.forget(path)
-	return ok
+	return true
 }
 
 func (p *orderedPull) addJob(job dirJob, force bool) {

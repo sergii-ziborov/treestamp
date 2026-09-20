@@ -386,6 +386,9 @@ func writeDescriptorCore(h hash.Hash, opts Options) {
 		filetypes.New().WritePolicy(h)
 	}
 	writeStrings(h, opts.OverrideRules)
+	if len(opts.IgnoreRules) > 0 {
+		writeStrings(h, opts.IgnoreRules)
+	}
 	writeStrings(h, opts.IgnoreFiles)
 	writeIgnorePolicy(h, opts)
 	writeDescriptorFlags(h, opts)

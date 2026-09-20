@@ -16,8 +16,8 @@ type Config struct {
 	After                   fs.WalkDirFunc
 	SkipFiles, TraverseLink error
 	SkipThis                error
-	ToSlash, ContentsFirst  bool
-	Sort, Follow            bool
+	ToSlash, ContentsFirst, DirsFirst bool
+	Sort, Follow                      bool
 	RequireDirectory        bool
 	Scratch                 []byte
 	MaxOpen                 int
@@ -35,6 +35,7 @@ type frame struct {
 	scan   *dirread.Scanner
 	chunks [][]Entry
 	cur    []Entry
+	owned  []Entry
 }
 
 var errStop = errors.New("listwalk stop")

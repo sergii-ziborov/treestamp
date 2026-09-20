@@ -224,6 +224,17 @@ func WalkDirs(root string, opts DirWalkOptions) error {
 
 func dirWalkCallback(opts DirWalkOptions) WalkDirFunc {
 	fn := opts.Callback
+	if opts.ErrorCallback == nil {
+		if fn == nil {
+			return nil
+		}
+		return func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			return fn(path, d, nil)
+		}
+	}
 	return func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return applyWalkError(opts.ErrorCallback, path, err)
@@ -239,6 +250,14 @@ func dirWalkAfter(opts DirWalkOptions) WalkDirFunc {
 	fn := opts.PostChildrenCallback
 	if fn == nil {
 		return nil
+	}
+	if opts.ErrorCallback == nil {
+		return func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			return fn(path, d, nil)
+		}
 	}
 	return func(path string, d fs.DirEntry, err error) error {
 		if err != nil {

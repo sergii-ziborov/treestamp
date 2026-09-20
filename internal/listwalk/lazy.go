@@ -48,6 +48,9 @@ func (st *state) step() error {
 	if err := st.fill(top); err != nil {
 		return err
 	}
+	if top.owned != nil {
+		return st.stepOwned(top)
+	}
 	rec, ok, err := st.next(top)
 	if err != nil {
 		return err
@@ -58,11 +61,23 @@ func (st *state) step() error {
 	return visit(st.fn, st.cfg, top, rec, &st.frames, &st.skip)
 }
 
+func (st *state) stepOwned(top *frame) error {
+	if top.index >= len(top.owned) || top.done {
+		return finish(st.root, st.fn, st.cfg, top, &st.skip, &st.frames)
+	}
+	entry := &top.owned[top.index]
+	top.index++
+	if st.skip == top.path && entry.typ.IsRegular() {
+		return nil
+	}
+	return control(st.cfg, Deliver(st.fn, entry, st.cfg.ToSlash), entry, top, &st.frames, &st.skip)
+}
+
 func (st *state) fill(top *frame) error {
 	if top.ready {
 		return nil
 	}
-	if st.cfg.Sort || st.cfg.ContentsFirst {
+	if st.cfg.Sort || st.cfg.ContentsFirst || st.cfg.DirsFirst {
 		return fill(top, st.fn, st.cfg)
 	}
 	return st.openLazy(top)

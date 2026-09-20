@@ -135,7 +135,7 @@ func openDiscovery(root string, opts Options, needMeta bool) (*walk.Walker, *sel
 func selectionConfig(opts Options, walkOpts walk.WalkOptions, needMeta bool) selection.Config {
 	return selection.Config{
 		IgnoreFiles: opts.IgnoreFiles, IgnoreCase: opts.IgnoreCase, IgnorePolicy: opts.IgnorePolicy,
-		OverrideRules: opts.OverrideRules, Extensions: opts.Extensions, FileTypes: opts.FileTypes,
+		OverrideRules: opts.OverrideRules, IgnoreRules: opts.IgnoreRules, Extensions: opts.Extensions, FileTypes: opts.FileTypes,
 		SkipHidden: opts.SkipHidden, StandardSkips: opts.StandardSkips, VCSSkips: opts.VCSSkips, GitModules: opts.GitModules,
 		Filters:       opts.Filters,
 		MaxFileBytes:  opts.MaxFileBytes,

@@ -43,6 +43,17 @@ func TestNestedIgnoreAndNegate(t *testing.T) {
 	}
 }
 
+func TestAddIgnoreRulesDoesNotInvert(t *testing.T) {
+	eng := NewEngine(nil, false, nil)
+	eng.AddIgnoreRules([]string{"*.tmp"})
+	if got := eng.Match("a.tmp", false); got != MatchOverrideIgnore {
+		t.Fatalf("tmp %v", got)
+	}
+	if got := eng.Match("a.go", false); got != MatchNone {
+		t.Fatalf("go %v", got)
+	}
+}
+
 func TestOverrides(t *testing.T) {
 	eng := NewEngine(nil, false, []string{"*.go", "!vendor/**"})
 	if got := eng.Match("main.go", false); got != MatchOverrideInclude {

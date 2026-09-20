@@ -91,16 +91,12 @@ func (m *MultiWalker) Next() (*WalkEntry, error) {
 }
 
 func (m *MultiWalker) Close() error {
-	if m.current != nil {
-		return m.current.Close()
-	}
+	if m.current != nil { return m.current.Close() }
 	return nil
 }
 
 func (m *MultiWalker) SkipCurrentDir() {
-	if m.current != nil {
-		m.current.SkipCurrentDir()
-	}
+	if m.current != nil { m.current.SkipCurrentDir() }
 }
 
 func (m *MultiWalker) TraverseCurrentSymlink() error {
@@ -264,9 +260,7 @@ func (p *ParallelStatefulWalker[E]) Next() (*StatefulWalkEntry[E], error) {
 	return p.next()
 }
 func (p *ParallelStatefulWalker[E]) Close() error {
-	if p.close != nil {
-		return p.close()
-	}
+	if p.close != nil { return p.close() }
 	return nil
 }
 
@@ -381,6 +375,12 @@ type ParallelWalkIter struct {
 	token  *cancelFlag
 	once   sync.Once
 	closed bool
+	err    error
+}
+
+func (it *ParallelWalkIter) Err() error {
+	if it == nil { return nil }
+	return it.err
 }
 
 type item struct {
@@ -408,9 +408,7 @@ func (c *cancelFlag) cancel() {
 func (p *ParallelWalker) IntoIterOrderedBounded(capacity int) *ParallelWalkIter {
 	iter, err := p.TryIntoIterOrderedBounded(capacity)
 	if err != nil {
-		ch := make(chan item)
-		close(ch)
-		return &ParallelWalkIter{ch: ch, closed: true}
+		return &ParallelWalkIter{closed: true, err: err}
 	}
 	return iter
 }
@@ -448,12 +446,15 @@ func (p *ParallelWalker) IntoIterBounded(capacity int) *ParallelWalkIter {
 	}); err != nil {
 		close(ch)
 		iter.closed = true
+		iter.err = err
 	}
 	return iter
 }
 
 func (it *ParallelWalkIter) Next() (*WalkEntry, error) {
-	if it == nil || it.closed {
+	if it == nil { return nil, io.EOF }
+	if it.closed {
+		if it.err != nil { return nil, it.err }
 		return nil, io.EOF
 	}
 	got, ok := <-it.ch
@@ -577,7 +578,8 @@ func (p *orderedPull) forget(path string) {
 	delete(p.listed, path)
 	delete(p.jobs, path)
 	p.mu.Unlock()
-	if got != nil && got.bytes > 0 {
+	if got != nil && got.held {
+		got.held = false
 		p.budget.DropReady(got.bytes)
 	}
 }

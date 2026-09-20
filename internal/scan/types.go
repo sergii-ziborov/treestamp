@@ -25,6 +25,7 @@ type Options struct {
 	MaxFileBytes      uint64
 	IgnoreFiles       []string
 	OverrideRules     []string
+	IgnoreRules       []string
 	Extensions        []string
 	FileTypes         *filetypes.NamedFileTypes
 	IgnorePolicy      ignore.Policy

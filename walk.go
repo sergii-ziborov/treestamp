@@ -501,7 +501,7 @@ func fileWalkerOptions(w *FileWalker) Options {
 	if len(w.CustomIgnore) > 0 {
 		opts.IgnoreFiles = append(opts.IgnoreFiles, w.CustomIgnore...)
 	}
-	opts.OverrideRules = append(opts.OverrideRules, w.CustomIgnorePatterns...)
+	opts.IgnoreRules = append(opts.IgnoreRules, w.CustomIgnorePatterns...)
 	if len(w.exts) > 0 {
 		opts.Extensions = append([]string(nil), w.exts...)
 	}

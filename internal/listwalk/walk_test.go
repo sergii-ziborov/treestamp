@@ -15,22 +15,24 @@ var testSkipThis = errors.New("skip this directory entry")
 func TestWalkKeepsSavedEntries(t *testing.T) {
 	root := t.TempDir()
 	mustWrite(t, filepath.Join(root, "a.txt"), "a")
-	var saved []fs.DirEntry
-	if err := Walk(root, func(_ string, d fs.DirEntry, err error) error {
-		if err != nil || d == nil {
-			return err
+	for _, sort := range []bool{false, true} {
+		var saved []fs.DirEntry
+		if err := Walk(root, func(_ string, d fs.DirEntry, err error) error {
+			if err != nil || d == nil {
+				return err
+			}
+			saved = append(saved, d)
+			return nil
+		}, Config{Sort: sort}); err != nil {
+			t.Fatal(err)
 		}
-		saved = append(saved, d)
-		return nil
-	}, Config{}); err != nil {
-		t.Fatal(err)
-	}
-	if len(saved) < 2 {
-		t.Fatalf("saved %d", len(saved))
-	}
-	for _, d := range saved {
-		if d.Name() == "" {
-			t.Fatal("cleared entry")
+		if len(saved) < 2 {
+			t.Fatalf("sort=%v saved %d", sort, len(saved))
+		}
+		for _, d := range saved {
+			if d.Name() == "" {
+				t.Fatalf("sort=%v cleared entry", sort)
+			}
 		}
 	}
 }
@@ -109,6 +111,27 @@ func TestWalkSkipRootHasNoPost(t *testing.T) {
 	}
 	if !equalEvents(events, []string{"pre:."}) {
 		t.Fatalf("%q", events)
+	}
+}
+
+func TestWalkDirsFirst(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "z.txt"), "z")
+	if err := os.Mkdir(filepath.Join(root, "dir"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var kids []string
+	err := Walk(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d == nil {
+			return err
+		}
+		if filepath.Dir(path) == root {
+			kids = append(kids, d.Name())
+		}
+		return nil
+	}, Config{Sort: true, DirsFirst: true})
+	if err != nil || len(kids) != 2 || kids[0] != "dir" || kids[1] != "z.txt" {
+		t.Fatalf("kids=%q err=%v", kids, err)
 	}
 }
 

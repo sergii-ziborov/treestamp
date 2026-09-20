@@ -61,6 +61,52 @@ func TestHoldReadyRejectsOversizedItem(t *testing.T) {
 	b.Close()
 }
 
+func TestHoldReadyZeroReleasesCount(t *testing.T) {
+	b := NewBudget(Limits{Ready: 1, ReadyBytes: 8})
+	ctx := context.Background()
+	if err := b.HoldReady(ctx, 0); err != nil {
+		t.Fatal(err)
+	}
+	n, bytes := b.Ready()
+	if n != 1 || bytes != 0 {
+		t.Fatalf("%d %d", n, bytes)
+	}
+	b.DropReady(0)
+	n, bytes = b.Ready()
+	if n != 0 || bytes != 0 {
+		t.Fatalf("after drop %d %d", n, bytes)
+	}
+	if err := b.HoldReady(ctx, 4); err != nil {
+		t.Fatal(err)
+	}
+	b.DropReady(4)
+	b.Close()
+}
+
+func TestAddReadyBytesAfterHoldZero(t *testing.T) {
+	b := NewBudget(Limits{Ready: 1, ReadyBytes: 8})
+	ctx := context.Background()
+	if err := b.HoldReady(ctx, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.AddReadyBytes(ctx, 4); err != nil {
+		t.Fatal(err)
+	}
+	n, bytes := b.Ready()
+	if n != 1 || bytes != 4 {
+		t.Fatalf("%d %d", n, bytes)
+	}
+	if err := b.AddReadyBytes(ctx, 16); err != ErrReadyLimit {
+		t.Fatalf("oversize %v", err)
+	}
+	b.DropReady(4)
+	n, bytes = b.Ready()
+	if n != 0 || bytes != 0 {
+		t.Fatalf("after drop %d %d", n, bytes)
+	}
+	b.Close()
+}
+
 func TestBudgetUnlimitedZero(t *testing.T) {
 	b := NewBudget(Limits{})
 	ctx := context.Background()

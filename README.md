@@ -12,10 +12,11 @@ tree. Same scanner from a CLI when you are not writing Go.
 | **CLI** | [`cmd/treestamp`](cmd/treestamp) | [cmd/treestamp/README.md](cmd/treestamp/README.md) |
 | **Driver** | [`cmd/treestamp-driver`](cmd/treestamp-driver) | [cmd/treestamp-driver/README.md](cmd/treestamp-driver/README.md) — fixture protocol only, not the product |
 
-Current tags: library [`v0.1.4`](https://github.com/sergii-ziborov/treestamp/releases/tag/v0.1.4),
+Published tags: library [`v0.1.4`](https://github.com/sergii-ziborov/treestamp/releases/tag/v0.1.4),
 CLI [`cmd/treestamp/v0.1.4`](https://github.com/sergii-ziborov/treestamp/releases/tag/cmd/treestamp/v0.1.4).
-`go install` uses the CLI module version (`@v0.1.4`), not the Git tag prefix.
-Those tags stay immutable. This tree is not a retag.
+This checkout’s `Version` is **0.1.5** (untagged). `go install` still uses
+the published CLI module (`@v0.1.4`) until `cmd/treestamp/v0.1.5`.
+Those published tags stay immutable. This tree is not a retag.
 
 ## Install
 
@@ -91,6 +92,29 @@ Saved callback entries keep their names. Switch a fastwalk import to
 
 This is not a claimed speed win over charlievieth/fastwalk v1.0.14.
 
+## New in this tree
+
+Capability rows, not a ranking over fastwalk v1.0.14.
+
+- `Walk` / `WalkDirs` keep persistable listing entries. WalkDirs holds one
+  `[]Entry`; a saved callback keeps its name.
+- Parallel unsorted walk streams those entries and uses listing `FileInfo`.
+  A Linux lazy dent is not `Stat`ed for that cache.
+- Workers start only when more than one directory remains. An explicit
+  `NumWorkers` is not clipped to the native default cap of 8.
+- `ReadDirnames` calls `Readdirnames(-1)` (no `ReadDir` plus a name copy).
+- `SortMode` includes `SortDirsFirst` (directory, regular file, other).
+  Serial `Walk` honors `SortMode`.
+- Ordered pull reserves a ready slot before listing, then adds bytes.
+  `ParallelWalkIter.Err` is the constructor error from
+  `IntoIterOrderedBounded`.
+- `Options.IgnoreRules` and `FileWalker.CustomIgnorePatterns` ignore; they
+  do not invert. `OverrideRules` is the include list. Empty `IgnoreRules`
+  keep the oracle descriptor v2 hash.
+- `compat/fastwalk` keeps a relative root relative. `FollowOutside` is
+  always on so `ErrTraverseLink` can leave the root; `Follow` still
+  decides auto-follow of every directory symlink.
+
 ## Proven receipts
 
 Official B01–B14 first-campaign rows are **MEASURED** on a
@@ -105,8 +129,9 @@ python tools/run_official_benches.py
 
 These nanoseconds are host-local. They are not a 10k/100k/1M ranking and not
 Rust oracle percentages. The informal table below is a 20 September 2026
-remasurement of persistable listing entries on this tree. Official B01–B14
-stay the 17 September first campaign.
+remasurement after persistable WalkDirs, `Readdirnames`, listing `FileInfo`,
+ordered ready reserve, and compat `FollowOutside`. Official B01–B14 stay
+the 17 September first campaign.
 
 Pinned sources used with those receipts:
 
@@ -116,7 +141,7 @@ Pinned sources used with those receipts:
 | fastwalk (bench only) | v1.0.14 |
 | gocodewalker (bench only) | v1.5.1 |
 | godirwalk (bench only) | v1.17.0 |
-| Informal listing table | 20 September 2026 remasure, [`INFORMAL_RUN.json`](bench/go-compat/INFORMAL_RUN.json) |
+| Informal listing table | 20 September 2026 remasure (0.1.5 tree), [`INFORMAL_RUN.json`](bench/go-compat/INFORMAL_RUN.json) |
 
 Do not follow live `main` of a competitor as the oracle. Do not rewrite
 `official-benches.json` or `INFORMAL_RUN.json` without a new host run.
@@ -128,22 +153,24 @@ Go **1.26.5** (`go env GOVERSION`), module line **1.21.0**, `CGO_ENABLED=0`,
 `GOTOOLCHAIN=local`. Comparators in `bench/go-compat`:
 **fastwalk v1.0.14**, **gocodewalker v1.5.1**, **godirwalk v1.17.0**.
 Medians of three runs on a ~400-file temp tree. Not a 15–25% release claim.
+Same-day earlier tables on this host swung hundreds of microseconds.
 
 | Case | Treestamp | Comparator |
 | --- | --- | --- |
-| Raw serial walk | 365 µs, 158 KiB, 1248 allocs | fastwalk v1.0.14: 400 µs / 144 KiB; godirwalk v1.17.0: 505 µs / 208 KiB |
-| Raw parallel walk | 323 µs, 157 KiB, 1233 allocs | fastwalk v1.0.14: 400 µs / 144 KiB |
-| Regex `ScanPaths` | 4.89 ms, 99 KiB, 1338 allocs | gocodewalker v1.5.1: 5.33 ms / 130 KiB |
-| Cached `Stat` | 346 µs, 164 KiB, 1252 allocs | fastwalk v1.0.14: 405 µs / 140 KiB; `os.Stat` 23.3 ms |
-| `DirScanner` | 1.71 ms, 648 KiB, 8152 allocs | godirwalk v1.17.0: 2.01 ms / 564 KiB / 12008 allocs |
-| Scratch `ReadDirents` | 1.88 ms, 736 KiB, 8021 allocs | godirwalk v1.17.0: 2.10 ms / 956 KiB / 12023 allocs |
+| Raw serial walk | 571 µs, 158 KiB, 1248 allocs | fastwalk v1.0.14: 327 µs / 143 KiB; godirwalk v1.17.0: 489 µs / 208 KiB |
+| Raw parallel walk | 395 µs, 153 KiB, 1637 allocs | fastwalk v1.0.14: 327 µs / 143 KiB |
+| Regex `ScanPaths` | 5.60 ms, 99 KiB, 1338 allocs | gocodewalker v1.5.1: 8.18 ms / 134 KiB |
+| Cached `Stat` | 424 µs, 164 KiB, 1252 allocs | fastwalk v1.0.14: 409 µs / 139 KiB; `os.Stat` 24.5 ms |
+| `DirScanner` | 2.01 ms, 647 KiB, 8152 allocs | godirwalk v1.17.0: 1.86 ms / 564 KiB / 12008 allocs |
+| Scratch `ReadDirents` | 2.95 ms, 736 KiB, 8021 allocs | godirwalk v1.17.0: 3.80 ms / 956 KiB / 12023 allocs |
+| `ReadDirnames` | 1.93 ms, 298 KiB, 4020 allocs | godirwalk v1.17.0: 1.81 ms / 801 KiB / 8022 allocs |
 
 `WalkFS` is `fs.WalkDir` (same 2678 allocs). Compiled test-binary peak working set
-**56.1 MiB**, process CPU **129 s** on `-test.count=1`. Per-op memory is
-`B/op`, not that RSS. Serial and parallel listing walks drop about 390
-callback allocs versus the previous informal table. Wall times are
-host-local and still use more `B/op` than fastwalk. That is not a claimed
-speed win.
+**55.0 MiB**, process CPU **145 s** on `-test.count=1`. Per-op memory is
+`B/op`, not that RSS. `ReadDirnames` drops about 4000 allocs versus
+godirwalk on this host because it no longer copies `ReadDir` entries.
+Raw walk still uses more `B/op` than fastwalk, and this remasure’s wall
+times are not a claimed speed win.
 
 ```text
 set CGO_ENABLED=0
@@ -242,7 +269,7 @@ Guide: [docs/guides/cli.md](docs/guides/cli.md).
 The library is a native Go port of pinned Weavatrix Scan **0.5.2**, plus
 Go-side additions (`ScanFS`, a growing-file read budget,
 `MultiScanReport.Revision`, `WalkDirs` / `compat/godirwalk`,
-`compat/fastwalk`). It is not a
+`compat/fastwalk`, `IgnoreRules`). It is not a
 parser, search engine, graph, embedder, secret scanner, MCP server, web
 service, or daemon. Search, when ported, stays a consumer of this module.
 

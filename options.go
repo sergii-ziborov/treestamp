@@ -18,12 +18,13 @@ import (
 )
 
 // Version is the library module version published with this tree.
-const Version = "0.1.4"
+const Version = "0.1.5"
 
 type Options struct {
 	MaxFileBytes      uint64
 	IgnoreFiles       []string
 	OverrideRules     []string
+	IgnoreRules       []string
 	Extensions        []string
 	FileTypes         *filetypes.NamedFileTypes
 	IgnorePolicy      IgnorePolicy
@@ -76,6 +77,7 @@ func toScanOptions(opts Options) scan.Options {
 	}
 	out := scan.Options{
 		MaxFileBytes: opts.MaxFileBytes, IgnoreFiles: opts.IgnoreFiles, OverrideRules: opts.OverrideRules,
+		IgnoreRules: opts.IgnoreRules,
 		Extensions: opts.Extensions, FileTypes: opts.FileTypes, IgnorePolicy: opts.IgnorePolicy.inner,
 		IgnoreCase: opts.IgnoreCase, SkipHidden: opts.SkipHidden, StandardSkips: opts.StandardSkips, VCSSkips: opts.VCSSkips,
 		GitModules:       opts.GitModules,

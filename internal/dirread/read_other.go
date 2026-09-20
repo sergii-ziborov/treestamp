@@ -58,15 +58,16 @@ func OSEntriesScratch(dir string, _ []byte) ([]os.DirEntry, error) {
 }
 
 func Names(dir string, _ []byte) ([]string, error) {
-	dents, err := unsortedEntries(dir)
+	file, err := os.Open(dir)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]string, len(dents))
-	for i, dent := range dents {
-		out[i] = dent.Name()
+	names, err := file.Readdirnames(-1)
+	closeErr := file.Close()
+	if err != nil {
+		return names, err
 	}
-	return out, nil
+	return names, closeErr
 }
 
 func unsortedEntries(dir string) ([]os.DirEntry, error) {

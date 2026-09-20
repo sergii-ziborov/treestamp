@@ -151,6 +151,11 @@ func TestDescriptorMatchesAndEmptyRoot(t *testing.T) {
 	if d.Policy != "sha256:449649a73960fc2a8fe0efb28495e75e18e03b614e5c107b0efc147dac7786f9" {
 		t.Fatalf("oracle descriptor: %s", d.Policy)
 	}
+	changed := DefaultOptions()
+	changed.IgnoreRules = []string{"*.tmp"}
+	if d.Matches(changed) {
+		t.Fatal("ignore rules should change descriptor")
+	}
 	opts.HashFileContents = false
 	if d.Matches(opts) {
 		t.Fatal("should differ")

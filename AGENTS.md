@@ -52,7 +52,11 @@ lazy single-directory `DirScanner` with reusable scratch buffer, optional
 `.gitmodules` skipping, changed-only content visit, confined watch-plan apply,
 executor-owned parallel admission, compiled override-scope pruning,
 `Explain`, identity-keyed content reuse, a shared admission budget,
-ordered-parallel directory pull, and a persistent Merkle `TreeSnapshot`.
+ordered-parallel directory pull, a persistent Merkle `TreeSnapshot`,
+persistable `Walk` / `WalkDirs` listing entries, `ReadDirnames` via
+`Readdirnames`, listing `FileInfo` without lazy-dent `Stat`, ordered
+ready-slot reserve before listing, `Options.IgnoreRules`, and
+`compat/fastwalk` relative roots with `FollowOutside` always on.
 `ScanSession` applies Merkle deltas when a `TreeSnapshot` is present.
 `ScanFS` / `EachFileFS` / `ScanPathsFS` scan an `fs.FS` with the same
 selection engine; content reads honor a growing-file budget; a
@@ -70,8 +74,9 @@ Windows/Linux/macOS CI matrix. Ledger: `compat/ledger.json`.
 
 1. Larger official sizes (10k / 100k / 1M) against fastwalk, gocodewalker,
    and the rust oracle when a dedicated host is available.
-2. Library tag is `v0.1.4`. CLI tag is `cmd/treestamp/v0.1.4` and must
-   require that published library. Do not retag an immutable version.
+2. Published library tag is `v0.1.4`. This tree’s `Version` is `0.1.5`
+   and needs a new tag; do not retag `v0.1.4`. CLI tag
+   `cmd/treestamp/v0.1.5` must require that published library.
 3. Weavatrix Search later: a nested module (like `watch/`) that calls
    Treestamp. Do not fold regex, archives, or an index into this library.
 

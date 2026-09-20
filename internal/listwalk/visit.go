@@ -13,16 +13,28 @@ import (
 // Stream calls visit for each child without buffering the directory.
 func Stream(dir string, depth int, visit func(*Entry) error) error {
 	return dirread.Visit(dir, nil, func(name string, typ fs.FileMode, dent fs.DirEntry) error {
-		var ready fs.FileInfo
-		if dent != nil {
-			ready, _ = dent.Info()
-		}
-		entry := Own(name, child(dir, name), typ, depth, ready)
+		entry := Own(name, child(dir, name), typ, depth, listingInfo(dent))
 		if dent != nil {
 			entry.Bind(dent)
 		}
 		return visit(entry)
 	})
+}
+
+// listingInfo returns metadata already attached to the listing entry.
+// It does not Stat: Linux getdents Dent.Info is a later Lstat.
+func listingInfo(dent fs.DirEntry) fs.FileInfo {
+	if dent == nil {
+		return nil
+	}
+	if _, lazy := dent.(dirread.Dent); lazy {
+		return nil
+	}
+	info, err := dent.Info()
+	if err != nil {
+		return nil
+	}
+	return info
 }
 
 // Each visits persistable children from one listing. The callback may keep
@@ -34,8 +46,7 @@ func Each(dir string, depth int, visit func(*Entry) error) error {
 	}
 	owned := make([]Entry, len(dents))
 	for i, dent := range dents {
-		info, _ := dent.Info()
-		Put(&owned[i], dent.Name(), child(dir, dent.Name()), dent.Type(), depth, info)
+		Put(&owned[i], dent.Name(), child(dir, dent.Name()), dent.Type(), depth, listingInfo(dent))
 		owned[i].Bind(dent)
 		if err := visit(&owned[i]); err != nil {
 			return err
@@ -54,13 +65,23 @@ func fill(top *frame, fn fs.WalkDirFunc, cfg Config) error {
 		return reportRead(fn, cfg, top.path, err)
 	}
 	if cfg.Sort {
-		sort.SliceStable(dents, func(i, j int) bool { return dents[i].Name < dents[j].Name })
+		sort.Slice(dents, func(i, j int) bool { return dents[i].Name < dents[j].Name })
 	}
 	if cfg.ContentsFirst {
 		dents = filesFirst(dents)
+	} else if cfg.DirsFirst {
+		dents = dirsFirst(dents)
 	}
-	top.dents = dents
+	top.owned = hold(top, dents)
 	return nil
+}
+
+func hold(top *frame, dents []dirread.Record) []Entry {
+	owned := make([]Entry, len(dents))
+	for i, rec := range dents {
+		Put(&owned[i], rec.Name, child(top.path, rec.Name), rec.Type, top.depth+1, rec.Info)
+	}
+	return owned
 }
 
 func finish(root string, fn fs.WalkDirFunc, cfg Config, top *frame, skip *string, frames *[]frame) error {
@@ -69,9 +90,8 @@ func finish(root string, fn fs.WalkDirFunc, cfg Config, top *frame, skip *string
 		*skip = ""
 	}
 	if cfg.After != nil {
-		entry := Acquire(filepath.Base(top.path), top.path, os.ModeDir, top.depth, nil)
-		err := Call(cfg.After, entry, cfg.ToSlash)
-		Release(entry)
+		entry := Own(filepath.Base(top.path), top.path, os.ModeDir, top.depth, nil)
+		err := Deliver(cfg.After, entry, cfg.ToSlash)
 		if err != nil && !errors.Is(err, fs.SkipDir) && !skipThis(cfg, err) {
 			if errors.Is(err, fs.SkipAll) {
 				return errStop
@@ -192,4 +212,19 @@ func filesFirst(dents []dirread.Record) []dirread.Record {
 		}
 	}
 	return append(append(files, other...), dirs...)
+}
+
+func dirsFirst(dents []dirread.Record) []dirread.Record {
+	var files, dirs, other []dirread.Record
+	for _, dent := range dents {
+		switch {
+		case dent.Type.IsDir():
+			dirs = append(dirs, dent)
+		case dent.Type.IsRegular():
+			files = append(files, dent)
+		default:
+			other = append(other, dent)
+		}
+	}
+	return append(append(dirs, other...), files...)
 }

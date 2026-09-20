@@ -21,6 +21,8 @@ Minimum Go: 1.21.0. `CGO_ENABLED=0` for the intended runtime.
 | Bounded ordered pull | `TryIntoIterOrderedBounded` | Silent one-goroutine fallback; keep consumed listings forever |
 | Path list with a cap | `ScanPathsWith` + `WithMaxEntries` | Silent truncation; the prefix returns with `ErrPartial` |
 | Stream file bytes | `VisitContentStreaming` | Discovery still buffers candidates; hashed files are not retained |
+| Extra ignore patterns | `Options.IgnoreRules` / `FileWalker.CustomIgnorePatterns` | Invert ignore→include; that is `OverrideRules` |
+| Admit error on ordered pull | `ParallelWalkIter.Err` after `IntoIterOrderedBounded` | Treat a failed admit as an empty successful walk |
 
 `Scan(ctx, root)` and `ScanPaths(ctx, root)` keep two-argument signatures.
 `Options{}` is the legacy zero value and is not reinterpreted as
@@ -36,12 +38,19 @@ old type names; prefer `WalkDirs` for new code.
 
 `compat/fastwalk` keeps charlievieth/fastwalk v1.0.14 names. `SortMode`
 is local directory order on a parallel walk. Native `Config.Sort` is a
-different switch (serial global DFS). Prefer `WalkWithConfig` for new
+different switch (serial global DFS). A relative root stays relative.
+`FollowOutside` is always on so `ErrTraverseLink` can leave the root;
+`Follow` still decides whether every directory symlink is followed.
+Prefer `WalkWithConfig` for new
 code. `CollectMetadata` reuses enumeration `FileInfo`; Windows has no
 file index there. Native default workers cap at 8; Darwin numbers from
 `DefaultNumWorkers` are the competitor table, not a Linux getdents
 result. Switch an existing import in [`consumer/`](../consumer).
 Recipe: [recipes/walk-fastwalk.md](recipes/walk-fastwalk.md).
+
+`Options.IgnoreRules` are extra ignore patterns. They do not invert.
+`OverrideRules` is the include-override list. `FileWalker.CustomIgnorePatterns`
+feeds `IgnoreRules`.
 
 `internal/selection.Compile` is an ignore-prefix plan. It is not
 `treestamp.Compile` → `Plan`.

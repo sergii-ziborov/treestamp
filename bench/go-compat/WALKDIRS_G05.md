@@ -40,7 +40,7 @@ Each row is one order, one ownership, one concurrency:
   over `karrick/godirwalk`. The alias pays a `Dirent` wrapper.
 
 Corpus host class is Windows/amd64, Intel Core Ultra 7 255U. These
-WalkDirs rows are from the same 20 September remasurement as
+WalkDirs rows are from the same 20 September 0.1.5 remasurement as
 `INFORMAL_RUN.json`. Do not treat them as a claimed ranking over
 godirwalk v1.17.0. Official B01–B14 stay the 17 September first campaign.
 
@@ -61,20 +61,20 @@ Walk (400 files + `sub`):
 
 | Case | Treestamp | godirwalk v1.17.0 | Note |
 | --- | --- | --- | --- |
-| Sorted `WalkDirs` | 368 µs, 208 KiB, 1252 allocs | 419 µs, 138 KiB, 1631 allocs | Same lexical DFS. Owned entries cost bytes. |
-| Unsorted `WalkDirs` | 348 µs, 158 KiB, 1249 allocs | not compared | Competitor `Unsorted` is `EOF` on Windows |
-| Unsorted `SkipAll` | 188 µs, 46 KiB, 534 allocs | not compared | Listing stops; not Halt-vs-Halt |
-| `SkipThis` on `sub` | 832 µs, 226 KiB, 1259 allocs | 707 µs, 156 KiB, 1635 allocs | Same remaining nodes |
-| `PostChildrenCallback` | 373 µs, 214 KiB, 1259 allocs | 447 µs, 227 KiB, 2033 allocs | Same post order |
-| `compat/godirwalk` Walk | 486 µs, 265 KiB, 2057 allocs | — | Import switch; Dirent wrappers |
+| Sorted `WalkDirs` | 349 µs, 205 KiB, 1242 allocs | 335 µs, 138 KiB, 1631 allocs | Same lexical DFS. Owned entries cost bytes. |
+| Unsorted `WalkDirs` | 360 µs, 158 KiB, 1249 allocs | not compared | Competitor `Unsorted` is `EOF` on Windows |
+| Unsorted `SkipAll` | 175 µs, 46 KiB, 534 allocs | not compared | Listing stops; not Halt-vs-Halt |
+| `SkipThis` on `sub` | 784 µs, 224 KiB, 1249 allocs | 678 µs, 156 KiB, 1635 allocs | Same remaining nodes |
+| `PostChildrenCallback` | 328 µs, 212 KiB, 1249 allocs | 403 µs, 227 KiB, 2033 allocs | Same post order |
+| `compat/godirwalk` Walk | 459 µs, 263 KiB, 2047 allocs | — | Import switch; Dirent wrappers |
 
 Listing (4000 names):
 
 | Case | Treestamp | godirwalk v1.17.0 | Note |
 | --- | --- | --- | --- |
-| `ReadDirnames` | 2.09 ms, 802 KiB, 8022 allocs | 1.68 ms, 800 KiB, 8022 allocs | Alloc-for-alloc on Windows |
-| Scratch `ReadDirents` | 1.88 ms, 736 KiB, 8021 allocs | 2.10 ms, 956 KiB, 12023 allocs | P02 name path is Linux getdents |
-| `DirScanner` | 1.71 ms, 648 KiB, 8152 allocs | 2.01 ms, 564 KiB, 12008 allocs | Lazy one-directory enumerator |
-| `NewDirent` | 21 µs, 464 B, 4 allocs | 22 µs, 480 B, 4 allocs | One `Lstat` |
+| `ReadDirnames` | 1.93 ms, 298 KiB, 4020 allocs | 1.81 ms, 801 KiB, 8022 allocs | `Readdirnames(-1)`; no `ReadDir` copy |
+| Scratch `ReadDirents` | 2.95 ms, 736 KiB, 8021 allocs | 3.80 ms, 956 KiB, 12023 allocs | P02 name path is Linux getdents |
+| `DirScanner` | 2.01 ms, 647 KiB, 8152 allocs | 1.86 ms, 564 KiB, 12008 allocs | Lazy one-directory enumerator |
+| `NewDirent` | 20 µs, 464 B, 4 allocs | 17 µs, 480 B, 4 allocs | One `Lstat` |
 
 `official_benches` stays `NOT_RUN` in `WALKDIRS_G05.json`.

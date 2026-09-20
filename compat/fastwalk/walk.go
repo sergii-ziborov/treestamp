@@ -112,7 +112,7 @@ func Walk(conf *Config, root string, walkFn fs.WalkDirFunc) error {
 	}
 	return treestamp.WalkWithConfig(root, treestamp.Config{
 		Follow:        conf.Follow,
-		FollowOutside: conf.Follow,
+		FollowOutside: true,
 		ToSlash:       conf.ToSlash,
 		NumWorkers:    workers,
 		MaxDepth:      conf.MaxDepth,

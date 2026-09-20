@@ -19,22 +19,27 @@ type Config struct {
 func Serial(root string, cfg Config, fn fs.WalkDirFunc) error {
 	if !cfg.Follow && cfg.MaxDepth == 0 && !cfg.Sort {
 		return walk.WalkCallbackHooks(root, fn, walk.CallbackOptions{
-			ToSlash: cfg.ToSlash, ContentsFirst: cfg.ContentsFirst, FollowOutside: cfg.FollowOutside,
+			ToSlash: cfg.ToSlash, FollowOutside: cfg.FollowOutside,
+			ContentsFirst: cfg.ContentsFirst || cfg.SortMode == walk.LocalSortFilesFirst,
+			DirsFirst:     cfg.DirsFirst || cfg.SortMode == walk.LocalSortDirsFirst,
+			Sort:          serialLocalSort(cfg.SortMode),
 		})
 	}
 	opts := walk.DefaultOptions()
 	opts.FollowLinks = cfg.Follow
 	opts.FollowOutside = cfg.FollowOutside
-	opts.ContentsFirst, opts.DirsFirst = cfg.ContentsFirst, cfg.DirsFirst
+	opts.LocalSort = cfg.SortMode
+	opts.ContentsFirst = cfg.ContentsFirst || cfg.SortMode == walk.LocalSortFilesFirst
+	opts.DirsFirst = cfg.DirsFirst || cfg.SortMode == walk.LocalSortDirsFirst
 	if cfg.MaxDepth > 0 {
 		d := cfg.MaxDepth
 		opts.MaxDepth = &d
 	}
 	builder := walk.NewBuilder(root).Options(opts)
-	if cfg.ContentsFirst {
+	if opts.ContentsFirst {
 		builder = builder.ContentsFirst(true)
 	}
-	if cfg.Sort {
+	if cfg.Sort || cfg.SortMode == walk.LocalSortLexical {
 		builder = builder.SortByFileName()
 	}
 	walker := builder.Build()
@@ -204,6 +209,10 @@ func drainOne(w walker, fn fs.WalkDirFunc, path string, entry *walk.WalkEntry, s
 		return cbErr
 	}
 	return nil
+}
+
+func serialLocalSort(mode int) bool {
+	return mode == walk.LocalSortLexical || mode == walk.LocalSortFilesFirst || mode == walk.LocalSortDirsFirst
 }
 
 var errDrainStop = errors.New("drain stop")

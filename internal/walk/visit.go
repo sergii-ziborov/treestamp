@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/sergii-ziborov/treestamp/internal/dirread"
@@ -31,7 +32,7 @@ var errVisitStop = errors.New("visit stop")
 
 func (w *callbackWork) streamDir(job dirJob) {
 	skip := false
-	err := listwalk.Each(job.path, job.depth+1, func(e *listwalk.Entry) error {
+	err := listwalk.Stream(job.path, job.depth+1, func(e *listwalk.Entry) error {
 		if w.quit.Load() {
 			return errVisitStop
 		}
@@ -589,12 +590,5 @@ func collectSorted(path string, cmp func(a, b os.DirEntry) int) (*bufferedEntrie
 }
 
 func sortDirEntries(entries []os.DirEntry, cmp func(a, b os.DirEntry) int) {
-	n := len(entries)
-	for i := 1; i < n; i++ {
-		j := i
-		for j > 0 && cmp(entries[j-1], entries[j]) > 0 {
-			entries[j-1], entries[j] = entries[j], entries[j-1]
-			j--
-		}
-	}
+	sort.SliceStable(entries, func(i, j int) bool { return cmp(entries[i], entries[j]) < 0 })
 }
