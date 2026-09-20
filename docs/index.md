@@ -2,8 +2,8 @@
 
 | What | Open |
 | --- | --- |
-| Library | [pkg.go.dev/github.com/sergii-ziborov/treestamp](https://pkg.go.dev/github.com/sergii-ziborov/treestamp) — `go get github.com/sergii-ziborov/treestamp@v0.1.4` |
-| CLI | [../cmd/treestamp/README.md](../cmd/treestamp/README.md) — `go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.4` |
+| Library | [pkg.go.dev/github.com/sergii-ziborov/treestamp](https://pkg.go.dev/github.com/sergii-ziborov/treestamp) — `go get github.com/sergii-ziborov/treestamp@v0.1.5` |
+| CLI | [../cmd/treestamp/README.md](../cmd/treestamp/README.md) — `go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.5` |
 | Driver | [../cmd/treestamp-driver/README.md](../cmd/treestamp-driver/README.md) — fixture protocol, not the product |
 
 Start with the task, then open the matching recipe. Signatures live in Go

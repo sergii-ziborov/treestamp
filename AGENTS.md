@@ -74,9 +74,8 @@ Windows/Linux/macOS CI matrix. Ledger: `compat/ledger.json`.
 
 1. Larger official sizes (10k / 100k / 1M) against fastwalk, gocodewalker,
    and the rust oracle when a dedicated host is available.
-2. Published library tag is `v0.1.4`. This tree’s `Version` is `0.1.5`
-   and needs a new tag; do not retag `v0.1.4`. CLI tag
-   `cmd/treestamp/v0.1.5` must require that published library.
+2. Library tag is `v0.1.5`. CLI tag is `cmd/treestamp/v0.1.5` and must
+   require that published library. Do not retag an immutable version.
 3. Weavatrix Search later: a nested module (like `watch/`) that calls
    Treestamp. Do not fold regex, archives, or an index into this library.
 

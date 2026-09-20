@@ -12,11 +12,10 @@ tree. Same scanner from a CLI when you are not writing Go.
 | **CLI** | [`cmd/treestamp`](cmd/treestamp) | [cmd/treestamp/README.md](cmd/treestamp/README.md) |
 | **Driver** | [`cmd/treestamp-driver`](cmd/treestamp-driver) | [cmd/treestamp-driver/README.md](cmd/treestamp-driver/README.md) — fixture protocol only, not the product |
 
-Published tags: library [`v0.1.4`](https://github.com/sergii-ziborov/treestamp/releases/tag/v0.1.4),
-CLI [`cmd/treestamp/v0.1.4`](https://github.com/sergii-ziborov/treestamp/releases/tag/cmd/treestamp/v0.1.4).
-This checkout’s `Version` is **0.1.5** (untagged). `go install` still uses
-the published CLI module (`@v0.1.4`) until `cmd/treestamp/v0.1.5`.
-Those published tags stay immutable. This tree is not a retag.
+Current tags: library [`v0.1.5`](https://github.com/sergii-ziborov/treestamp/releases/tag/v0.1.5),
+CLI [`cmd/treestamp/v0.1.5`](https://github.com/sergii-ziborov/treestamp/releases/tag/cmd/treestamp/v0.1.5).
+`go install` uses the CLI module version (`@v0.1.5`), not the Git tag prefix.
+Those tags stay immutable. `v0.1.4` is not retagged.
 
 ## Install
 
@@ -25,7 +24,7 @@ Requires **Go 1.21** or newer. `CGO_ENABLED=0`.
 ### Library
 
 ```text
-go get github.com/sergii-ziborov/treestamp@v0.1.4
+go get github.com/sergii-ziborov/treestamp@v0.1.5
 ```
 
 Import `github.com/sergii-ziborov/treestamp`. Docs and examples:
@@ -36,11 +35,11 @@ fastwalk, godirwalk, gocodewalker, or fsnotify.
 ### CLI
 
 ```text
-go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.4
+go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.5
 ```
 
 Without Go, download a `treestamp-*` binary from the
-[CLI v0.1.4 release](https://github.com/sergii-ziborov/treestamp/releases/tag/cmd/treestamp/v0.1.4)
+[CLI v0.1.5 release](https://github.com/sergii-ziborov/treestamp/releases/tag/cmd/treestamp/v0.1.5)
 and check `SHA256SUMS.txt`. That release is the user command `treestamp`.
 It is not `treestamp-driver`.
 

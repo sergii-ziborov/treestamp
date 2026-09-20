@@ -4,7 +4,7 @@ This is the **user CLI** (`treestamp`). It is not the Go library and not
 ## Install with Go
 
 ```text
-go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.4
+go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.5
 ```
 
 Requires Go 1.21 or newer. `CGO_ENABLED=0`.
@@ -20,7 +20,7 @@ in `SHA256SUMS.txt`. Rename the file to `treestamp` (or
 The CLI is a nested module on the published library:
 
 - Import: https://pkg.go.dev/github.com/sergii-ziborov/treestamp
-- Library tag: `v0.1.4` (same number, different Git tag)
+- Library tag: `v0.1.5` (same number, different Git tag)
 - CLI docs: https://github.com/sergii-ziborov/treestamp/blob/main/cmd/treestamp/README.md
 
 `cmd/treestamp-driver` is a fixture protocol binary for tests. Do not

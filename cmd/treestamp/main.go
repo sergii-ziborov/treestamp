@@ -1,7 +1,7 @@
 // Command treestamp scans a repository tree with the Treestamp library:
 // select files, save a baseline, explain a skip, and verify the next tree.
 //
-//	go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.4
+//	go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.5
 //
 // Write the manifest outside the scan root (a sibling directory can live
 // in the same Git repo). Then verify that tree later:

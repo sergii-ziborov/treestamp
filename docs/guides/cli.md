@@ -4,7 +4,7 @@ The CLI is a thin process on the public library. It does not import
 `internal/` scanner packages and does not grow a second engine.
 
 ```text
-go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.4
+go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.5
 ```
 
 Nested-module docs:
@@ -79,7 +79,7 @@ combined).
 - uses: actions/setup-go@v5
   with:
     go-version: "1.21.x"
-- run: go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.4
+- run: go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.5
 - run: treestamp verify ./baselines/cli.tstamp.json --root ./cmd/treestamp --json
 ```
 
@@ -166,5 +166,5 @@ No `watch`, `--exec`, TUI, server, MCP, hidden cache, or plugin loader.
 
 `treestamp version --json` prints CLI, core, and manifest schema. Nested
 module tags use the `cmd/treestamp/v…` Git prefix. `go install` still
-takes `@v0.1.4` for the current CLI tag. The library import is
-`github.com/sergii-ziborov/treestamp@v0.1.4`.
+takes `@v0.1.5` for the current CLI tag. The library import is
+`github.com/sergii-ziborov/treestamp@v0.1.5`.

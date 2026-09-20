@@ -2,7 +2,7 @@ blank_issues_enabled: false
 contact_links:
   - name: Library docs
     url: https://pkg.go.dev/github.com/sergii-ziborov/treestamp
-    about: Published Go module. go get github.com/sergii-ziborov/treestamp@v0.1.4
+    about: Published Go module. go get github.com/sergii-ziborov/treestamp@v0.1.5
   - name: CLI
     url: https://github.com/sergii-ziborov/treestamp/blob/main/cmd/treestamp/README.md
     about: User command treestamp. Not cmd/treestamp-driver.

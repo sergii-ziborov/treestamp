@@ -3,6 +3,6 @@
   "docs_base": "dx-facade-and-task-docs",
   "go_minimum": "1.21.0",
   "official_benches": "MEASURED",
-  "published_tag": "v0.1.4",
+  "published_tag": "v0.1.5",
   "notes": "Document the checkout, not an invented latest stable tag."
 }

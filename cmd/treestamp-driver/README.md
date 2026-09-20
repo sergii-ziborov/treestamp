@@ -5,7 +5,7 @@ product CLI and not a published Go module.
 
 | Want | Use |
 | --- | --- |
-| User command `treestamp` | [`../treestamp`](../treestamp) — `go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.4` |
+| User command `treestamp` | [`../treestamp`](../treestamp) — `go install github.com/sergii-ziborov/treestamp/cmd/treestamp@v0.1.5` |
 | Go library | [`github.com/sergii-ziborov/treestamp`](https://pkg.go.dev/github.com/sergii-ziborov/treestamp) |
 
 This binary reads JSON operations on stdin (scan, session, watch-plan

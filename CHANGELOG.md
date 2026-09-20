@@ -2,9 +2,9 @@
 
 ## Library 0.1.5 (2026-09-20)
 
-Walk and listing close-out after published `v0.1.4`. Published tags stay
-immutable; this tree is `0.1.5` until tagged. Official B01–B14 JSON is
-unchanged. This is not a claimed 15–25% or 50% win over fastwalk v1.0.14.
+Walk and listing close-out after published `v0.1.4`. Library tag is
+`v0.1.5`. Official B01–B14 JSON is unchanged. This is not a claimed
+15–25% or 50% win over fastwalk v1.0.14.
 
 `Walk` / `WalkDirs` keep persistable listing entries (WalkDirs uses one
 `[]Entry`). Parallel unsorted walk streams those entries and attaches
