@@ -13,12 +13,35 @@ import (
 // Stream calls visit for each child without buffering the directory.
 func Stream(dir string, depth int, visit func(*Entry) error) error {
 	return dirread.Visit(dir, nil, func(name string, typ fs.FileMode, dent fs.DirEntry) error {
-		entry := Own(name, child(dir, name), typ, depth, nil)
+		var ready fs.FileInfo
+		if dent != nil {
+			ready, _ = dent.Info()
+		}
+		entry := Own(name, child(dir, name), typ, depth, ready)
 		if dent != nil {
 			entry.Bind(dent)
 		}
 		return visit(entry)
 	})
+}
+
+// Each visits persistable children from one listing. The callback may keep
+// the entry; the backing slice stays reachable from that pointer.
+func Each(dir string, depth int, visit func(*Entry) error) error {
+	dents, err := dirread.OSEntries(dir)
+	if err != nil {
+		return err
+	}
+	owned := make([]Entry, len(dents))
+	for i, dent := range dents {
+		info, _ := dent.Info()
+		Put(&owned[i], dent.Name(), child(dir, dent.Name()), dent.Type(), depth, info)
+		owned[i].Bind(dent)
+		if err := visit(&owned[i]); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func fill(top *frame, fn fs.WalkDirFunc, cfg Config) error {
@@ -65,10 +88,25 @@ func visit(fn fs.WalkDirFunc, cfg Config, top *frame, rec dirread.Record, frames
 		return nil
 	}
 	path := child(top.path, rec.Name)
-	entry := Acquire(rec.Name, path, rec.Type, top.depth+1, rec.Info)
-	err := control(cfg, Call(fn, entry, cfg.ToSlash), entry, top, frames, skip)
-	Release(entry)
-	return err
+	entry := top.live(rec.Name, path, rec.Type, rec.Info)
+	return control(cfg, Deliver(fn, entry, cfg.ToSlash), entry, top, frames, skip)
+}
+
+func (f *frame) live(name, path string, typ fs.FileMode, info fs.FileInfo) *Entry {
+	if len(f.cur) == cap(f.cur) {
+		if cap(f.cur) > 0 {
+			f.chunks = append(f.chunks, f.cur)
+		}
+		n := 32
+		if cap(f.cur) >= 32 {
+			n = 64
+		}
+		f.cur = make([]Entry, 0, n)
+	}
+	f.cur = f.cur[:len(f.cur)+1]
+	e := &f.cur[len(f.cur)-1]
+	Put(e, name, path, typ, f.depth+1, info)
+	return e
 }
 
 func control(cfg Config, cbErr error, entry *Entry, top *frame, frames *[]frame, skip *string) error {

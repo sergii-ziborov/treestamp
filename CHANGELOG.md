@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+Serial `Walk` / `WalkDirs` now keep persistable listing entries instead of
+`Clone` on every callback. Parallel unsorted walk attaches listing
+`FileInfo` and starts workers only when more than one directory remains.
+Informal `bench/go-compat` medians were remasured on this tree and written
+into README. Official B01–B14 first-campaign JSON is unchanged. This is
+not a claimed 15–25% win over fastwalk v1.0.14.
+
 Windows serial listings now keep FindFirstFile `FileInfo` on `Record` and
 `Scanner`, so callback `Stat` does not `Lstat` every name. Informal
 `bench/go-compat` medians were remasured on 20 September 2026 and written

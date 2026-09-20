@@ -50,6 +50,18 @@ func makeSelectiveCorpus(tb testing.TB, groups int) string {
 	return root
 }
 
+func makeBushyDir(tb testing.TB, dirs, files int) string {
+	tb.Helper()
+	root := tb.TempDir()
+	for i := 0; i < dirs; i++ {
+		dir := filepath.Join(root, fmt.Sprintf("d%02d", i))
+		for j := 0; j < files; j++ {
+			write(tb, filepath.Join(dir, fmt.Sprintf("f%02d.txt", j)), "x")
+		}
+	}
+	return root
+}
+
 func makeWideDir(tb testing.TB, files int) string {
 	tb.Helper()
 	root := tb.TempDir()

@@ -26,13 +26,15 @@ type Config struct {
 }
 
 type frame struct {
-	path  string
-	depth int
-	dents []dirread.Record
-	index int
-	ready bool
-	done  bool
-	scan  *dirread.Scanner
+	path   string
+	depth  int
+	dents  []dirread.Record
+	index  int
+	ready  bool
+	done   bool
+	scan   *dirread.Scanner
+	chunks [][]Entry
+	cur    []Entry
 }
 
 var errStop = errors.New("listwalk stop")
@@ -66,10 +68,9 @@ func Prepare(root string, fn fs.WalkDirFunc, cfg Config) (string, bool, error) {
 	if cfg.RequireDirectory && info.Mode()&os.ModeDir == 0 {
 		return "", false, fmt.Errorf("cannot Walk non-directory: %s", start)
 	}
-	entry := Acquire(info.Name(), start, info.Mode().Type(), 0, info)
-	cbErr := Call(fn, entry, cfg.ToSlash)
+	entry := Own(info.Name(), start, info.Mode().Type(), 0, info)
+	cbErr := Deliver(fn, entry, cfg.ToSlash)
 	typ := entry.typ
-	Release(entry)
 	if cbErr != nil {
 		if errors.Is(cbErr, fs.SkipAll) || errors.Is(cbErr, fs.SkipDir) || skipThis(cfg, cbErr) {
 			return "", false, nil

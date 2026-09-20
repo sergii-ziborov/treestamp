@@ -21,6 +21,57 @@ func (c *countDent) IsDir() bool                { return c.typ.IsDir() }
 func (c *countDent) Type() fs.FileMode          { return c.typ }
 func (c *countDent) Info() (fs.FileInfo, error) { c.n.Add(1); return nil, c.err }
 
+func TestPutKeepsName(t *testing.T) {
+	var e Entry
+	Put(&e, "a.txt", "a.txt", 0, 1, nil)
+	if e.Name() != "a.txt" {
+		t.Fatalf("name %q", e.Name())
+	}
+}
+
+func TestEachInfoUsesListing(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Each(root, 1, func(e *Entry) error {
+		if e.Name() != "a.txt" {
+			return nil
+		}
+		e.Bind(nil)
+		info, err := e.Info()
+		if err != nil || info == nil {
+			t.Fatalf("ready info %v", err)
+		}
+		again, err := e.Info()
+		if err != nil || again != info {
+			t.Fatalf("second info %v", err)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEachKeepsName(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var saved *Entry
+	if err := Each(root, 1, func(e *Entry) error {
+		if e.Name() == "a.txt" {
+			saved = e
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if saved == nil || saved.Name() != "a.txt" {
+		t.Fatalf("saved=%v", saved)
+	}
+}
+
 func TestOwnKeepsName(t *testing.T) {
 	e := Own("a.txt", "a.txt", 0, 1, nil)
 	if err := Deliver(func(_ string, d fs.DirEntry, err error) error {

@@ -103,7 +103,6 @@ func (m *MultiWalker) SkipCurrentDir() {
 	}
 }
 
-// TraverseCurrentSymlink follows the symlink returned by the last Next call.
 func (m *MultiWalker) TraverseCurrentSymlink() error {
 	if m.current == nil {
 		return walkErr("", 0, OpReadMetadata, errNoCurrentSymlink)
@@ -535,10 +534,11 @@ func (q *dirQueue) done() {
 }
 
 func (q *dirQueue) close() {
-	q.mu.Lock()
-	q.closed = true
-	q.cond.Broadcast()
-	q.mu.Unlock()
+	q.mu.Lock(); q.closed = true; q.cond.Broadcast(); q.mu.Unlock()
+}
+
+func (q *dirQueue) takeAll() []dirJob {
+	q.mu.Lock(); items := q.items; q.items = nil; q.mu.Unlock(); return items
 }
 
 func orderDirents(entries []os.DirEntry, opts WalkOptions) []os.DirEntry {

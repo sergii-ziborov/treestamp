@@ -155,7 +155,6 @@ var (
 type errText string
 
 func (e errText) Error() string { return string(e) }
-
 func (w *Walker) Root() string         { return w.root }
 func (w *Walker) Options() WalkOptions { return w.options }
 
@@ -232,7 +231,6 @@ func (w *Walker) remember(entry *WalkEntry) *WalkEntry {
 	w.current = entry
 	return entry
 }
-
 func (w *Walker) nextFromFrame() (*WalkEntry, error, bool) {
 	if len(w.frames) == 0 {
 		w.finished = true
@@ -439,38 +437,53 @@ type callbackWork struct {
 	err                                 error
 	quit                                atomic.Bool
 }
-
-func WalkCallbackParallel(root string, workers int, fn fs.WalkDirFunc, toSlash bool) error {
-	return WalkCallbackParallelOpts(root, fn, ParallelCallback{Workers: workers, ToSlash: toSlash})
-}
-
 func WalkCallbackParallelOpts(root string, fn fs.WalkDirFunc, opts ParallelCallback) error {
 	abs, descend, err := prepareCallback(root, fn, opts)
 	if err != nil || !descend {
 		return err
 	}
-	workers := opts.Workers
-	if workers <= 0 {
-		workers = runtime.GOMAXPROCS(0)
-		if workers > 8 {
-			workers = 8
-		}
-	}
-	if workers < 1 {
-		workers = 1
-	}
 	work := &callbackWork{
 		root: abs, fn: fn, toSlash: opts.ToSlash, keepSkipAll: opts.KeepSkipAll,
 		followOutside: opts.FollowOutside, localSort: opts.LocalSort, queue: newDirQueue(),
 	}
-	work.queue.push(dirJob{path: abs, depth: 0})
-	var wg sync.WaitGroup
-	wg.Add(workers)
-	for i := 0; i < workers; i++ {
-		go func() { defer wg.Done(); work.run() }()
+	work.visitDir(dirJob{path: abs, depth: 0})
+	return work.finish(opts.Workers)
+}
+
+func (w *callbackWork) finish(workers int) error {
+	jobs := w.queue.takeAll()
+	n := parallelWorkers(workers)
+	if n > 1 && len(jobs) > 1 {
+		for _, job := range jobs {
+			w.queue.push(job)
+		}
+		var wg sync.WaitGroup
+		wg.Add(n)
+		for i := 0; i < n; i++ {
+			go func() { defer wg.Done(); w.run() }()
+		}
+		wg.Wait()
+		return w.err
 	}
-	wg.Wait()
-	return work.err
+	for len(jobs) > 0 && !w.quit.Load() {
+		for _, job := range jobs {
+			w.visitDir(job)
+		}
+		jobs = w.queue.takeAll()
+	}
+	return w.err
+}
+func parallelWorkers(n int) int {
+	if n <= 0 {
+		n = runtime.GOMAXPROCS(0)
+	}
+	if n < 1 {
+		return 1
+	}
+	if n > 8 {
+		return 8
+	}
+	return n
 }
 
 func prepareCallback(root string, fn fs.WalkDirFunc, opts ParallelCallback) (string, bool, error) {
@@ -487,10 +500,9 @@ func prepareCallback(root string, fn fs.WalkDirFunc, opts ParallelCallback) (str
 	typ := entry.Type()
 	if cbErr != nil {
 		if errors.Is(cbErr, fs.SkipAll) {
-			return "", false, keepSkipAllErr(opts.KeepSkipAll)
-		}
-		if errors.Is(cbErr, fs.SkipDir) || errors.Is(cbErr, ErrSkipThis) {
-			return "", false, nil
+			cbErr = keepSkipAllErr(opts.KeepSkipAll)
+		} else if errors.Is(cbErr, fs.SkipDir) || errors.Is(cbErr, ErrSkipThis) {
+			cbErr = nil
 		}
 		return "", false, cbErr
 	}
@@ -500,16 +512,12 @@ func prepareCallback(root string, fn fs.WalkDirFunc, opts ParallelCallback) (str
 	if typ&os.ModeSymlink == 0 {
 		return abs, false, nil
 	}
-	target, statErr := os.Stat(abs)
-	return abs, statErr == nil && target.IsDir(), nil
+	target, err := os.Stat(abs)
+	return abs, err == nil && target.IsDir(), nil
 }
 
 func (w *callbackWork) run() {
-	for {
-		job, ok := w.queue.pop()
-		if !ok {
-			return
-		}
+	for job, ok := w.queue.pop(); ok; job, ok = w.queue.pop() {
 		w.visitDir(job)
 		w.queue.done()
 	}
@@ -574,18 +582,12 @@ func (w *callbackWork) reportRead(path string, err error) {
 		return
 	}
 	if errors.Is(cbErr, fs.SkipAll) {
-		w.stop(keepSkipAllErr(w.keepSkipAll))
-		return
+		cbErr = keepSkipAllErr(w.keepSkipAll)
 	}
 	w.stop(cbErr)
 }
 
-func keepSkipAllErr(keep bool) error {
-	if keep {
-		return fs.SkipAll
-	}
-	return nil
-}
+func keepSkipAllErr(keep bool) error { if keep { return fs.SkipAll }; return nil }
 
 func (w *callbackWork) stop(err error) {
 	w.mu.Lock()

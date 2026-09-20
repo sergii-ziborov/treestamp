@@ -105,8 +105,8 @@ python tools/run_official_benches.py
 
 These nanoseconds are host-local. They are not a 10k/100k/1M ranking and not
 Rust oracle percentages. The informal table below is a 20 September 2026
-remasurement of this tree. Official B01–B14 stay the 17 September first
-campaign.
+remasurement of persistable listing entries on this tree. Official B01–B14
+stay the 17 September first campaign.
 
 Pinned sources used with those receipts:
 
@@ -116,14 +116,14 @@ Pinned sources used with those receipts:
 | fastwalk (bench only) | v1.0.14 |
 | gocodewalker (bench only) | v1.5.1 |
 | godirwalk (bench only) | v1.17.0 |
-| Informal listing table | 20 September 2026, [`INFORMAL_RUN.json`](bench/go-compat/INFORMAL_RUN.json) |
+| Informal listing table | 20 September 2026 remasure, [`INFORMAL_RUN.json`](bench/go-compat/INFORMAL_RUN.json) |
 
 Do not follow live `main` of a competitor as the oracle. Do not rewrite
 `official-benches.json` or `INFORMAL_RUN.json` without a new host run.
 
 ## Informal benches
 
-Windows/amd64, Intel Core Ultra 7 255U, 20 September 2026.
+Windows/amd64, Intel Core Ultra 7 255U, 20 September 2026 remasure.
 Go **1.26.5** (`go env GOVERSION`), module line **1.21.0**, `CGO_ENABLED=0`,
 `GOTOOLCHAIN=local`. Comparators in `bench/go-compat`:
 **fastwalk v1.0.14**, **gocodewalker v1.5.1**, **godirwalk v1.17.0**.
@@ -131,18 +131,19 @@ Medians of three runs on a ~400-file temp tree. Not a 15–25% release claim.
 
 | Case | Treestamp | Comparator |
 | --- | --- | --- |
-| Raw serial walk | 212 µs, 153 KiB, 1638 allocs | fastwalk v1.0.14: 240 µs / 142 KiB; godirwalk v1.17.0: 382 µs / 208 KiB |
-| Raw parallel walk | 243 µs, 161 KiB, 1651 allocs | fastwalk v1.0.14: 240 µs / 142 KiB |
-| Regex `ScanPaths` | 3.25 ms, 98 KiB, 1338 allocs | gocodewalker v1.5.1: 3.46 ms / 129 KiB |
-| Cached `Stat` | 231 µs, 156 KiB, 1641 allocs | fastwalk v1.0.14: 221 µs / 139 KiB; `os.Stat` 11.4 ms |
-| `DirScanner` | 1.30 ms, 648 KiB, 8152 allocs | godirwalk v1.17.0: 1.45 ms / 564 KiB / 12008 allocs |
-| Scratch `ReadDirents` | 1.30 ms, 736 KiB, 8021 allocs | godirwalk v1.17.0: 1.61 ms / 955 KiB / 12023 allocs |
+| Raw serial walk | 365 µs, 158 KiB, 1248 allocs | fastwalk v1.0.14: 400 µs / 144 KiB; godirwalk v1.17.0: 505 µs / 208 KiB |
+| Raw parallel walk | 323 µs, 157 KiB, 1233 allocs | fastwalk v1.0.14: 400 µs / 144 KiB |
+| Regex `ScanPaths` | 4.89 ms, 99 KiB, 1338 allocs | gocodewalker v1.5.1: 5.33 ms / 130 KiB |
+| Cached `Stat` | 346 µs, 164 KiB, 1252 allocs | fastwalk v1.0.14: 405 µs / 140 KiB; `os.Stat` 23.3 ms |
+| `DirScanner` | 1.71 ms, 648 KiB, 8152 allocs | godirwalk v1.17.0: 2.01 ms / 564 KiB / 12008 allocs |
+| Scratch `ReadDirents` | 1.88 ms, 736 KiB, 8021 allocs | godirwalk v1.17.0: 2.10 ms / 956 KiB / 12023 allocs |
 
 `WalkFS` is `fs.WalkDir` (same 2678 allocs). Compiled test-binary peak working set
-**20.2 MiB**, process CPU **89.8 s** on `-test.count=1`. Per-op memory is
-`B/op`, not that RSS. Serial raw walk is a few percent faster here and still
-uses more `B/op` than fastwalk. Parallel raw walk and cached `Stat` are not
-faster on this run. That is not a claimed speed win.
+**56.1 MiB**, process CPU **129 s** on `-test.count=1`. Per-op memory is
+`B/op`, not that RSS. Serial and parallel listing walks drop about 390
+callback allocs versus the previous informal table. Wall times are
+host-local and still use more `B/op` than fastwalk. That is not a claimed
+speed win.
 
 ```text
 set CGO_ENABLED=0
@@ -151,7 +152,7 @@ python tools/run_informal_benches.py
 ```
 
 Receipt: [`bench/go-compat/INFORMAL_RUN.json`](bench/go-compat/INFORMAL_RUN.json).
-WalkDirs and listing methods vs godirwalk v1.17.0 (20 September 2026)
+WalkDirs and listing methods vs godirwalk v1.17.0 (same remasure)
 are [`bench/go-compat/WALKDIRS_G05.md`](bench/go-compat/WALKDIRS_G05.md);
 they do not replace the table above.
 

@@ -31,7 +31,7 @@ anyone else.
 
 Published receipts stay source-pinned. Official B01–B14:
 `compat/results/official-benches.json` (first campaign, 17 September 2026).
-Informal listing: `bench/go-compat/INFORMAL_RUN.json` (20 September 2026).
+Informal listing: `bench/go-compat/INFORMAL_RUN.json` (20 September 2026 remasure).
 Do not rewrite either file without a new host run. They are not a 15–25%
 claim over fastwalk v1.0.14.
 

@@ -7,7 +7,9 @@ B01–B14 rows. Official first-campaign `MEASURED` receipts live in
 ## Toolchain and comparator versions
 
 Recorded 20 September 2026 on Windows/amd64, Intel Core Ultra 7 255U.
-This remasures the F01–F06 walk path. It is not a 15–25% release claim.
+This remasures persistable listing entries (no per-callback `Clone`),
+lazy parallel workers, and listing-ready `FileInfo`. It is not a 15–25%
+release claim.
 
 | Item | Version |
 | --- | --- |
@@ -23,11 +25,11 @@ This remasures the F01–F06 walk path. It is not a 15–25% release claim.
 | Python runner | 3.14.7 |
 
 Time and `B/op` below are medians of three `go test -bench -benchmem -count=3`
-runs after the listing fixes (unsorted `ReadDir`, lazy `Info`, `WalkFS` =
-`fs.WalkDir`). Process RSS/CPU come from a compiled test binary
-(`go test -c`) with `-test.count=1` of the full suite: peak working set
-**20.2 MiB**, process CPU **89.8 s**. Sampling `go test` itself undercounts
-the child binary.
+runs after persistable listing entries. Process RSS/CPU come from a compiled
+test binary (`go test -c`) with `-test.count=1` of the full suite: peak
+working set **56.1 MiB**, process CPU **129 s**. Sampling `go test` itself
+undercounts the child binary. The RSS sample now includes the bushy
+parallel-walk benches.
 
 Reproduce:
 
@@ -49,28 +51,31 @@ groups for regex selection, 4000 names for `DirScanner`). This is not a
 
 | Case | Treestamp | Competitor | Note |
 | --- | --- | --- | --- |
-| Raw walk, serial callback | 212 µs, 153 KiB, 1638 allocs | fastwalk v1.0.14: 240 µs, 142 KiB, 1652 allocs; godirwalk v1.17.0: 382 µs, 208 KiB, 2031 allocs | Windows listings keep FindFirstFile `FileInfo` |
-| Raw walk, parallel callback | 243 µs, 161 KiB, 1651 allocs | fastwalk v1.0.14: 240 µs, 142 KiB, 1652 allocs | Essentially tied wall time, more `B/op` |
-| Regex filename selection | 3.25 ms, 98 KiB, 1338 allocs | gocodewalker v1.5.1: 3.46 ms, 129 KiB, 1667 allocs | Files-first listing |
-| Cached regular `Stat` | 231 µs, 156 KiB, 1641 allocs | fastwalk v1.0.14: 221 µs, 139 KiB, 1641 allocs; `os.Stat`: 11.4 ms, 436 KiB, 3250 allocs | Callback cache, not a full scan |
-| Lazy `DirScanner` | 1.30 ms, 648 KiB, 8152 allocs | godirwalk v1.17.0 `Scanner`: 1.45 ms, 564 KiB, 12008 allocs | Wide directory; Treestamp does not `Stat` each name |
-| Scratch `ReadDirents` | 1.30 ms, 736 KiB, 8021 allocs | godirwalk v1.17.0 `ReadDirents`: 1.61 ms, 955 KiB, 12023 allocs | No `os.ReadDir` sort |
+| Raw walk, serial callback | 365 µs, 158 KiB, 1248 allocs | fastwalk v1.0.14: 400 µs, 144 KiB, 1652 allocs; godirwalk v1.17.0: 505 µs, 208 KiB, 2031 allocs | Persistable listing entry, no per-callback `Clone` |
+| Raw walk, parallel callback | 323 µs, 157 KiB, 1233 allocs | fastwalk v1.0.14: 400 µs, 144 KiB, 1652 allocs | Workers start only when more than one directory remains |
+| Regex filename selection | 4.89 ms, 99 KiB, 1338 allocs | gocodewalker v1.5.1: 5.33 ms, 130 KiB, 1667 allocs | Files-first listing |
+| Cached regular `Stat` | 346 µs, 164 KiB, 1252 allocs | fastwalk v1.0.14: 405 µs, 140 KiB, 1641 allocs; `os.Stat`: 23.3 ms, 445 KiB, 2860 allocs | Listing `FileInfo` on the owned entry |
+| Lazy `DirScanner` | 1.71 ms, 648 KiB, 8152 allocs | godirwalk v1.17.0 `Scanner`: 2.01 ms, 564 KiB, 12008 allocs | Wide directory; Treestamp does not `Stat` each name |
+| Scratch `ReadDirents` | 1.88 ms, 736 KiB, 8021 allocs | godirwalk v1.17.0 `ReadDirents`: 2.10 ms, 956 KiB, 12023 allocs | No `os.ReadDir` sort |
 | `WalkFS` vs `fs.WalkDir` | same allocs as `WalkDir` (2678) | std `WalkDir` | `WalkFS` calls `fs.WalkDir`; `fstest.MapFS` only |
 
 ## What changed versus the previous gap report
 
-- `ReadDirentsScratch` on Windows/macOS now uses `os.Open` + `ReadDir(-1)`.
-  `os.ReadDir` sorts names; godirwalk does not.
-- Serial Walk/Stat keeps FindFirstFile `FileInfo` on each listing. That
-  costs `B/op` versus a lazy-`Info` path. Cached `Stat` is 231 µs / 156 KiB
-  versus fastwalk 221 µs / 139 KiB on this host — not a Stat win.
+- Serial Walk no longer `Clone`s every callback. Persistable entries live
+  in frame chunks (or one `[]Entry` on the parallel path). Allocs dropped
+  from 1638 to 1248 on serial raw walk.
+- Parallel unsorted walk attaches listing `FileInfo` and starts workers
+  only when more than one directory remains.
+- `ReadDirentsScratch` on Windows/macOS still uses `os.Open` + `ReadDir(-1)`.
 - `WalkFS` is `fs.WalkDir`. A second implementation cannot beat the
   standard walk on `MapFS` without changing the contract.
 
 Remaining on this run: Treestamp still uses more `B/op` than fastwalk on
-raw walk (153 KiB vs 142 KiB serial). Parallel raw walk is essentially
-tied (243 µs vs 240 µs). Official 10k/100k/1M sizes stay `NOT_RUN`.
-Linux/macOS informal medians are not in this receipt.
+raw walk (158 KiB vs 144 KiB serial). Wall times are host-local (365 µs
+vs 400 µs serial). Official 10k/100k/1M sizes stay `NOT_RUN`.
+Linux/macOS informal medians are not in this receipt. Bushy 32×16
+parallel walk is in `INFORMAL_RUN.json` only (968 µs / 1997 allocs vs
+fastwalk 1.06 ms / 2513 allocs) and is not a README ranking row.
 
 ## WalkDirs G05 addendum (20 September 2026)
 

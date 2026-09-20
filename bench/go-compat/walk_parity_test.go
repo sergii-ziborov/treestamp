@@ -334,6 +334,28 @@ func BenchmarkRawWalkTreestampParallel(b *testing.B) {
 	}
 }
 
+func BenchmarkRawWalkTreestampParallelBushy(b *testing.B) {
+	root := makeBushyDir(b, 32, 16)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := treestamp.WalkUnsorted(root, func(string, fs.DirEntry, error) error { return nil }); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkRawWalkFastwalkBushy(b *testing.B) {
+	root := makeBushyDir(b, 32, 16)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := fastwalk.Walk(nil, root, func(string, fs.DirEntry, error) error { return nil }); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func BenchmarkRawWalkFastwalk(b *testing.B) {
 	root := makeWideDir(b, 400)
 	b.ReportAllocs()

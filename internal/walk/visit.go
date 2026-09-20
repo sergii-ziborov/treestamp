@@ -31,7 +31,7 @@ var errVisitStop = errors.New("visit stop")
 
 func (w *callbackWork) streamDir(job dirJob) {
 	skip := false
-	err := listwalk.Stream(job.path, job.depth+1, func(e *listwalk.Entry) error {
+	err := listwalk.Each(job.path, job.depth+1, func(e *listwalk.Entry) error {
 		if w.quit.Load() {
 			return errVisitStop
 		}

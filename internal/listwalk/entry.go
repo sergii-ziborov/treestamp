@@ -33,6 +33,13 @@ func Own(name, path string, typ fs.FileMode, depth int, ready fs.FileInfo) *Entr
 	return &Entry{name: name, path: path, typ: typ, depth: depth, ready: ready}
 }
 
+// Put fills dst with a persistable entry. The caller owns dst.
+func Put(dst *Entry, name, path string, typ fs.FileMode, depth int, ready fs.FileInfo) {
+	if dst != nil {
+		*dst = Entry{name: name, path: path, typ: typ, depth: depth, ready: ready}
+	}
+}
+
 // Deliver invokes fn with the owned entry. The callback may keep it.
 func Deliver(fn fs.WalkDirFunc, entry *Entry, toSlash bool) error {
 	return fn(Show(entry.path, toSlash), entry, nil)
